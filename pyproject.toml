@@ -1,10 +1,24 @@
 [project]
 name = "vocal"
 version = "0.1.0"
-description = "Generic Speech AI Platform (STT + TTS)"
+description = "Generic Speech AI Platform - Ollama for Voice Models"
 requires-python = ">=3.11"
 readme = "README.md"
 license = { text = "AGPL-3.0" }
+authors = [
+    { name = "Vocal Contributors" }
+]
+keywords = ["speech-to-text", "transcription", "whisper", "ollama", "ai", "ml"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU Affero General Public License v3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "requests>=2.32.5",
     "vocal-api",

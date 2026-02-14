@@ -1203,10 +1203,10 @@ vocal = "vocal_cli.main:app"
 3. ✅ Services (transcription_service.py)
 4. ✅ FastAPI app setup with CORS and health endpoints
 
-### Phase 2: SDK Generation ⏳ TODO
-1. SDK generation scripts
-2. High-level client wrapper
-3. Testing
+### Phase 2: SDK Generation ✅ DONE
+1. ✅ OpenAPI spec auto-generation
+2. ✅ Python SDK with clean interface
+3. ✅ SDK documentation
 
 ### Phase 3: CLI ⏳ TODO
 1. CLI commands (run, models, serve)

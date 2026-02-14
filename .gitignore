@@ -55,6 +55,13 @@ models/
 *.pt
 *.safetensors
 
+# Audio files (test data)
+*.mp3
+*.wav
+*.m4a
+*.ogg
+*.flac
+
 # Logs
 *.log
 logs/

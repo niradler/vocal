@@ -4,6 +4,29 @@
 
 Vocal is an API-first speech AI platform with automatic OpenAPI spec generation, auto-generated SDK, and Ollama-style model management. Built with a generic registry pattern supporting multiple providers.
 
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+
+## 🚀 Quick Start (5 minutes)
+
+```bash
+# 1. Clone and setup
+git clone <repo-url>
+cd vocal
+uv sync
+
+# 2. Start API
+uv run uvicorn vocal_api.main:app --port 8000
+
+# 3. Visit interactive docs
+# Open: http://localhost:8000/docs
+
+# 4. Use SDK to transcribe
+python sdk_example.py your_audio.mp3
+```
+
+**That's it!** Models auto-download on first use.
+
 ## Features
 
 - 🎯 **API-First Architecture**: FastAPI with auto-generated OpenAPI spec
@@ -73,6 +96,15 @@ uv run python sdk_example.py Recording.m4a
 ```
 
 ## Architecture
+
+See [VOICESTACK_API_FIRST_ARCHITECTURE.md](VOICESTACK_API_FIRST_ARCHITECTURE.md) for detailed architecture documentation.
+
+**Key Principles:**
+- API-first design with auto-generated OpenAPI spec
+- Generic registry pattern for extensibility  
+- Ollama-style model management
+- OpenAI-compatible endpoints
+- Type-safe throughout with Pydantic
 
 ```
 vocal/
@@ -260,11 +292,68 @@ Models are cached at: `~/.cache/vocal/models/`
 
 ## Contributing
 
+We welcome contributions! Here's how to get started:
+
+### Development Setup
+
+```bash
+# Clone the repository
+git clone <repo-url>
+cd vocal
+
+# Set up environment
+uv venv
+uv sync
+
+# Install packages in development mode
+uv add --editable packages/core
+uv add --editable packages/api
+uv add --editable packages/sdk
+
+# Run tests
+uv run pytest packages/core/tests -v
+```
+
+### Making Changes
+
 1. Fork the repository
-2. Create a feature branch
+2. Create a feature branch: `git checkout -b feature/your-feature`
 3. Make your changes
-4. Run tests
-5. Submit a pull request
+4. Add tests for new functionality
+5. Ensure all tests pass: `uv run pytest`
+6. Update documentation if needed
+7. Commit with clear messages: `git commit -m "feat: add feature X"`
+8. Push and create a pull request
+
+### Code Style
+
+- Follow PEP 8 guidelines
+- Use type hints for all functions
+- Add docstrings for public APIs
+- Keep functions focused and testable
+
+### Adding New Models
+
+To add support for a new model provider:
+
+1. Create a new provider class in `packages/core/vocal_core/registry/providers/`
+2. Implement the `ModelProvider` interface
+3. Add tests
+4. Update documentation
+
+### Regenerating SDK
+
+When API changes:
+
+```bash
+# Start API server
+uv run uvicorn vocal_api.main:app --port 8000
+
+# Download new OpenAPI spec
+curl http://localhost:8000/openapi.json -o packages/sdk/openapi.json
+
+# SDK client is hand-crafted, just update if needed
+```
 
 ## License
 
@@ -272,14 +361,19 @@ AGPL-3.0
 
 ## Roadmap
 
-- [ ] Model management API endpoints (list, download, delete)
-- [ ] SDK generation from OpenAPI spec
-- [ ] CLI tool
+- [x] Core model registry with provider pattern
+- [x] Model management API (list, download, delete)
+- [x] SDK generation from OpenAPI spec
+- [x] Interactive Swagger UI docs
+- [ ] CLI tool (Typer-based)
 - [ ] Text-to-Speech (TTS) support
 - [ ] Streaming transcription
-- [ ] WebSocket support
-- [ ] Rate limiting
-- [ ] Authentication (optional)
+- [ ] WebSocket support for real-time transcription
+- [ ] Rate limiting middleware
+- [ ] Authentication (optional - JWT/API keys)
+- [ ] Docker deployment
+- [ ] Batch transcription
+- [ ] Custom model providers
 
 ## Credits
 
