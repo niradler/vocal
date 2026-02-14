@@ -1,7 +1,7 @@
 Server Side Public License (SSPL)
 Version 1, October 16, 2018
 
-Copyright (C) 2026 Vocal Contributors
+Copyright (C) 2026 Vocal by Nir Adler
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the Server Side Public License, version 1.
@@ -47,6 +47,7 @@ You may NOT make the functionality of the Program or a modified version availabl
 4. This prohibition applies regardless of whether you open source your infrastructure
 
 The Program is licensed for:
+
 - Personal use
 - Internal business use (within your organization)
 - Integration into your own products (that you control)
@@ -75,6 +76,7 @@ IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING WILL ANY C
 ## What This Means
 
 **You CAN:**
+
 - Use Vocal for personal projects
 - Use Vocal for internal company tools
 - Modify and distribute Vocal
@@ -82,18 +84,21 @@ IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING WILL ANY C
 - Use Vocal for commercial applications that use the API
 
 **You CANNOT:**
+
 - Offer Vocal as a managed service (SaaS) to others without open-sourcing your entire infrastructure
 - Create a competing cloud service using Vocal without complying with Section 2
 
 **Examples:**
 
 ✅ **Allowed:**
+
 - Running Vocal internally for your company's transcription needs
 - Building a mobile app that uses Vocal API running on your own servers
 - Modifying Vocal and using it in your product
 - Self-hosting for personal or business use
 
 ❌ **Strictly Prohibited:**
+
 - Offering "Transcription as a Service" using Vocal to external customers
 - Running Vocal as a hosted service and charging others to use it
 - Creating a cloud transcription service based on Vocal for commercial sale
