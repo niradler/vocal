@@ -6,8 +6,10 @@ requires-python = ">=3.11"
 readme = "README.md"
 license = { text = "AGPL-3.0" }
 dependencies = [
+    "requests>=2.32.5",
     "vocal-api",
     "vocal-core",
+    "vocal-sdk",
 ]
 
 [tool.uv.workspace]
@@ -21,6 +23,7 @@ members = [
 [tool.uv.sources]
 vocal-core = { workspace = true, editable = true }
 vocal-api = { workspace = true, editable = true }
+vocal-sdk = { workspace = true, editable = true }
 
 [dependency-groups]
 dev = [

@@ -9,7 +9,7 @@ async def main():
     print("Initializing model registry...")
     registry = ModelRegistry()
     
-    model_id = "openai/whisper-tiny"
+    model_id = "Systran/faster-whisper-tiny"
     print(f"\nDownloading {model_id}...")
     print("This may take a few minutes on first run...")
     

@@ -12,41 +12,47 @@ class HuggingFaceProvider(BaseProvider):
     """HuggingFace model provider implementation"""
     
     KNOWN_STT_MODELS = {
-        "openai/whisper-tiny": {
-            "name": "OpenAI Whisper Tiny",
+        "Systran/faster-whisper-tiny": {
+            "name": "Faster Whisper Tiny",
             "parameters": "39M",
             "backend": ModelBackend.FASTER_WHISPER,
             "recommended_vram": "1GB+",
+            "alias": "whisper-tiny"
         },
-        "openai/whisper-base": {
-            "name": "OpenAI Whisper Base",
+        "Systran/faster-whisper-base": {
+            "name": "Faster Whisper Base",
             "parameters": "74M",
             "backend": ModelBackend.FASTER_WHISPER,
             "recommended_vram": "1GB+",
+            "alias": "whisper-base"
         },
-        "openai/whisper-small": {
-            "name": "OpenAI Whisper Small",
+        "Systran/faster-whisper-small": {
+            "name": "Faster Whisper Small",
             "parameters": "244M",
             "backend": ModelBackend.FASTER_WHISPER,
             "recommended_vram": "2GB+",
+            "alias": "whisper-small"
         },
-        "openai/whisper-medium": {
-            "name": "OpenAI Whisper Medium",
+        "Systran/faster-whisper-medium": {
+            "name": "Faster Whisper Medium",
             "parameters": "769M",
             "backend": ModelBackend.FASTER_WHISPER,
             "recommended_vram": "5GB+",
+            "alias": "whisper-medium"
         },
-        "openai/whisper-large-v3": {
-            "name": "OpenAI Whisper Large V3",
+        "Systran/faster-whisper-large-v3": {
+            "name": "Faster Whisper Large V3",
             "parameters": "1.5B",
             "backend": ModelBackend.FASTER_WHISPER,
             "recommended_vram": "10GB+",
+            "alias": "whisper-large-v3"
         },
-        "openai/whisper-large-v3-turbo": {
-            "name": "OpenAI Whisper Large V3 Turbo",
+        "Systran/faster-distil-whisper-large-v3": {
+            "name": "Faster Distil Whisper Large V3",
             "parameters": "809M",
             "backend": ModelBackend.FASTER_WHISPER,
             "recommended_vram": "6GB+",
+            "alias": "whisper-large-v3-turbo"
         },
     }
     

@@ -40,13 +40,14 @@ class TranscriptionService:
         
         model_info = await self.registry.get_model(model_id)
         if not model_info:
-            raise ValueError(f"Model {model_id} not found")
+            raise ValueError(f"Model {model_id} not found in registry")
         
         model_path = self.registry.get_model_path(model_id)
+        
         if not model_path:
             raise ValueError(
                 f"Model {model_id} not downloaded. "
-                f"Download it first using: vocal models pull {model_id}"
+                f"Download it first: POST /v1/models/{model_id}/download"
             )
         
         adapter = await self._get_or_create_adapter(model_id, model_path)

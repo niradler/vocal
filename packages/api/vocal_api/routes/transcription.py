@@ -21,7 +21,7 @@ router = APIRouter(prefix="/v1/audio", tags=["transcription"])
 )
 async def create_transcription(
     file: Annotated[UploadFile, File(description="Audio file to transcribe")],
-    model: Annotated[str, Form(description="Model ID")] = "openai/whisper-tiny",
+    model: Annotated[str, Form(description="Model ID")] = "Systran/faster-whisper-tiny",
     language: Annotated[Optional[str], Form(description="Language code")] = None,
     prompt: Annotated[Optional[str], Form(description="Style prompt")] = None,
     response_format: Annotated[
@@ -71,7 +71,7 @@ async def create_transcription(
 )
 async def create_translation(
     file: Annotated[UploadFile, File()],
-    model: Annotated[str, Form()] = "openai/whisper-tiny",
+    model: Annotated[str, Form()] = "Systran/faster-whisper-tiny",
     service: TranscriptionService = Depends(get_transcription_service)
 ) -> TranscriptionResponse:
     """Translate audio to English."""

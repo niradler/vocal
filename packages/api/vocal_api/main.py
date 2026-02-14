@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
-from .routes import transcription_router
+from .routes import transcription_router, models_router
 from .config import settings
 
 app = FastAPI(
@@ -22,6 +22,7 @@ app.add_middleware(
 )
 
 app.include_router(transcription_router)
+app.include_router(models_router)
 
 
 @app.get("/", tags=["health"])
@@ -29,7 +30,7 @@ async def root():
     """API health check"""
     return {
         "status": "ok",
-        "message": "Vocal API",
+        "message": "Vocal API - Ollama-style voice model management",
         "version": settings.VERSION
     }
 
