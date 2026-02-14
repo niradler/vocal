@@ -5,7 +5,7 @@
 All packages have been built successfully in v0.3.0:
 
 1. **vocal-core** - Core model registry and adapters
-2. **vocal-sdk** - Python SDK (OpenAI-compatible client)  
+2. **vocal-sdk** - Python SDK (OpenAI-compatible client)
 3. **vocal-api** - FastAPI server
 4. **vocal-cli** - Command-line tool
 
@@ -32,9 +32,10 @@ packages/cli/dist/
 ## Before Publishing
 
 1. **Update GitHub URLs** in all `pyproject.toml` files:
-   - Replace `https://github.com/yourusername/vocal` with your actual repo URL
+   - Replace `https://github.com/niradler/vocal` with your actual repo URL
 
 2. **Test Installation Locally**:
+
    ```bash
    # Test each package
    uv pip install packages/core/dist/vocal_core-0.3.0-py3-none-any.whl
@@ -69,6 +70,7 @@ uv run twine upload packages/cli/dist/*
 ```
 
 When prompted:
+
 - Username: `__token__`
 - Password: `pypi-...` (your API token)
 
@@ -117,6 +119,7 @@ Test on TestPyPI before publishing to real PyPI:
 1. **Create TestPyPI Account**: https://test.pypi.org/account/register/
 
 2. **Publish to TestPyPI**:
+
    ```bash
    uv run twine upload --repository testpypi packages/core/dist/*
    uv run twine upload --repository testpypi packages/sdk/dist/*
@@ -125,6 +128,7 @@ Test on TestPyPI before publishing to real PyPI:
    ```
 
 3. **Test Installation**:
+
    ```bash
    pip install --index-url https://test.pypi.org/simple/ vocal-core
    ```
@@ -134,6 +138,7 @@ Test on TestPyPI before publishing to real PyPI:
 ## Post-Publishing
 
 1. **Update README.md** with installation instructions:
+
    ```bash
    pip install vocal-core vocal-sdk vocal-api vocal-cli
    ```
@@ -150,14 +155,17 @@ Test on TestPyPI before publishing to real PyPI:
 ## Troubleshooting
 
 ### "Package already exists"
+
 - Can't re-upload same version
 - Bump version and rebuild
 
 ### "Invalid credentials"
+
 - Use `__token__` as username
 - Paste full token including `pypi-` prefix
 
 ### "Package has invalid metadata"
+
 - Check `pyproject.toml` for errors
 - Validate URLs are correct
 
@@ -173,18 +181,21 @@ Test on TestPyPI before publishing to real PyPI:
 ## License Note
 
 All packages use SSPL-1.0 license. This is:
+
 - ✅ Allowed on PyPI
 - ✅ Open source
 - ❌ NOT OSI-approved
 - ⚠️ Restricts SaaS offerings
 
 Users can:
+
 - Install and use freely
 - Modify and distribute
 - Use in commercial applications
 - Self-host
 
 Users cannot:
+
 - Offer as SaaS without open-sourcing infrastructure
 
 ## Ready to Publish?

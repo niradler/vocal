@@ -28,10 +28,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/vocal"
-Documentation = "https://github.com/yourusername/vocal#readme"
-Repository = "https://github.com/yourusername/vocal"
-Issues = "https://github.com/yourusername/vocal/issues"
+Homepage = "https://github.com/niradler/vocal"
+Documentation = "https://github.com/niradler/vocal#readme"
+Repository = "https://github.com/niradler/vocal"
+Issues = "https://github.com/niradler/vocal/issues"
 
 [build-system]
 requires = ["hatchling"]

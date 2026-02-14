@@ -3,19 +3,22 @@
 ## Installation
 
 ### Option 1: PyPI (Recommended)
+
 ```bash
 pip install vocal-cli
 vocal serve
 ```
 
 ### Option 2: Docker
+
 ```bash
 docker compose up
 ```
 
 ### Option 3: From Source
+
 ```bash
-git clone https://github.com/yourusername/vocal
+git clone https://github.com/niradler/vocal
 cd vocal
 make install
 make serve
@@ -24,6 +27,7 @@ make serve
 ## First Steps
 
 1. **Start the API**:
+
    ```bash
    vocal serve
    ```
@@ -31,11 +35,13 @@ make serve
 2. **Open API Docs**: http://localhost:8000/docs
 
 3. **List Models**:
+
    ```bash
    vocal models list
    ```
 
 4. **Pull a Model**:
+
    ```bash
    vocal models pull Systran/faster-whisper-tiny
    ```
@@ -69,6 +75,7 @@ audio = client.audio.text_to_speech(
 ## API Examples
 
 ### Transcribe Audio
+
 ```bash
 curl -X POST "http://localhost:8000/v1/audio/transcriptions" \
   -F "file=@audio.mp3" \
@@ -76,6 +83,7 @@ curl -X POST "http://localhost:8000/v1/audio/transcriptions" \
 ```
 
 ### Text-to-Speech
+
 ```bash
 curl -X POST "http://localhost:8000/v1/audio/speech" \
   -H "Content-Type: application/json" \
@@ -86,23 +94,27 @@ curl -X POST "http://localhost:8000/v1/audio/speech" \
 ## Docker Usage
 
 ### Basic
+
 ```bash
 docker compose up
 ```
 
 ### With GPU
+
 ```bash
 docker compose --profile gpu up
 ```
 
 ### Custom Port
+
 ```bash
-docker run -p 9000:8000 yourusername/vocal-api
+docker run -p 9000:8000 niradler/vocal-api
 ```
 
 ## Troubleshooting
 
 ### Port Already in Use
+
 ```bash
 # Windows
 netstat -ano | findstr :8000
@@ -113,6 +125,7 @@ lsof -ti:8000 | xargs kill
 ```
 
 ### GPU Not Detected
+
 ```bash
 # Check CUDA
 python -c "import torch; print(torch.cuda.is_available())"
