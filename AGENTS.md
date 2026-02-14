@@ -198,6 +198,7 @@ taskkill /F /PID <PID>
 - Keep package dependencies correct
 - Update docs when changing APIs
 - Test with `test_assets/audio/`
+- **REUSE existing markdown files** (README.md, AGENTS.md)
 
 ### DON'T ❌
 - Skip tests/linting
@@ -205,8 +206,54 @@ taskkill /F /PID <PID>
 - Create circular dependencies
 - Bypass model registry
 - Hardcode paths
-- Create markdown files (unless asked)
+- **Create new markdown files** (unless explicitly asked)
 - Make breaking changes without major version bump
+
+---
+
+## Publishing to PyPI
+
+**Package Name:** `vocal-ai` (not `vocal` - already taken on PyPI)
+
+**Published Packages:**
+1. `vocal-core` - Core registry/adapters
+2. `vocal-sdk` - Python SDK
+3. `vocal-api` - FastAPI server
+4. `vocal-cli` - CLI tool
+5. `vocal-ai` - Meta-package (installs all above)
+
+**Publishing Order (Critical):**
+```bash
+# Build all packages
+make build  # if available, or manually:
+cd packages/core && uv run python -m build
+cd packages/sdk && uv run python -m build
+cd packages/api && uv run python -m build
+cd packages/cli && uv run python -m build
+cd ../.. && uv run python -m build
+
+# Publish in dependency order
+uv run twine upload packages/core/dist/*
+uv run twine upload packages/sdk/dist/*
+uv run twine upload packages/api/dist/*
+uv run twine upload packages/cli/dist/*
+uv run twine upload dist/*  # main package last
+```
+
+**PyPI Authentication:**
+- Username: `__token__`
+- Password: Your PyPI API token from https://pypi.org/manage/account/token/
+
+**Version Bumping:**
+- `make bump-patch` - Updates all packages (core, sdk, api, cli, main)
+- Auto-updates: `pyproject.toml` files + `vocal/__init__.py`
+
+**Installation:**
+```bash
+pip install vocal-ai  # Installs everything
+# or
+uvx vocal serve      # Run without installing
+```
 
 ---
 

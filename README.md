@@ -102,14 +102,20 @@ result = client.audio.transcribe(
 print(result['text'])
 
 # Text-to-Speech
-audio = client.audio.text_to_speech("Hello, world!")
+audio = client.audio.text_to_speech(
+    text="Hello, world!",
+    model="pyttsx3"
+)
 with open("output.wav", "wb") as f:
     f.write(audio)
 ```
 
-Or use the CLI:
+### 4. CLI Commands
 
 ```bash
+# Start server
+vocal serve
+
 # Transcribe audio
 vocal run audio.mp3
 
@@ -118,6 +124,61 @@ vocal models list
 
 # Download model
 vocal models pull Systran/faster-whisper-tiny
+
+# Delete model
+vocal models delete Systran/faster-whisper-tiny
+```
+
+### 5. API Examples
+
+**Transcribe Audio:**
+```bash
+curl -X POST "http://localhost:8000/v1/audio/transcriptions" \
+  -F "file=@audio.mp3" \
+  -F "model=Systran/faster-whisper-tiny"
+```
+
+**Text-to-Speech:**
+```bash
+curl -X POST "http://localhost:8000/v1/audio/speech" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"pyttsx3","input":"Hello world"}' \
+  --output speech.wav
+```
+
+### 6. Docker Deployment
+
+```bash
+# Basic usage
+docker compose up
+
+# With GPU support
+docker compose --profile gpu up
+
+# Custom port
+docker run -p 9000:8000 niradler/vocal-api
+```
+
+### 7. Troubleshooting
+
+**Port already in use:**
+```bash
+# Windows
+netstat -ano | findstr :8000
+taskkill /F /PID <PID>
+
+# Linux/Mac
+lsof -ti:8000 | xargs kill
+```
+
+**GPU not detected:**
+```bash
+# Check CUDA
+python -c "import torch; print(torch.cuda.is_available())"
+
+# Check device info
+curl http://localhost:8000/v1/system/device
+```
 
 # Start API server
 vocal serve --port 8000
