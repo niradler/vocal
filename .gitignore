@@ -49,7 +49,7 @@ htmlcov/
 
 # Model cache
 .cache/
-models/
+/models/
 *.ckpt
 *.pth
 *.pt

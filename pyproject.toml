@@ -1,5 +1,5 @@
 [project]
-name = "vocal"
+name = "vocal-ai"
 version = "0.3.0"
 description = "Ollama-style Voice Model Management - Self-hosted OpenAI-compatible Speech AI"
 requires-python = ">=3.11"
@@ -40,6 +40,9 @@ vocal = "vocal_cli.main:app"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["vocal"]
 
 [[tool.uv.index]]
 name = "pytorch"
