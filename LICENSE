@@ -37,14 +37,22 @@ Server Side Public License for more details.
 
 Subject to the terms and conditions of this License, You are granted a worldwide, non-exclusive, no-charge, royalty-free, irrevocable copyright license to reproduce, prepare derivative works of, publicly display, publicly perform, sublicense, and distribute the Program and such derivative works in Source Code or Object Code form.
 
-### Section 2: SSPL Requirements
+### Section 2: SSPL Requirements and Prohibitions
 
-If you make the functionality of the Program or a modified version available to third parties as a service, you must make the Service Source Code available via download to everyone at no charge, under the terms of this License, along with:
+You may NOT make the functionality of the Program or a modified version available to third parties as a service. This means:
 
-1. A complete copy of the source code of your modified version of the Program
-2. A complete copy of the source code of all programs that you use to make the functionality of the Program available as a Service, including, without limitation, management software, user interfaces, application program interfaces, automation software, monitoring software, backup software, storage software and hosting software, all such that a user could run an instance of the service using the Service Source Code you make available.
+1. You cannot offer the Program as a hosted service to external users
+2. You cannot charge others for access to the Program's functionality
+3. You cannot create a commercial service based on the Program
+4. This prohibition applies regardless of whether you open source your infrastructure
 
-"Service Source Code" means the Corresponding Source for the Program or the modified version, and the Corresponding Source for all programs that you use to make the Program or modified version available as a service, including, without limitation, management software, user interfaces, application program interfaces, automation software, monitoring software, backup software, storage software and hosting software, all such that a user could run an instance of the service using the Service Source Code you make available.
+The Program is licensed for:
+- Personal use
+- Internal business use (within your organization)
+- Integration into your own products (that you control)
+- Educational and research purposes
+
+If you wish to offer the Program as a service to third parties, you must obtain a separate commercial license from the copyright holders.
 
 ### Section 3: Limitations
 
@@ -85,10 +93,11 @@ IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING WILL ANY C
 - Modifying Vocal and using it in your product
 - Self-hosting for personal or business use
 
-❌ **Not Allowed (without open-sourcing your infrastructure):**
+❌ **Strictly Prohibited:**
 - Offering "Transcription as a Service" using Vocal to external customers
-- Running Vocal on AWS/Azure/GCP and charging others to use it
-- Creating a competing cloud transcription service based on Vocal
+- Running Vocal as a hosted service and charging others to use it
+- Creating a cloud transcription service based on Vocal for commercial sale
+- Reselling access to Vocal in any form, even if your code is open source
 
 ---
 
