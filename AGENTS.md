@@ -208,6 +208,7 @@ taskkill /F /PID <PID>
 - Hardcode paths
 - **Create new markdown files** (unless explicitly asked)
 - Make breaking changes without major version bump
+- **Commit changes without user verification first**
 
 ---
 
