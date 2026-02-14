@@ -711,19 +711,45 @@ See [LICENSE](LICENSE) for full details.
 
 ## Roadmap
 
-- [x] Core model registry with provider pattern
-- [x] Model management API (list, download, delete)
-- [x] SDK generation from OpenAPI spec
-- [x] Interactive Swagger UI docs
-- [x] CLI tool (Typer-based)
-- [x] Text-to-Speech (TTS) support
-- [ ] Streaming transcription
-- [ ] WebSocket support for real-time transcription
-- [ ] Rate limiting middleware
-- [ ] Authentication (optional - JWT/API keys)
-- [ ] Docker deployment
-- [ ] Batch transcription
-- [ ] Custom model providers
+### ✅ Completed (v0.3.x)
+- Core model registry with provider pattern
+- Model management API (list, download, delete)
+- SDK generation from OpenAPI spec
+- Interactive Swagger UI docs
+- CLI tool (Typer-based)
+- Text-to-Speech (TTS) support
+- Keep-alive model caching (5min default)
+- GPU acceleration with CUDA
+- OpenAI-compatible endpoints
+- Published to PyPI as `vocal-ai`
+
+### 🎯 Next Release (v0.4.0)
+
+**1. Fix Model Metadata**
+- **Why:** Models currently show `0` size and missing info, looks unfinished
+- **How:** Fetch actual sizes from HuggingFace, populate all fields in registry
+
+**2. Model Show Command**
+- **Why:** Users need to inspect models before downloading (like `ollama show`)
+- **How:** `vocal models show whisper-tiny` displays params, size, languages, VRAM
+
+**3. Model Aliases**
+- **Why:** Typing full paths is tedious (`Systran/faster-whisper-tiny`)
+- **How:** Use short names: `vocal run audio.mp3 -m whisper-tiny`
+
+### 🚀 Future (v0.5.0+)
+
+**4. Voice Registry System**
+- **Why:** Voices should be managed like models, not just system TTS
+- **How:** `vocal voices list/pull/show` with downloadable voice models
+
+**5. Voice Cloning (XTTS-v2)**
+- **Why:** Custom voices are the killer feature for TTS
+- **How:** `vocal voices clone my-voice --sample recording.wav`
+
+**6. Voice Preview**
+- **Why:** Users want to test voices before using them
+- **How:** `vocal voices sample kokoro-en "Hello world"` generates quick sample
 
 ## Credits
 
