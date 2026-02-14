@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  vocal-api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist downloaded models
+      - vocal-models:/home/vocal/.cache/vocal
+      # Optional: mount test audio files
+      - ./test_assets:/home/vocal/test_assets:ro
+    environment:
+      - APP_NAME=Vocal API
+      - DEBUG=false
+      # Optional: GPU support (requires nvidia-docker)
+      # - NVIDIA_VISIBLE_DEVICES=all
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  vocal-models:

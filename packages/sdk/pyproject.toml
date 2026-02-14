@@ -1,12 +1,32 @@
 [project]
 name = "vocal-sdk"
 version = "0.3.0"
-description = "Python SDK for Vocal API - Auto-generated from OpenAPI spec"
+description = "Python SDK for Vocal API - Auto-generated OpenAI-compatible client"
 requires-python = ">=3.11"
+license = { text = "SSPL-1.0" }
+authors = [
+    { name = "Vocal Contributors" }
+]
+keywords = ["sdk", "client", "speech-to-text", "tts", "openai-compatible", "api-client"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: Other/Proprietary License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = [
     "requests>=2.31.0",
     "pydantic>=2.5.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/vocal"
+Documentation = "https://github.com/yourusername/vocal#readme"
+Repository = "https://github.com/yourusername/vocal"
+Issues = "https://github.com/yourusername/vocal/issues"
 
 [project.optional-dependencies]
 dev = [

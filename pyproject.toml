@@ -1,32 +1,45 @@
 [project]
 name = "vocal"
 version = "0.3.0"
-description = "Generic Speech AI Platform - Ollama for Voice Models"
+description = "Ollama-style Voice Model Management - Self-hosted OpenAI-compatible Speech AI"
 requires-python = ">=3.11"
 readme = "README.md"
 license = { text = "SSPL-1.0" }
 authors = [
     { name = "Vocal Contributors" }
 ]
-keywords = ["speech-to-text", "transcription", "whisper", "ollama", "ai", "ml"]
+keywords = ["speech-to-text", "transcription", "whisper", "ollama", "tts", "stt", "openai-compatible", "self-hosted"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
+    "License :: Other/Proprietary License",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Multimedia :: Sound/Audio :: Speech",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Framework :: FastAPI",
+    "Environment :: Console",
 ]
 dependencies = [
-    "requests>=2.32.5",
-    "vocal-api",
-    "vocal-core",
-    "vocal-sdk",
-    "vocal-cli",
-    "torch>=2.0.0",
-    "aiofiles>=25.1.0",
+    "vocal-core>=0.3.0",
+    "vocal-sdk>=0.3.0",
+    "vocal-api>=0.3.0",
+    "vocal-cli>=0.3.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/vocal"
+Documentation = "https://github.com/yourusername/vocal#readme"
+Repository = "https://github.com/yourusername/vocal"
+Issues = "https://github.com/yourusername/vocal/issues"
+
+[project.scripts]
+vocal = "vocal_cli.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [[tool.uv.index]]
 name = "pytorch"
@@ -50,11 +63,13 @@ torch = { index = "pytorch" }
 
 [dependency-groups]
 dev = [
+    "build>=1.4.0",
     "bump-my-version>=1.2.7",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "pytest-xdist>=3.5.0",
     "ruff>=0.1.0",
+    "twine>=6.2.0",
 ]
 
 [tool.ruff]
@@ -127,5 +142,10 @@ replace = '__version__ = "{new_version}"'
 
 [[tool.bumpversion.files]]
 filename = "packages/cli/vocal_cli/__init__.py"
+search = '__version__ = "{current_version}"'
+replace = '__version__ = "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "vocal/__init__.py"
 search = '__version__ = "{current_version}"'
 replace = '__version__ = "{new_version}"'

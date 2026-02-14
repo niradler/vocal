@@ -1,8 +1,23 @@
 [project]
 name = "vocal-core"
 version = "0.3.0"
-description = "Core model registry and adapters for Vocal"
+description = "Core model registry and adapters for Vocal - Ollama for Voice Models"
 requires-python = ">=3.11"
+license = { text = "SSPL-1.0" }
+authors = [
+    { name = "Vocal Contributors" }
+]
+keywords = ["speech-to-text", "tts", "stt", "whisper", "model-registry", "ai"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: Other/Proprietary License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "faster-whisper>=1.0.0",
     "huggingface-hub>=0.20.0",
@@ -11,6 +26,12 @@ dependencies = [
     "pyttsx3>=2.90",
     "numpy>=1.24.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/vocal"
+Documentation = "https://github.com/yourusername/vocal#readme"
+Repository = "https://github.com/yourusername/vocal"
+Issues = "https://github.com/yourusername/vocal/issues"
 
 [project.optional-dependencies]
 piper = [
