@@ -6,6 +6,13 @@ from .stt import (
     TranscriptionWord,
     FasterWhisperAdapter,
 )
+from .tts import (
+    TTSAdapter,
+    TTSResult,
+    Voice,
+    SimpleTTSAdapter,
+    PiperTTSAdapter,
+)
 
 __all__ = [
     "BaseAdapter",
@@ -14,4 +21,9 @@ __all__ = [
     "TranscriptionSegment",
     "TranscriptionWord",
     "FasterWhisperAdapter",
+    "TTSAdapter",
+    "TTSResult",
+    "Voice",
+    "SimpleTTSAdapter",
+    "PiperTTSAdapter",
 ]

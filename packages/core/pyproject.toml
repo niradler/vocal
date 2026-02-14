@@ -1,6 +1,6 @@
 [project]
 name = "vocal-core"
-version = "0.1.0"
+version = "0.2.0"
 description = "Core model registry and adapters for Vocal"
 requires-python = ">=3.11"
 dependencies = [
@@ -8,6 +8,14 @@ dependencies = [
     "huggingface-hub>=0.20.0",
     "pydantic>=2.5.0",
     "pydantic-settings>=2.1.0",
+    "pyttsx3>=2.90",
+    "numpy>=1.24.0",
+]
+
+[project.optional-dependencies]
+piper = [
+    "piper-tts>=1.2.0",
+    "scipy>=1.11.0",
 ]
 
 [build-system]

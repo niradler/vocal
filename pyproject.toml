@@ -1,6 +1,6 @@
 [project]
 name = "vocal"
-version = "0.1.0"
+version = "0.2.0"
 description = "Generic Speech AI Platform - Ollama for Voice Models"
 requires-python = ">=3.11"
 readme = "README.md"
@@ -23,7 +23,14 @@ dependencies = [
     "vocal-api",
     "vocal-core",
     "vocal-sdk",
+    "vocal-cli",
+    "torch>=2.0.0",
 ]
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
 
 [tool.uv.workspace]
 members = [
@@ -37,6 +44,8 @@ members = [
 vocal-core = { workspace = true, editable = true }
 vocal-api = { workspace = true, editable = true }
 vocal-sdk = { workspace = true, editable = true }
+vocal-cli = { workspace = true, editable = true }
+torch = { index = "pytorch" }
 
 [dependency-groups]
 dev = [

@@ -1,4 +1,3 @@
-from functools import lru_cache
 from vocal_core import ModelRegistry
 from .services import TranscriptionService, ModelService
 
