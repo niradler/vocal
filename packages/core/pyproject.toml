@@ -1,6 +1,6 @@
 [project]
 name = "vocal-core"
-version = "0.3.0"
+version = "0.3.1"
 description = "Core model registry and adapters for Vocal - Ollama for Voice Models"
 requires-python = ">=3.11"
 license = { text = "SSPL-1.0" }
