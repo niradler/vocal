@@ -357,9 +357,9 @@ curl http://localhost:8000/openapi.json -o packages/sdk/openapi.json
 
 ## License
 
-**Server Side Public License (SSPL) v1** - Like MongoDB and Redis
+**Server Side Public License (SSPL) v1**
 
-Vocal is open source but protects against cloud provider exploitation:
+Vocal is open source but protects against exploitation:
 - ✅ Free for personal and commercial use
 - ✅ Free for self-hosting
 - ✅ Free to modify and distribute

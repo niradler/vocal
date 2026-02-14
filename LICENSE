@@ -4,8 +4,7 @@ Version 1, October 16, 2018
 Copyright (C) 2026 Vocal Contributors
 
 This program is free software: you can redistribute it and/or modify
-it under the terms of the Server Side Public License, version 1,
-as published by MongoDB, Inc.
+it under the terms of the Server Side Public License, version 1.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -90,8 +89,6 @@ IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING WILL ANY C
 - Offering "Transcription as a Service" using Vocal to external customers
 - Running Vocal on AWS/Azure/GCP and charging others to use it
 - Creating a competing cloud transcription service based on Vocal
-
-This license keeps Vocal truly open source while preventing exploitation by cloud providers.
 
 ---
 
