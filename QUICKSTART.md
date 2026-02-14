@@ -2,20 +2,26 @@
 
 ## Installation
 
-### Option 1: PyPI (Recommended)
+### Option 1: uvx (Fastest - No Install!)
 
 ```bash
-pip install vocal-cli
+uvx vocal serve
+```
+
+### Option 2: PyPI
+
+```bash
+pip install vocal-ai
 vocal serve
 ```
 
-### Option 2: Docker
+### Option 3: Docker
 
 ```bash
 docker compose up
 ```
 
-### Option 3: From Source
+### Option 4: From Source
 
 ```bash
 git clone https://github.com/niradler/vocal
@@ -37,24 +43,27 @@ make serve
 3. **List Models**:
 
    ```bash
-   vocal models list
+   uvx vocal models list
+   # or if installed: vocal models list
    ```
 
 4. **Pull a Model**:
 
    ```bash
-   vocal models pull Systran/faster-whisper-tiny
+   uvx vocal models pull Systran/faster-whisper-tiny
+   # or if installed: vocal models pull Systran/faster-whisper-tiny
    ```
 
 5. **Transcribe Audio**:
    ```bash
-   vocal run audio.mp3
+   uvx vocal run audio.mp3
+   # or if installed: vocal run audio.mp3
    ```
 
 ## Using the SDK
 
 ```python
-from vocal_sdk import VocalSDK
+from vocal import VocalSDK
 
 client = VocalSDK()
 

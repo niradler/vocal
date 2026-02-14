@@ -7,27 +7,23 @@ Vocal is an API-first speech AI platform with automatic OpenAPI spec generation,
 [![License: SSPL](https://img.shields.io/badge/License-SSPL-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
-## 🚀 Quick Start (5 minutes)
+## 🚀 Quick Start (30 seconds)
 
 ```bash
-# 1. Clone and setup
-git clone <repo-url>
-cd vocal
-make install
+# 1. Run with uvx (no installation needed!)
+uvx vocal serve
 
-# 2. Start API
-make serve
-
-# 3. Visit interactive docs
+# 2. Visit interactive docs
 # Open: http://localhost:8000/docs
 
-# 4. Use SDK to transcribe
-python sdk_example.py your_audio.mp3
+# 3. Pull a model and transcribe
+uvx vocal models pull Systran/faster-whisper-tiny
+uvx vocal run your_audio.mp3
 ```
 
 **That's it!** Models auto-download on first use.
 
-**Pro tip:** Run `make help` to see all available commands.
+**Pro tip:** For development, clone the repo and run `make help` to see all available commands.
 
 ## Features
 
@@ -49,15 +45,18 @@ python sdk_example.py your_audio.mp3
 ### 1. Installation
 
 ```bash
-git clone <repo-url>
+# Option 1: Using uvx (recommended - no install needed)
+uvx vocal serve
+
+# Option 2: Using pip
+pip install vocal-ai
+vocal serve
+
+# Option 3: From source
+git clone https://github.com/niradler/vocal
 cd vocal
-
-# Option 1: Using Makefile (recommended)
 make install
-
-# Option 2: Using uv directly
-uv venv
-uv sync
+make serve
 ```
 
 ### 2. Start API Server
@@ -82,7 +81,7 @@ The API will be available at:
 ### 3. Use the SDK
 
 ```python
-from vocal_sdk import VocalSDK
+from vocal import VocalSDK
 
 # Initialize client
 client = VocalSDK(base_url="http://localhost:8000")

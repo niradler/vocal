@@ -2,12 +2,15 @@
 
 ## Packages Built
 
-All packages have been built successfully in v0.3.0:
+All packages have been built and published successfully:
 
 1. **vocal-core** - Core model registry and adapters
 2. **vocal-sdk** - Python SDK (OpenAI-compatible client)
 3. **vocal-api** - FastAPI server
 4. **vocal-cli** - Command-line tool
+5. **vocal-ai** - Main meta-package that installs all of the above
+
+**Note**: The main package is named `vocal-ai` (not `vocal`) because the PyPI name "vocal" was already taken.
 
 ## Package Locations
 
