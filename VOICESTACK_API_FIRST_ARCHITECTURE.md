@@ -1197,11 +1197,11 @@ vocal = "vocal_cli.main:app"
 4. ✅ Base adapter interface
 5. ✅ faster-whisper adapter (first STT model)
 
-### Phase 1: API Layer ⏳ TODO
-1. Pydantic models (transcription, model)
-2. API routes (transcription, models)
-3. Services (business logic)
-4. FastAPI app setup
+### Phase 1: API Layer ✅ DONE
+1. ✅ Pydantic models (transcription.py)
+2. ✅ API routes (transcription.py)
+3. ✅ Services (transcription_service.py)
+4. ✅ FastAPI app setup with CORS and health endpoints
 
 ### Phase 2: SDK Generation ⏳ TODO
 1. SDK generation scripts
