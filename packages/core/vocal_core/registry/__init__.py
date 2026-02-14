@@ -1,9 +1,9 @@
 from .base import ModelRegistry
 from .model_info import (
-    ModelInfo,
-    ModelStatus,
     ModelBackend,
+    ModelInfo,
     ModelProvider,
+    ModelStatus,
     ModelTask,
     format_bytes,
 )

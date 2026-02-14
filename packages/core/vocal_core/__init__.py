@@ -1,22 +1,22 @@
-from .registry import (
-    ModelRegistry,
-    ModelInfo,
-    ModelStatus,
-    ModelBackend,
-    ModelProvider,
-    ModelTask,
-    format_bytes,
-)
 from .adapters import (
     BaseAdapter,
+    FasterWhisperAdapter,
     STTAdapter,
     TranscriptionResult,
     TranscriptionSegment,
     TranscriptionWord,
-    FasterWhisperAdapter,
+)
+from .registry import (
+    ModelBackend,
+    ModelInfo,
+    ModelProvider,
+    ModelRegistry,
+    ModelStatus,
+    ModelTask,
+    format_bytes,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.2.1"
 
 __all__ = [
     "ModelRegistry",

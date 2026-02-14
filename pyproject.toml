@@ -1,6 +1,6 @@
 [project]
 name = "vocal"
-version = "0.1.0"
+version = "0.2.1"
 description = "Generic Speech AI Platform - Ollama for Voice Models"
 requires-python = ">=3.11"
 readme = "README.md"
@@ -23,7 +23,15 @@ dependencies = [
     "vocal-api",
     "vocal-core",
     "vocal-sdk",
+    "vocal-cli",
+    "torch>=2.0.0",
+    "aiofiles>=25.1.0",
 ]
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
 
 [tool.uv.workspace]
 members = [
@@ -37,10 +45,38 @@ members = [
 vocal-core = { workspace = true, editable = true }
 vocal-api = { workspace = true, editable = true }
 vocal-sdk = { workspace = true, editable = true }
+vocal-cli = { workspace = true, editable = true }
+torch = { index = "pytorch" }
 
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
+    "pytest-xdist>=3.5.0",
     "ruff>=0.1.0",
 ]
+
+[tool.ruff]
+line-length = 300
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort (import sorting)
+    "C90", # mccabe complexity
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "UP042", # str+Enum to StrEnum (optional Python 3.11+ upgrade)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["vocal_core", "vocal_api", "vocal_sdk", "vocal_cli"]
+force-single-line = false
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"] # Allow unused imports in __init__.py

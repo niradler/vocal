@@ -1,6 +1,6 @@
 import pytest
-import asyncio
-from vocal_core import ModelRegistry, ModelStatus
+
+from vocal_core import ModelRegistry
 
 
 @pytest.mark.asyncio
@@ -16,10 +16,10 @@ async def test_list_models():
     """Test listing models from HuggingFace provider"""
     registry = ModelRegistry()
     models = await registry.list_models(task="stt")
-    
+
     assert len(models) > 0
     assert all(m.task.value == "stt" for m in models)
-    
+
     whisper_models = [m for m in models if "whisper" in m.id.lower()]
     assert len(whisper_models) > 0
 
@@ -29,7 +29,7 @@ async def test_get_model_info():
     """Test getting specific model info"""
     registry = ModelRegistry()
     model = await registry.get_model("openai/whisper-tiny")
-    
+
     assert model is not None
     assert model.id == "openai/whisper-tiny"
     assert model.task.value == "stt"

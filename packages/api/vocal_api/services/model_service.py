@@ -1,46 +1,34 @@
-from typing import Optional, AsyncIterator
+from collections.abc import AsyncIterator
+
 from vocal_core import ModelRegistry
-from vocal_core.registry import ModelStatus as CoreModelStatus
 
 from ..models.model import (
-    ModelInfo,
     ModelDownloadProgress,
-    ModelStatus,
+    ModelInfo,
 )
 
 
 class ModelService:
     """Service for managing models"""
-    
+
     def __init__(self, registry: ModelRegistry):
         self.registry = registry
         self._download_status: dict[str, ModelDownloadProgress] = {}
-    
-    async def list_models(
-        self,
-        status_filter: Optional[str] = None,
-        task: Optional[str] = None
-    ) -> list[ModelInfo]:
+
+    async def list_models(self, status_filter: str | None = None, task: str | None = None) -> list[ModelInfo]:
         """List all available models"""
-        models = await self.registry.list_models(
-            task=task,
-            status_filter=status_filter
-        )
-        
+        models = await self.registry.list_models(task=task, status_filter=status_filter)
+
         return [self._convert_model_info(m) for m in models]
-    
-    async def get_model(self, model_id: str) -> Optional[ModelInfo]:
+
+    async def get_model(self, model_id: str) -> ModelInfo | None:
         """Get model information"""
         model = await self.registry.get_model(model_id)
         if not model:
             return None
         return self._convert_model_info(model)
-    
-    async def download_model(
-        self,
-        model_id: str,
-        quantization: Optional[str] = None
-    ) -> AsyncIterator[ModelDownloadProgress]:
+
+    async def download_model(self, model_id: str, quantization: str | None = None) -> AsyncIterator[ModelDownloadProgress]:
         """Download a model"""
         self._download_status[model_id] = ModelDownloadProgress(
             model_id=model_id,
@@ -48,27 +36,24 @@ class ModelService:
             progress=0.0,
             downloaded_bytes=0,
             total_bytes=0,
-            message="Starting download..."
+            message="Starting download...",
         )
-        
+
         try:
-            async for downloaded, total, status in self.registry.download_model(
-                model_id,
-                quantization=quantization
-            ):
+            async for downloaded, total, status in self.registry.download_model(model_id, quantization=quantization):
                 progress = (downloaded / total) if total > 0 else 0.0
-                
+
                 self._download_status[model_id] = ModelDownloadProgress(
                     model_id=model_id,
                     status=status.value,
                     progress=progress,
                     downloaded_bytes=downloaded,
                     total_bytes=total,
-                    message=f"Downloaded {downloaded}/{total} bytes"
+                    message=f"Downloaded {downloaded}/{total} bytes",
                 )
-                
+
                 yield self._download_status[model_id]
-        
+
         except Exception as e:
             self._download_status[model_id] = ModelDownloadProgress(
                 model_id=model_id,
@@ -76,18 +61,18 @@ class ModelService:
                 progress=0.0,
                 downloaded_bytes=0,
                 total_bytes=0,
-                message=f"Download failed: {str(e)}"
+                message=f"Download failed: {str(e)}",
             )
             yield self._download_status[model_id]
-    
-    async def get_download_status(self, model_id: str) -> Optional[ModelDownloadProgress]:
+
+    async def get_download_status(self, model_id: str) -> ModelDownloadProgress | None:
         """Get download status for a model"""
         return self._download_status.get(model_id)
-    
+
     async def delete_model(self, model_id: str) -> bool:
         """Delete a downloaded model"""
         return await self.registry.delete_model(model_id)
-    
+
     def _convert_model_info(self, model) -> ModelInfo:
         """Convert core ModelInfo to API ModelInfo"""
         return ModelInfo(

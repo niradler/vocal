@@ -2,15 +2,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
-from .routes import transcription_router, models_router
 from .config import settings
+from .routes import models_router, system_router, transcription_router, tts_router
 
 app = FastAPI(
     title="Vocal API",
     description="Generic Speech AI Platform (STT + TTS)",
     version=settings.VERSION,
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
 )
 
 app.add_middleware(
@@ -23,6 +23,8 @@ app.add_middleware(
 
 app.include_router(transcription_router)
 app.include_router(models_router)
+app.include_router(tts_router)
+app.include_router(system_router)
 
 
 @app.get("/", tags=["health"])
@@ -31,7 +33,7 @@ async def root():
     return {
         "status": "ok",
         "message": "Vocal API - Ollama-style voice model management",
-        "version": settings.VERSION
+        "version": settings.VERSION,
     }
 
 
@@ -47,14 +49,14 @@ async def health():
 def custom_openapi():
     if app.openapi_schema:
         return app.openapi_schema
-    
+
     openapi_schema = get_openapi(
         title="Vocal API",
         version=settings.VERSION,
         description="Generic Speech AI Platform (STT + TTS)",
         routes=app.routes,
     )
-    
+
     app.openapi_schema = openapi_schema
     return app.openapi_schema
 

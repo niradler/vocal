@@ -1,0 +1,18 @@
+[project]
+name = "vocal-cli"
+version = "0.2.1"
+description = "CLI tool for Vocal - Generic Speech AI Platform"
+requires-python = ">=3.11"
+dependencies = [
+    "vocal-sdk",
+    "typer>=0.12.0",
+    "rich>=13.0.0",
+    "uvicorn>=0.31.0",
+]
+
+[project.scripts]
+vocal = "vocal_cli.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
