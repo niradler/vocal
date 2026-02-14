@@ -1,15 +1,16 @@
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
+from ..dependencies import get_tts_service
 from ..services.tts_service import TTSService
 
 router = APIRouter(prefix="/v1/audio", tags=["audio"])
-tts_service = TTSService()
 
 
 class TTSRequest(BaseModel):
-    """Text-to-Speech request"""
+    """Text-to-Speech request (OpenAI-compatible)"""
 
+    model: str = Field(..., description="TTS model to use (e.g., 'hexgrad/Kokoro-82M')")
     input: str = Field(..., description="The text to synthesize")
     voice: str | None = Field(None, description="Voice ID to use")
     speed: float = Field(1.0, ge=0.25, le=4.0, description="Speech speed multiplier")
@@ -37,19 +38,21 @@ class VoicesResponse(BaseModel):
     response_class=Response,
     responses={200: {"content": {"audio/wav": {}}, "description": "Audio file in WAV format"}},
 )
-async def text_to_speech(request: TTSRequest):
+async def text_to_speech(request: TTSRequest, service: TTSService = Depends(get_tts_service)):
     """
     Generate speech from text (OpenAI-compatible endpoint)
 
-    This endpoint synthesizes audio from text using the configured TTS engine.
+    This endpoint synthesizes audio from text using the specified TTS model.
 
+    - **model**: TTS model to use (e.g., 'hexgrad/Kokoro-82M', 'coqui/XTTS-v2')
     - **input**: The text to convert to speech
     - **voice**: Optional voice ID (use /v1/audio/voices to list available voices)
     - **speed**: Speech speed multiplier (0.25 to 4.0, default: 1.0)
     - **response_format**: Audio format (currently only 'wav' supported)
     """
     try:
-        result = await tts_service.synthesize(
+        result = await service.synthesize(
+            model_id=request.model,
             text=request.input,
             voice=request.voice,
             speed=request.speed,
@@ -73,14 +76,16 @@ async def text_to_speech(request: TTSRequest):
 
 
 @router.get("/voices", response_model=VoicesResponse)
-async def list_voices():
+async def list_voices(model: str | None = None, service: TTSService = Depends(get_tts_service)):
     """
     List available TTS voices
 
     Returns a list of all available voices that can be used for speech synthesis.
+
+    - **model**: Optional model ID to list voices for a specific model
     """
     try:
-        voices = await tts_service.get_voices()
+        voices = await service.get_voices(model_id=model)
 
         voice_infos = [VoiceInfo(id=v.id, name=v.name, language=v.language, gender=v.gender) for v in voices]
 

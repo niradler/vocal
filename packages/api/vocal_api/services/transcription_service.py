@@ -1,4 +1,6 @@
+import asyncio
 import tempfile
+import time
 from pathlib import Path
 
 import aiofiles
@@ -15,11 +17,41 @@ from ..models.transcription import (
 
 
 class TranscriptionService:
-    """Service for handling transcription requests"""
+    """Service for handling transcription requests with Ollama-style keep-alive"""
 
-    def __init__(self, registry: ModelRegistry):
+    def __init__(self, registry: ModelRegistry, keep_alive_seconds: int = 300):
         self.registry = registry
         self.adapters: dict[str, FasterWhisperAdapter] = {}
+        self.last_used: dict[str, float] = {}
+        self.keep_alive_seconds = keep_alive_seconds
+        self._cleanup_task = None
+
+    async def start_cleanup_task(self):
+        """Start background task to cleanup unused models"""
+        if self._cleanup_task is None:
+            self._cleanup_task = asyncio.create_task(self._cleanup_loop())
+
+    async def _cleanup_loop(self):
+        """Background task to unload models after keep_alive expires"""
+        while True:
+            try:
+                await asyncio.sleep(60)
+                current_time = time.time()
+                models_to_unload = []
+
+                for model_id, last_used_time in self.last_used.items():
+                    if current_time - last_used_time > self.keep_alive_seconds:
+                        models_to_unload.append(model_id)
+
+                for model_id in models_to_unload:
+                    if model_id in self.adapters:
+                        adapter = self.adapters[model_id]
+                        await adapter.unload_model()
+                        del self.adapters[model_id]
+                        del self.last_used[model_id]
+
+            except Exception:
+                pass
 
     async def transcribe(self, file: UploadFile, request: TranscriptionRequest) -> TranscriptionResponse:
         """
@@ -44,6 +76,7 @@ class TranscriptionService:
             raise ValueError(f"Model {model_id} not downloaded. Download it first: POST /v1/models/{model_id}/download")
 
         adapter = await self._get_or_create_adapter(model_id, model_path)
+        self.last_used[model_id] = time.time()
 
         temp_file = None
         temp_path = None
@@ -89,6 +122,7 @@ class TranscriptionService:
             raise ValueError(f"Model {model_id} not downloaded")
 
         adapter = await self._get_or_create_adapter(model_id, model_path)
+        self.last_used[model_id] = time.time()
 
         temp_file = None
         temp_path = None

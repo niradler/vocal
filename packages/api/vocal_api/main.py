@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
 from .config import settings
+from .dependencies import get_transcription_service, get_tts_service
 from .routes import models_router, system_router, transcription_router, tts_router
 
 app = FastAPI(
@@ -25,6 +26,16 @@ app.include_router(transcription_router)
 app.include_router(models_router)
 app.include_router(tts_router)
 app.include_router(system_router)
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services and start background tasks"""
+    transcription_service = get_transcription_service()
+    await transcription_service.start_cleanup_task()
+
+    tts_service = get_tts_service()
+    await tts_service.start_cleanup_task()
 
 
 @app.get("/", tags=["health"])

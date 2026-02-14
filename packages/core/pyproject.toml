@@ -1,6 +1,6 @@
 [project]
 name = "vocal-core"
-version = "0.2.3"
+version = "0.3.0"
 description = "Core model registry and adapters for Vocal"
 requires-python = ">=3.11"
 dependencies = [

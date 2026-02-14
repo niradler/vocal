@@ -251,6 +251,7 @@ class AudioAPI:
     def text_to_speech(
         self,
         text: str,
+        model: str = "pyttsx3",
         voice: str | None = None,
         speed: float = 1.0,
         response_format: str = "wav",
@@ -261,6 +262,7 @@ class AudioAPI:
 
         Args:
             text: Text to convert to speech
+            model: TTS model to use (default: 'pyttsx3' for system TTS)
             voice: Voice ID to use (None for default)
             speed: Speech speed multiplier (0.25 to 4.0)
             response_format: Audio format (currently only 'wav' supported)
@@ -276,8 +278,15 @@ class AudioAPI:
 
             >>> # Or save directly
             >>> client.audio.text_to_speech("Hello!", output_file="hello.wav")
+
+            >>> # Use specific TTS model
+            >>> audio = client.audio.text_to_speech(
+            ...     "Hello!",
+            ...     model="hexgrad/Kokoro-82M"
+            ... )
         """
         data = {
+            "model": model,
             "input": text,
             "speed": speed,
             "response_format": response_format,
@@ -294,9 +303,12 @@ class AudioAPI:
 
         return audio_data
 
-    def list_voices(self) -> dict[str, Any]:
+    def list_voices(self, model: str | None = None) -> dict[str, Any]:
         """
         List available TTS voices
+
+        Args:
+            model: Optional model ID to list voices for a specific model
 
         Returns:
             Dictionary with 'voices' list and 'total' count
@@ -306,7 +318,10 @@ class AudioAPI:
             >>> for voice in voices['voices']:
             >>>     print(f"{voice['id']}: {voice['name']} ({voice['language']})")
         """
-        return self.client._request("GET", "/v1/audio/voices")
+        params = {}
+        if model:
+            params["model"] = model
+        return self.client._request("GET", "/v1/audio/voices", params=params)
 
 
 __all__ = ["VocalSDK", "ModelsAPI", "AudioAPI"]

@@ -230,6 +230,7 @@ Translate audio to English text.
 Convert text to speech.
 
 **Parameters:**
+- `model` (required): TTS model to use (e.g., "hexgrad/Kokoro-82M", "coqui/XTTS-v2")
 - `input` (required): Text to synthesize
 - `voice` (optional): Voice ID to use
 - `speed` (optional): Speech speed multiplier (0.25-4.0, default: 1.0)
