@@ -1,22 +1,99 @@
-GNU AFFERO GENERAL PUBLIC LICENSE
-Version 3, 19 November 2007
+Server Side Public License (SSPL)
+Version 1, October 16, 2018
 
-Copyright (C) 2026 Vocal Project Contributors
+Copyright (C) 2026 Vocal Contributors
 
 This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
+it under the terms of the Server Side Public License, version 1,
+as published by MongoDB, Inc.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+Server Side Public License for more details.
 
 ---
 
-The full text of the GNU Affero General Public License version 3 can be found at:
-https://www.gnu.org/licenses/agpl-3.0.txt
+## Server Side Public License
+
+### Section 0: Definitions
+
+"This License" refers to Server Side Public License.
+
+"Copyright" also means copyright-like laws that apply to other kinds of works.
+
+"The Program" refers to any copyrightable work licensed under this License.
+
+"You" means an individual or a Legal Entity exercising permissions granted by this License.
+
+"Legal Entity" means the entity making a Contribution and all other entities that control, are controlled by, or are under common control with that entity.
+
+"Source Code" means the preferred form of the Program for making modifications to it.
+
+"Object Code" means any non-source form of the Program.
+
+"Service" means making the functionality of the Program or modified version available to third parties as a service, including, without limitation, offering the Program as a service on a hosted basis.
+
+### Section 1: License Grant
+
+Subject to the terms and conditions of this License, You are granted a worldwide, non-exclusive, no-charge, royalty-free, irrevocable copyright license to reproduce, prepare derivative works of, publicly display, publicly perform, sublicense, and distribute the Program and such derivative works in Source Code or Object Code form.
+
+### Section 2: SSPL Requirements
+
+If you make the functionality of the Program or a modified version available to third parties as a service, you must make the Service Source Code available via download to everyone at no charge, under the terms of this License, along with:
+
+1. A complete copy of the source code of your modified version of the Program
+2. A complete copy of the source code of all programs that you use to make the functionality of the Program available as a Service, including, without limitation, management software, user interfaces, application program interfaces, automation software, monitoring software, backup software, storage software and hosting software, all such that a user could run an instance of the service using the Service Source Code you make available.
+
+"Service Source Code" means the Corresponding Source for the Program or the modified version, and the Corresponding Source for all programs that you use to make the Program or modified version available as a service, including, without limitation, management software, user interfaces, application program interfaces, automation software, monitoring software, backup software, storage software and hosting software, all such that a user could run an instance of the service using the Service Source Code you make available.
+
+### Section 3: Limitations
+
+This License does not grant permission to use the trade names, trademarks, service marks, or product names of the Licensor, except as required for reasonable and customary use in describing the origin of the Program.
+
+### Section 4: Termination
+
+If you fail to comply with this License, then your rights under this License terminate automatically.
+
+### Section 5: Disclaimer of Warranty
+
+UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING, THE PROGRAM IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED INCLUDING, WITHOUT LIMITATION, ANY WARRANTIES OR CONDITIONS OF TITLE, NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+
+### Section 6: Limitation of Liability
+
+IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING WILL ANY COPYRIGHT HOLDER BE LIABLE TO YOU FOR DAMAGES, INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE USE OR INABILITY TO USE THE PROGRAM.
+
+---
+
+## What This Means
+
+**You CAN:**
+- Use Vocal for personal projects
+- Use Vocal for internal company tools
+- Modify and distribute Vocal
+- Create derivative works
+- Use Vocal for commercial applications that use the API
+
+**You CANNOT:**
+- Offer Vocal as a managed service (SaaS) to others without open-sourcing your entire infrastructure
+- Create a competing cloud service using Vocal without complying with Section 2
+
+**Examples:**
+
+✅ **Allowed:**
+- Running Vocal internally for your company's transcription needs
+- Building a mobile app that uses Vocal API running on your own servers
+- Modifying Vocal and using it in your product
+- Self-hosting for personal or business use
+
+❌ **Not Allowed (without open-sourcing your infrastructure):**
+- Offering "Transcription as a Service" using Vocal to external customers
+- Running Vocal on AWS/Azure/GCP and charging others to use it
+- Creating a competing cloud transcription service based on Vocal
+
+This license keeps Vocal truly open source while preventing exploitation by cloud providers.
+
+---
+
+For the complete legal text of SSPL v1, see:
+https://www.mongodb.com/licensing/server-side-public-license

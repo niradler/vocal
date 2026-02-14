@@ -4,7 +4,7 @@
 
 Vocal is an API-first speech AI platform with automatic OpenAPI spec generation, auto-generated SDK, and Ollama-style model management. Built with a generic registry pattern supporting multiple providers.
 
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![License: SSPL](https://img.shields.io/badge/License-SSPL-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
 ## 🚀 Quick Start (5 minutes)
@@ -357,7 +357,15 @@ curl http://localhost:8000/openapi.json -o packages/sdk/openapi.json
 
 ## License
 
-AGPL-3.0
+**Server Side Public License (SSPL) v1** - Like MongoDB and Redis
+
+Vocal is open source but protects against cloud provider exploitation:
+- ✅ Free for personal and commercial use
+- ✅ Free for self-hosting
+- ✅ Free to modify and distribute
+- ❌ Cannot offer as SaaS without open-sourcing your infrastructure
+
+See [LICENSE](LICENSE) for full details.
 
 ## Roadmap
 

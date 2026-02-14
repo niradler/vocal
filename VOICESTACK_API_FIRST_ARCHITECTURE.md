@@ -28,7 +28,7 @@ vocal/
 ├── pyproject.toml              # Root uv workspace config ⏳ TODO
 ├── uv.lock                     # uv lockfile ⏳ TODO
 ├── README.md                   ⏳ TODO
-├── LICENSE (AGPL-3.0)          ⏳ TODO
+├── LICENSE (SSPL-1.0)          ⏳ TODO
 │
 ├── packages/
 │   ├── api/                    # 🔥 FastAPI Server (Source of Truth)
