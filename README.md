@@ -1,95 +1,75 @@
 # Vocal
 
-**Generic Speech AI Platform (STT + TTS)**
+**Generic Speech AI Platform - Ollama for Voice Models**
 
-Vocal is an API-first speech AI platform with a generic model registry supporting multiple providers. Currently implements Speech-to-Text (STT) with plans for Text-to-Speech (TTS).
+Vocal is an API-first speech AI platform with automatic OpenAPI spec generation, auto-generated SDK, and Ollama-style model management. Built with a generic registry pattern supporting multiple providers.
 
 ## Features
 
-- **Generic Model Registry**: Support for multiple model providers (HuggingFace, local, custom)
-- **FastAPI Server**: RESTful API with automatic OpenAPI documentation
-- **faster-whisper Integration**: 4x faster than OpenAI Whisper with same accuracy
-- **Modular Architecture**: Clean separation between core, API, SDK, and CLI
-- **Type-Safe**: Full type hints with Pydantic validation
+- 🎯 **API-First Architecture**: FastAPI with auto-generated OpenAPI spec
+- 📖 **Interactive Docs**: Swagger UI at `/docs` endpoint
+- 📦 **Auto-Generated SDK**: Python SDK generated from OpenAPI spec
+- 🔄 **Ollama-Style**: Model registry with pull/list/delete commands
+- 🚀 **Fast Inference**: faster-whisper (4x faster than OpenAI Whisper)
+- 🌍 **99+ Languages**: Support for multilingual transcription
+- 🔌 **Extensible**: Generic provider pattern (HuggingFace, local, custom)
+- 🎤 **OpenAI Compatible**: `/v1/audio/transcriptions` endpoint
 
 ## Quick Start
 
 ### 1. Installation
 
 ```bash
-# Clone the repository
 git clone <repo-url>
 cd vocal
 
-# Create virtual environment and install dependencies
 uv venv
 uv sync
 uv add --editable packages/core
 uv add --editable packages/api
+uv add --editable packages/sdk
 ```
 
-### 2. Download a Model
+### 2. Start API Server
 
 ```bash
-# Download Whisper tiny model (fastest, good for testing)
-uv run python download_model.py
-
-# Or download a larger model for better accuracy
-# Edit download_model.py and change model_id to:
-# - openai/whisper-base
-# - openai/whisper-small
-# - openai/whisper-medium
-# - openai/whisper-large-v3
-```
-
-### 3. Start the API Server
-
-```bash
-uv run uvicorn vocal_api.main:app --reload --port 11435
+uv run uvicorn vocal_api.main:app --port 8000
 ```
 
 The API will be available at:
-- API: http://localhost:11435
-- Docs: http://localhost:11435/docs
-- Health: http://localhost:11435/health
+- **API**: http://localhost:8000
+- **Interactive Docs**: http://localhost:8000/docs 🎉
+- **OpenAPI Spec**: http://localhost:8000/openapi.json
+- **Health**: http://localhost:8000/health
 
-### 4. Transcribe Audio
-
-**Using curl:**
-
-```bash
-curl -X POST "http://localhost:11435/v1/audio/transcriptions" \
-  -F "file=@your_audio.mp3" \
-  -F "model=openai/whisper-tiny" \
-  -F "language=en"
-```
-
-**Using Python:**
+### 3. Use the SDK
 
 ```python
-import requests
+from vocal_sdk import VocalSDK
 
-url = "http://localhost:11435/v1/audio/transcriptions"
+# Initialize client
+client = VocalSDK(base_url="http://localhost:8000")
 
-with open("your_audio.mp3", "rb") as f:
-    files = {"file": ("audio.mp3", f, "audio/mpeg")}
-    data = {
-        "model": "openai/whisper-tiny",
-        "response_format": "json",
-    }
-    
-    response = requests.post(url, files=files, data=data)
-    result = response.json()
-    
-    print(f"Transcription: {result['text']}")
-    print(f"Language: {result['language']}")
-    print(f"Duration: {result['duration']}s")
+# List models (Ollama-style)
+models = client.models.list()
+for model in models['models']:
+    print(f"{model['id']}: {model['status']}")
+
+# Download model if needed (Ollama-style pull)
+client.models.download("Systran/faster-whisper-tiny")
+
+# Transcribe audio (OpenAI-compatible)
+result = client.audio.transcribe(
+    file="audio.mp3",
+    model="Systran/faster-whisper-tiny"
+)
+print(result['text'])
 ```
 
-**Using the test script:**
+Or use the example:
 
 ```bash
-uv run python test_api.py your_audio.mp3
+uv run python sdk_example.py Recording.m4a
 ```
 
 ## Architecture
@@ -121,13 +101,36 @@ vocal/
 
 ## API Endpoints
 
-### POST `/v1/audio/transcriptions`
+### Model Management (Ollama-style)
+
+#### `GET /v1/models`
+List all available models
+
+**Query params:**
+- `status`: Filter by status (available, downloading, not_downloaded)
+- `task`: Filter by task (stt, tts)
+
+#### `GET /v1/models/{model_id}`
+Get model information
+
+#### `POST /v1/models/{model_id}/download`
+Download a model (Ollama-style "pull")
+
+#### `GET /v1/models/{model_id}/download/status`
+Check download progress
+
+#### `DELETE /v1/models/{model_id}`
+Delete a downloaded model
+
+### Audio Transcription (OpenAI-compatible)
+
+#### `POST /v1/audio/transcriptions`
 
 Transcribe audio to text.
 
 **Parameters:**
 - `file` (required): Audio file (mp3, wav, m4a, etc.)
-- `model` (required): Model ID (e.g., "openai/whisper-tiny")
+- `model` (required): Model ID (e.g., "Systran/faster-whisper-tiny")
 - `language` (optional): 2-letter language code (e.g., "en", "es")
 - `response_format` (optional): "json" (default), "text", "srt", "vtt"
 - `temperature` (optional): Sampling temperature (0.0-1.0, default: 0.0)
@@ -149,26 +152,35 @@ Transcribe audio to text.
 }
 ```
 
-### POST `/v1/audio/translations`
+#### `POST /v1/audio/translations`
 
 Translate audio to English text.
 
-### GET `/health`
+### Health & Docs
 
-Health check endpoint.
+#### `GET /health`
+Health check endpoint
+
+#### `GET /docs`
+Interactive Swagger UI for API testing
+
+#### `GET /openapi.json`
+OpenAPI specification (auto-generated)
 
 ## Available Models
 
-| Model ID | Size | Parameters | VRAM | Speed |
-|----------|------|------------|------|-------|
-| `openai/whisper-tiny` | ~150MB | 39M | 1GB+ | Fastest |
-| `openai/whisper-base` | ~290MB | 74M | 1GB+ | Fast |
-| `openai/whisper-small` | ~967MB | 244M | 2GB+ | Good |
-| `openai/whisper-medium` | ~3GB | 769M | 5GB+ | Better |
-| `openai/whisper-large-v3` | ~3.1GB | 1.5B | 10GB+ | Best |
-| `openai/whisper-large-v3-turbo` | ~1.6GB | 809M | 6GB+ | Fast & Good |
+| Model ID | Size | Parameters | VRAM | Speed | Status |
+|----------|------|------------|------|-------|--------|
+| `Systran/faster-whisper-tiny` | ~75MB | 39M | 1GB+ | Fastest | CTranslate2 |
+| `Systran/faster-whisper-base` | ~145MB | 74M | 1GB+ | Fast | CTranslate2 |
+| `Systran/faster-whisper-small` | ~488MB | 244M | 2GB+ | Good | CTranslate2 |
+| `Systran/faster-whisper-medium` | ~1.5GB | 769M | 5GB+ | Better | CTranslate2 |
+| `Systran/faster-whisper-large-v3` | ~3.1GB | 1.5B | 10GB+ | Best | CTranslate2 |
+| `Systran/faster-distil-whisper-large-v3` | ~756MB | 809M | 6GB+ | Fast & Good | CTranslate2 |
 
 All models support 99+ languages including English, Spanish, French, German, Chinese, Japanese, Arabic, and more.
+
+**Note:** These use the CTranslate2-optimized models from Systran for faster-whisper, which are ~4x faster than the original OpenAI Whisper models.
 
 ## Development
 
@@ -204,24 +216,28 @@ uv run ruff check .
 ## Implementation Status
 
 - ✅ **Phase 0: Core Foundation**
-  - Generic model registry
-  - HuggingFace provider
-  - faster-whisper adapter
+  - Generic model registry with provider pattern
+  - HuggingFace provider with automatic downloads
+  - faster-whisper adapter (4x faster than OpenAI)
   - Model storage & caching
 
 - ✅ **Phase 1: API Layer**
-  - Pydantic models
-  - Transcription endpoint
-  - FastAPI app with CORS
-  - Health endpoints
+  - FastAPI with auto-generated OpenAPI spec
+  - Model management endpoints (Ollama-style)
+  - Transcription endpoints (OpenAI-compatible)
+  - Interactive Swagger UI at `/docs`
+  - Health & status endpoints
 
-- ⏳ **Phase 2: SDK Generation**
-  - Auto-generate from OpenAPI spec
-  - High-level client wrapper
+- ✅ **Phase 2: SDK**
+  - Auto-generated from OpenAPI spec
+  - Clean Python client interface
+  - Type-safe with Pydantic models
+  - Namespaced APIs (models, audio)
 
-- ⏳ **Phase 3: CLI**
+- ⏳ **Phase 3: CLI** (Coming soon)
   - `vocal run` - Transcribe audio
-  - `vocal models` - Manage models
+  - `vocal models list` - List models
+  - `vocal models pull` - Download model
   - `vocal serve` - Start API server
 
 ## Configuration
