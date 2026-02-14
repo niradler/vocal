@@ -1,0 +1,28 @@
+[project]
+name = "vocal"
+version = "0.1.0"
+description = "Generic Speech AI Platform (STT + TTS)"
+requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "AGPL-3.0" }
+dependencies = [
+    "vocal-core",
+]
+
+[tool.uv.workspace]
+members = [
+    "packages/core",
+    "packages/api",
+    "packages/sdk",
+    "packages/cli"
+]
+
+[tool.uv.sources]
+vocal-core = { workspace = true, editable = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.1.0",
+]

@@ -1,0 +1,15 @@
+[project]
+name = "vocal-core"
+version = "0.1.0"
+description = "Core model registry and adapters for Vocal"
+requires-python = ">=3.11"
+dependencies = [
+    "faster-whisper>=1.0.0",
+    "huggingface-hub>=0.20.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
