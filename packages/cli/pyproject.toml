@@ -1,6 +1,6 @@
 [project]
 name = "vocal-cli"
-version = "0.2.1"
+version = "0.2.3"
 description = "CLI tool for Vocal - Generic Speech AI Platform"
 requires-python = ">=3.11"
 dependencies = [

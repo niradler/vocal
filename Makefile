@@ -1,4 +1,4 @@
-.PHONY: help install test test-quick test-verbose lint format clean serve cli docs gpu-check
+.PHONY: help install test test-quick test-verbose lint format clean serve cli docs gpu-check bump-patch bump-minor bump-major
 
 # Default target
 help:
@@ -29,6 +29,11 @@ help:
 	@echo "Cleanup:"
 	@echo "  make clean         - Remove cache files and build artifacts"
 	@echo "  make clean-models  - Remove downloaded models"
+	@echo ""
+	@echo "Version Management:"
+	@echo "  make bump-patch    - Bump patch version (0.2.1 -> 0.2.2)"
+	@echo "  make bump-minor    - Bump minor version (0.2.1 -> 0.3.0)"
+	@echo "  make bump-major    - Bump major version (0.2.1 -> 1.0.0)"
 	@echo ""
 
 # Setup & Installation
@@ -116,6 +121,22 @@ clean-models:
 	@powershell -Command "$$null = Read-Host"
 	@powershell -Command "Remove-Item -Recurse -Force '$$env:USERPROFILE\.cache\vocal\models' -ErrorAction SilentlyContinue"
 	@echo "✓ Models cleaned"
+
+# Version Management
+bump-patch:
+	@echo "Bumping patch version..."
+	@uv run bump-my-version bump patch
+	@echo "✓ Version bumped!"
+
+bump-minor:
+	@echo "Bumping minor version..."
+	@uv run bump-my-version bump minor
+	@echo "✓ Version bumped!"
+
+bump-major:
+	@echo "Bumping major version..."
+	@uv run bump-my-version bump major
+	@echo "✓ Version bumped!"
 
 # Quick aliases
 t: test

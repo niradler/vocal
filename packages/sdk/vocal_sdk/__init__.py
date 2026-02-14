@@ -6,5 +6,5 @@ Auto-generated from OpenAPI specification.
 
 from .client import AudioAPI, ModelsAPI, VocalSDK
 
-__version__ = "0.2.1"
+__version__ = "0.2.3"
 __all__ = ["VocalSDK", "ModelsAPI", "AudioAPI"]
