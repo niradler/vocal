@@ -1,4 +1,3 @@
-from datetime import datetime
 from enum import Enum
 
 from pydantic import BaseModel, Field, HttpUrl
@@ -57,8 +56,14 @@ class ModelInfo(BaseModel):
     recommended_vram: str | None = Field(None, description="Recommended VRAM (e.g., '6GB+')")
     task: ModelTask = Field(description="Task type: 'stt' or 'tts'")
     local_path: str | None = Field(None, description="Local filesystem path if downloaded")
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    modified_at: str | None = Field(None, description="Last modified date on HuggingFace")
+    downloaded_at: str | None = Field(None, description="Date when downloaded locally")
+    author: str | None = Field(None, description="Model author/organization on HuggingFace")
+    tags: list[str] = Field(default_factory=list, description="HuggingFace tags")
+    downloads: int | None = Field(None, description="Total download count on HuggingFace")
+    likes: int | None = Field(None, description="Total likes on HuggingFace")
+    sha: str | None = Field(None, description="Git commit SHA on HuggingFace")
+    files: list[dict] | None = Field(None, description="List of model files")
 
     model_config = {
         "json_schema_extra": {

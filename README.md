@@ -81,6 +81,7 @@ make serve
 ### Start API Server
 
 The API will be available at:
+
 - **API**: http://localhost:8000
 - **Interactive Docs**: http://localhost:8000/docs 🎉
 - **OpenAPI Spec**: http://localhost:8000/openapi.json
@@ -155,6 +156,7 @@ uvx --from vocal-ai vocal models delete Systran/faster-whisper-tiny
 ### API Examples
 
 **Transcribe Audio:**
+
 ```bash
 curl -X POST "http://localhost:8000/v1/audio/transcriptions" \
   -F "file=@audio.mp3" \
@@ -162,6 +164,7 @@ curl -X POST "http://localhost:8000/v1/audio/transcriptions" \
 ```
 
 **Text-to-Speech:**
+
 ```bash
 # Default format is mp3
 curl -X POST "http://localhost:8000/v1/audio/speech" \
@@ -192,6 +195,7 @@ docker run -p 9000:8000 niradler/vocal-api
 ### Troubleshooting
 
 **Port already in use:**
+
 ```bash
 # Windows
 netstat -ano | findstr :8000
@@ -202,48 +206,13 @@ lsof -ti:8000 | xargs kill
 ```
 
 **GPU not detected:**
+
 ```bash
 # Check CUDA
 python -c "import torch; print(torch.cuda.is_available())"
 
 # Check device info
 curl http://localhost:8000/v1/system/device
-```
-
-## Architecture
-
-See [VOICESTACK_API_FIRST_ARCHITECTURE.md](VOICESTACK_API_FIRST_ARCHITECTURE.md) for detailed architecture documentation.
-
-**Key Principles:**
-- API-first design with auto-generated OpenAPI spec
-- Generic registry pattern for extensibility  
-- Ollama-style model management
-- OpenAI-compatible endpoints
-- Type-safe throughout with Pydantic
-
-```
-vocal/
-├── packages/
-│   ├── core/           # Model registry & adapters ✅
-│   │   └── vocal_core/
-│   │       ├── registry/      # Generic model registry
-│   │       │   ├── providers/ # HuggingFace, local, custom
-│   │       │   └── model_info.py
-│   │       └── adapters/      # STT/TTS adapters
-│   │           └── stt/       # faster-whisper implementation
-│   │
-│   ├── api/            # FastAPI server ✅
-│   │   └── vocal_api/
-│   │       ├── models/        # Pydantic schemas
-│   │       ├── routes/        # API endpoints
-│   │       ├── services/      # Business logic
-│   │       └── main.py        # FastAPI app
-│   │
-│   ├── sdk/            # Auto-generated Python SDK ⏳
-│   └── cli/            # CLI using SDK ⏳
-│
-├── pyproject.toml      # uv workspace config
-└── .gitignore
 ```
 
 ## Cross-Platform Support
@@ -263,22 +232,28 @@ Audio output is normalized through ffmpeg, supporting all formats (mp3, wav, opu
 ### Model Management (Ollama-style)
 
 #### `GET /v1/models`
+
 List all available models
 
 **Query params:**
+
 - `status`: Filter by status (available, downloading, not_downloaded)
 - `task`: Filter by task (stt, tts)
 
 #### `GET /v1/models/{model_id}`
+
 Get model information
 
 #### `POST /v1/models/{model_id}/download`
+
 Download a model (Ollama-style "pull")
 
 #### `GET /v1/models/{model_id}/download/status`
+
 Check download progress
 
 #### `DELETE /v1/models/{model_id}`
+
 Delete a downloaded model
 
 ### Audio Transcription (OpenAI-compatible)
@@ -288,6 +263,7 @@ Delete a downloaded model
 Transcribe audio to text.
 
 **Parameters:**
+
 - `file` (required): Audio file (mp3, wav, m4a, etc.)
 - `model` (required): Model ID (e.g., "Systran/faster-whisper-tiny")
 - `language` (optional): 2-letter language code (e.g., "en", "es")
@@ -295,6 +271,7 @@ Transcribe audio to text.
 - `temperature` (optional): Sampling temperature (0.0-1.0, default: 0.0)
 
 **Response:**
+
 ```json
 {
   "text": "Hello, how are you today?",
@@ -331,6 +308,7 @@ Convert text to speech.
 
 **Response:**
 Returns audio file in specified format with headers:
+
 - `X-Duration`: Audio duration in seconds
 - `X-Sample-Rate`: Audio sample rate
 
@@ -339,6 +317,7 @@ Returns audio file in specified format with headers:
 List available TTS voices.
 
 **Response:**
+
 ```json
 {
   "voices": [
@@ -356,24 +335,27 @@ List available TTS voices.
 ### Health & Docs
 
 #### `GET /health`
+
 Health check endpoint
 
 #### `GET /docs`
+
 Interactive Swagger UI for API testing
 
 #### `GET /openapi.json`
+
 OpenAPI specification (auto-generated)
 
 ## Available Models
 
-| Model ID | Size | Parameters | VRAM | Speed | Status |
-|----------|------|------------|------|-------|--------|
-| `Systran/faster-whisper-tiny` | ~75MB | 39M | 1GB+ | Fastest | CTranslate2 |
-| `Systran/faster-whisper-base` | ~145MB | 74M | 1GB+ | Fast | CTranslate2 |
-| `Systran/faster-whisper-small` | ~488MB | 244M | 2GB+ | Good | CTranslate2 |
-| `Systran/faster-whisper-medium` | ~1.5GB | 769M | 5GB+ | Better | CTranslate2 |
-| `Systran/faster-whisper-large-v3` | ~3.1GB | 1.5B | 10GB+ | Best | CTranslate2 |
-| `Systran/faster-distil-whisper-large-v3` | ~756MB | 809M | 6GB+ | Fast & Good | CTranslate2 |
+| Model ID                                 | Size   | Parameters | VRAM  | Speed       | Status      |
+| ---------------------------------------- | ------ | ---------- | ----- | ----------- | ----------- |
+| `Systran/faster-whisper-tiny`            | ~75MB  | 39M        | 1GB+  | Fastest     | CTranslate2 |
+| `Systran/faster-whisper-base`            | ~145MB | 74M        | 1GB+  | Fast        | CTranslate2 |
+| `Systran/faster-whisper-small`           | ~488MB | 244M       | 2GB+  | Good        | CTranslate2 |
+| `Systran/faster-whisper-medium`          | ~1.5GB | 769M       | 5GB+  | Better      | CTranslate2 |
+| `Systran/faster-whisper-large-v3`        | ~3.1GB | 1.5B       | 10GB+ | Best        | CTranslate2 |
+| `Systran/faster-distil-whisper-large-v3` | ~756MB | 809M       | 6GB+  | Fast & Good | CTranslate2 |
 
 All models support 99+ languages including English, Spanish, French, German, Chinese, Japanese, Arabic, and more.
 
@@ -386,8 +368,9 @@ Vocal automatically detects and optimizes for your hardware:
 ### GPU Acceleration
 
 When NVIDIA GPU is available:
+
 - **Automatic Detection**: GPU is detected and used automatically
-- **Optimal Compute Types**: 
+- **Optimal Compute Types**:
   - 8GB+ VRAM: `float16` (best quality)
   - 4-8GB VRAM: `int8_float16` (balanced)
   - <4GB VRAM: `int8` (most efficient)
@@ -397,6 +380,7 @@ When NVIDIA GPU is available:
 ### CPU Optimization
 
 When GPU is not available:
+
 - **Multi-threading**: Uses optimal CPU threads based on core count
 - **Quantization**: `int8` quantization for faster CPU inference
 - **VAD Filtering**: Voice Activity Detection for improved performance
@@ -415,24 +399,27 @@ print(info)
 ```
 
 **Example output:**
+
 ```json
 {
   "platform": "Windows",
   "cpu_count": 16,
   "cuda_available": true,
   "gpu_count": 1,
-  "gpu_devices": [{
-    "name": "NVIDIA GeForce RTX 4090",
-    "vram_gb": 24.0,
-    "compute_capability": "8.9"
-  }]
+  "gpu_devices": [
+    {
+      "name": "NVIDIA GeForce RTX 4090",
+      "vram_gb": 24.0,
+      "compute_capability": "8.9"
+    }
+  ]
 }
 ```
 
 ### Optimization Tips
 
 1. **GPU Usage**: Models automatically use GPU when available
-2. **Model Selection**: 
+2. **Model Selection**:
    - `tiny/base` models: Work well on CPU
    - `small/medium`: Best on GPU with 4GB+ VRAM
    - `large`: Requires GPU with 8GB+ VRAM
@@ -534,6 +521,7 @@ uv run python -m pytest tests/test_e2e.py -v
 **Current Status: 47/47 tests passing ✅**
 
 Test coverage includes:
+
 - API health and device information (GPU detection)
 - Model management (list, download, status, delete)
 - Audio transcription with real M4A and MP3 files
@@ -601,7 +589,6 @@ make l             # Alias for lint
 make f             # Alias for format
 ```
 
-
 ## Configuration
 
 ### Environment Variables
@@ -614,7 +601,15 @@ VERSION=0.1.0
 DEBUG=true
 CORS_ORIGINS=["*"]
 MAX_UPLOAD_SIZE=26214400
+
+# TTS Configuration
+VOCAL_TTS_SAMPLE_RATE=16000  # Output sample rate in Hz (default: 16000)
 ```
+
+**TTS Configuration:**
+- `VOCAL_TTS_SAMPLE_RATE`: Output sample rate for all TTS audio (default: `16000` Hz / 16 kHz)
+  - Common values: `8000` (phone quality), `16000` (wideband), `22050` (CD half), `44100` (CD quality), `48000` (professional)
+  - All TTS output will be resampled to this rate via ffmpeg
 
 ### Model Storage
 
@@ -640,10 +635,10 @@ git checkout -b feature/your-feature
 # Make changes, commit, and push
 ```
 
-
 ## Roadmap
 
 ### ✅ Completed (v0.3.x)
+
 - Core model registry with provider pattern
 - Model management API (list, download, delete)
 - SDK generation from OpenAPI spec
@@ -658,34 +653,41 @@ git checkout -b feature/your-feature
 ### 🎯 Next Release (v0.4.0)
 
 **1. Fix Model Metadata**
+
 - **Why:** Models currently show `0` size and missing info, looks unfinished
 - **How:** Fetch actual sizes from HuggingFace, populate all fields in registry
 
 **2. Model Show Command**
+
 - **Why:** Users need to inspect models before downloading (like `ollama show`)
 - **How:** `vocal models show whisper-tiny` displays params, size, languages, VRAM
 
 **3. Model Aliases**
+
 - **Why:** Typing full paths is tedious (`Systran/faster-whisper-tiny`)
 - **How:** Use short names: `vocal run audio.mp3 -m whisper-tiny`
 
 ### 🚀 Future (v0.5.0+)
 
 **4. Voice Registry System**
+
 - **Why:** Voices should be managed like models, not just system TTS
 - **How:** `vocal voices list/pull/show` with downloadable voice models
 
 **5. Voice Cloning (XTTS-v2)**
+
 - **Why:** Custom voices are the killer feature for TTS
 - **How:** `vocal voices clone my-voice --sample recording.wav`
 
 **6. Voice Preview**
+
 - **Why:** Users want to test voices before using them
 - **How:** `vocal voices sample kokoro-en "Hello world"` generates quick sample
 
 ## Credits
 
 Built with:
+
 - [FastAPI](https://fastapi.tiangolo.com/) - Web framework
 - [faster-whisper](https://github.com/guillaumekln/faster-whisper) - STT engine
 - [HuggingFace Hub](https://huggingface.co/) - Model distribution

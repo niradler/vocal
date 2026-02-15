@@ -19,6 +19,8 @@ from .base import TTSAdapter, TTSResult, Voice
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_OUTPUT_SAMPLE_RATE = int(os.getenv("VOCAL_TTS_SAMPLE_RATE", "16000"))
+
 try:
     from piper import PiperVoice
 
@@ -54,7 +56,7 @@ _FFMPEG_FORMAT_ARGS: dict[str, list[str]] = {
 }
 
 
-def _convert_audio(path: str, target_format: str = "mp3") -> tuple[bytes, int, float]:
+def _convert_audio(path: str, target_format: str = "mp3", target_sample_rate: int = DEFAULT_OUTPUT_SAMPLE_RATE) -> tuple[bytes, int, float]:
     """Convert any audio file to the requested format via ffmpeg.
 
     Accepts any audio input (WAV, AIFF, etc.) and converts to the target format.
@@ -62,18 +64,6 @@ def _convert_audio(path: str, target_format: str = "mp3") -> tuple[bytes, int, f
     """
     if target_format not in SUPPORTED_FORMATS:
         raise ValueError(f"Unsupported format '{target_format}'. Supported: {', '.join(sorted(SUPPORTED_FORMATS))}")
-
-    # Fast path: if target is WAV and source is already WAV, skip ffmpeg
-    if target_format == "wav":
-        with open(path, "rb") as f:
-            header = f.read(4)
-        if header == b"RIFF":
-            with open(path, "rb") as f:
-                audio_data = f.read()
-            with wave.open(path, "rb") as wf:
-                sample_rate = wf.getframerate()
-                duration = wf.getnframes() / sample_rate
-            return audio_data, sample_rate, duration
 
     # Probe duration and sample rate from source
     try:
@@ -85,21 +75,19 @@ def _convert_audio(path: str, target_format: str = "mp3") -> tuple[bytes, int, f
         )
         streams = json.loads(probe.stdout).get("streams", [{}])
         audio_stream = next((s for s in streams if s.get("codec_type") == "audio"), streams[0] if streams else {})
-        sample_rate = int(audio_stream.get("sample_rate", 22050))
         duration = float(audio_stream.get("duration", 0))
     except (FileNotFoundError, Exception) as e:
         logger.warning(f"ffprobe failed: {e}, using defaults")
-        sample_rate = 22050
         duration = 0.0
 
-    # Convert to target format
+    # Convert to target format with resampling
     ext = target_format if target_format != "pcm" else "raw"
     out_path = path + f".converted.{ext}"
     fmt_args = _FFMPEG_FORMAT_ARGS[target_format]
 
     try:
         subprocess.run(
-            ["ffmpeg", "-y", "-i", path] + fmt_args + [out_path],
+            ["ffmpeg", "-y", "-i", path, "-ar", str(target_sample_rate)] + fmt_args + [out_path],
             check=True,
             capture_output=True,
             timeout=60,
@@ -113,11 +101,13 @@ def _convert_audio(path: str, target_format: str = "mp3") -> tuple[bytes, int, f
         audio_data = f.read()
     os.unlink(out_path)
 
-    # Estimate duration from output size for PCM if probe failed
-    if duration == 0.0 and target_format == "pcm":
-        duration = len(audio_data) / (sample_rate * 2)  # 16-bit mono
+    # Recalculate duration based on resampled rate
+    if duration > 0:
+        duration = duration
+    elif target_format == "pcm":
+        duration = len(audio_data) / (target_sample_rate * 2)
 
-    return audio_data, sample_rate, duration
+    return audio_data, target_sample_rate, duration
 
 
 class PiperTTSAdapter(TTSAdapter):
