@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field, field_validator
-from typing import Optional, Literal
 from enum import Enum
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class TranscriptionFormat(str, Enum):
@@ -18,12 +19,12 @@ class TranscriptionRequest(BaseModel):
         description="Model ID to use for transcription",
         examples=["openai/whisper-large-v3", "openai/whisper-tiny"]
     )
-    language: Optional[str] = Field(
+    language: str | None = Field(
         None,
         description="Language code (ISO 639-1). Auto-detect if not provided.",
         examples=["en", "es", "fr"]
     )
-    prompt: Optional[str] = Field(
+    prompt: str | None = Field(
         None,
         description="Optional text to guide the model's style",
         max_length=224
@@ -42,10 +43,10 @@ class TranscriptionRequest(BaseModel):
         default_factory=lambda: ["segment"],
         description="Timestamp granularity"
     )
-    
+
     @field_validator("language")
     @classmethod
-    def validate_language(cls, v: Optional[str]) -> Optional[str]:
+    def validate_language(cls, v: str | None) -> str | None:
         if v and len(v) != 2:
             raise ValueError("Language must be 2-letter ISO 639-1 code")
         return v
@@ -57,11 +58,11 @@ class TranscriptionSegment(BaseModel):
     start: float = Field(description="Start time in seconds")
     end: float = Field(description="End time in seconds")
     text: str = Field(description="Transcribed text")
-    tokens: Optional[list[int]] = None
-    temperature: Optional[float] = None
-    avg_logprob: Optional[float] = None
-    compression_ratio: Optional[float] = None
-    no_speech_prob: Optional[float] = None
+    tokens: list[int] | None = None
+    temperature: float | None = None
+    avg_logprob: float | None = None
+    compression_ratio: float | None = None
+    no_speech_prob: float | None = None
 
 
 class TranscriptionWord(BaseModel):
@@ -69,7 +70,7 @@ class TranscriptionWord(BaseModel):
     word: str
     start: float
     end: float
-    probability: Optional[float] = None
+    probability: float | None = None
 
 
 class TranscriptionResponse(BaseModel):
@@ -77,9 +78,9 @@ class TranscriptionResponse(BaseModel):
     text: str = Field(description="Full transcribed text")
     language: str = Field(description="Detected or specified language")
     duration: float = Field(description="Audio duration in seconds")
-    segments: Optional[list[TranscriptionSegment]] = None
-    words: Optional[list[TranscriptionWord]] = None
-    
+    segments: list[TranscriptionSegment] | None = None
+    words: list[TranscriptionWord] | None = None
+
     model_config = {
         "json_schema_extra": {
             "example": {

@@ -1,9 +1,14 @@
+import asyncio
 import json
 import logging
 import os
+import platform
 import subprocess
 import tempfile
+import threading
+import time
 import wave
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import aiofiles
@@ -76,12 +81,14 @@ def _convert_audio(path: str, target_format: str = "mp3") -> tuple[bytes, int, f
             ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", path],
             check=True,
             capture_output=True,
+            timeout=5,
         )
         streams = json.loads(probe.stdout).get("streams", [{}])
         audio_stream = next((s for s in streams if s.get("codec_type") == "audio"), streams[0] if streams else {})
         sample_rate = int(audio_stream.get("sample_rate", 22050))
         duration = float(audio_stream.get("duration", 0))
-    except (FileNotFoundError, Exception):
+    except (FileNotFoundError, Exception) as e:
+        logger.warning(f"ffprobe failed: {e}, using defaults")
         sample_rate = 22050
         duration = 0.0
 
@@ -89,12 +96,16 @@ def _convert_audio(path: str, target_format: str = "mp3") -> tuple[bytes, int, f
     ext = target_format if target_format != "pcm" else "raw"
     out_path = path + f".converted.{ext}"
     fmt_args = _FFMPEG_FORMAT_ARGS[target_format]
+
     try:
         subprocess.run(
             ["ffmpeg", "-y", "-i", path] + fmt_args + [out_path],
             check=True,
             capture_output=True,
+            timeout=60,
         )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("ffmpeg conversion timed out after 60s")
     except FileNotFoundError:
         raise RuntimeError("ffmpeg is required for audio format conversion. Install ffmpeg: brew install ffmpeg (macOS), apt install ffmpeg (Linux), choco install ffmpeg (Windows)")
 
@@ -356,8 +367,27 @@ class SimpleTTSAdapter(TTSAdapter):
             temp_path = f.name
 
         try:
-            self._synthesize_to_file(text, temp_path, voice=voice, speed=speed)
-            audio_data, sample_rate, duration = _convert_audio(temp_path, output_format)
+            # Run blocking TTS in thread pool to avoid blocking event loop
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                await loop.run_in_executor(
+                    executor,
+                    self._synthesize_to_file,
+                    text,
+                    temp_path,
+                    voice,
+                    speed,
+                )
+
+            # Run blocking ffmpeg conversion in thread pool
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                audio_data, sample_rate, duration = await loop.run_in_executor(
+                    executor,
+                    _convert_audio,
+                    temp_path,
+                    output_format,
+                )
+
             return TTSResult(audio_data=audio_data, sample_rate=sample_rate, duration=duration, format=output_format)
         finally:
             if os.path.exists(temp_path):
@@ -365,8 +395,6 @@ class SimpleTTSAdapter(TTSAdapter):
 
     def _synthesize_to_file(self, text: str, path: str, voice: str | None = None, speed: float = 1.0) -> None:
         """Synthesize text to file using the best available system TTS."""
-        import platform
-
         system = platform.system()
 
         if system == "Darwin":
@@ -383,7 +411,7 @@ class SimpleTTSAdapter(TTSAdapter):
             cmd += ["-v", voice]
         rate = int(200 * speed)
         cmd += ["-r", str(rate), "-o", path, "--data-format=LEI16@22050", text]
-        subprocess.run(cmd, check=True, capture_output=True)
+        subprocess.run(cmd, check=True, capture_output=True, timeout=20)
 
     def _say_linux(self, text: str, path: str, voice: str | None = None, speed: float = 1.0) -> None:
         """Use espeak/espeak-ng on Linux."""
@@ -394,7 +422,7 @@ class SimpleTTSAdapter(TTSAdapter):
                 if voice:
                     cmd += ["-v", voice]
                 cmd.append(text)
-                subprocess.run(cmd, check=True, capture_output=True)
+                subprocess.run(cmd, check=True, capture_output=True, timeout=20)
                 return
             except FileNotFoundError:
                 continue
@@ -414,8 +442,27 @@ class SimpleTTSAdapter(TTSAdapter):
 
         rate = self._engine.getProperty("rate")
         self._engine.setProperty("rate", int(rate * speed))
+
         self._engine.save_to_file(text, path)
-        self._engine.runAndWait()
+
+        # Run with timeout to prevent hanging (Windows SAPI5 can hang)
+        def run_engine():
+            try:
+                self._engine.runAndWait()
+            except Exception as e:
+                logger.warning(f"pyttsx3: Engine error: {e}")
+
+        thread = threading.Thread(target=run_engine, daemon=True)
+        thread.start()
+        thread.join(timeout=10.0)
+
+        # Give it a moment to finalize file writes
+        if thread.is_alive():
+            logger.warning("pyttsx3: Engine timeout after 10s, continuing with partial output")
+            time.sleep(0.5)
+
+        if not os.path.exists(path) or os.path.getsize(path) == 0:
+            raise RuntimeError(f"pyttsx3 failed to create audio file at {path}")
 
     async def get_voices(self) -> list[Voice]:
         if not self._engine:
