@@ -1,4 +1,4 @@
 from .base import TTSAdapter, TTSResult, Voice
-from .piper import PiperTTSAdapter, SimpleTTSAdapter
+from .piper import SUPPORTED_FORMATS, PiperTTSAdapter, SimpleTTSAdapter
 
-__all__ = ["TTSAdapter", "TTSResult", "Voice", "SimpleTTSAdapter", "PiperTTSAdapter"]
+__all__ = ["TTSAdapter", "TTSResult", "Voice", "SimpleTTSAdapter", "PiperTTSAdapter", "SUPPORTED_FORMATS"]

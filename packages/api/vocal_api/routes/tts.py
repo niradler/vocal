@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
@@ -5,6 +7,18 @@ from ..dependencies import get_tts_service
 from ..services.tts_service import TTSService
 
 router = APIRouter(prefix="/v1/audio", tags=["audio"])
+
+AudioFormat = Literal["mp3", "opus", "aac", "flac", "wav", "pcm"]
+
+# Content-Type for each supported format
+_MEDIA_TYPES: dict[str, str] = {
+    "mp3": "audio/mpeg",
+    "opus": "audio/opus",
+    "aac": "audio/aac",
+    "flac": "audio/flac",
+    "wav": "audio/wav",
+    "pcm": "audio/pcm",
+}
 
 
 class TTSRequest(BaseModel):
@@ -14,7 +28,7 @@ class TTSRequest(BaseModel):
     input: str = Field(..., description="The text to synthesize")
     voice: str | None = Field(None, description="Voice ID to use")
     speed: float = Field(1.0, ge=0.25, le=4.0, description="Speech speed multiplier")
-    response_format: str = Field("wav", description="Audio format (currently only 'wav' supported)")
+    response_format: AudioFormat = Field("mp3", description="Audio format: mp3, opus, aac, flac, wav, pcm")
 
 
 class VoiceInfo(BaseModel):
@@ -36,7 +50,7 @@ class VoicesResponse(BaseModel):
 @router.post(
     "/speech",
     response_class=Response,
-    responses={200: {"content": {"audio/wav": {}}, "description": "Audio file in WAV format"}},
+    responses={200: {"content": {"audio/mpeg": {}}, "description": "Audio file in the requested format"}},
 )
 async def text_to_speech(request: TTSRequest, service: TTSService = Depends(get_tts_service)):
     """
@@ -48,7 +62,7 @@ async def text_to_speech(request: TTSRequest, service: TTSService = Depends(get_
     - **input**: The text to convert to speech
     - **voice**: Optional voice ID (use /v1/audio/voices to list available voices)
     - **speed**: Speech speed multiplier (0.25 to 4.0, default: 1.0)
-    - **response_format**: Audio format (currently only 'wav' supported)
+    - **response_format**: Audio format (mp3, opus, aac, flac, wav, pcm)
     """
     try:
         result = await service.synthesize(
@@ -59,11 +73,15 @@ async def text_to_speech(request: TTSRequest, service: TTSService = Depends(get_
             output_format=request.response_format,
         )
 
+        fmt = result.format
+        media_type = _MEDIA_TYPES.get(fmt, f"audio/{fmt}")
+        ext = fmt if fmt != "pcm" else "raw"
+
         return Response(
             content=result.audio_data,
-            media_type=f"audio/{result.format}",
+            media_type=media_type,
             headers={
-                "Content-Disposition": f"attachment; filename=speech.{result.format}",
+                "Content-Disposition": f"attachment; filename=speech.{ext}",
                 "X-Duration": str(result.duration),
                 "X-Sample-Rate": str(result.sample_rate),
             },

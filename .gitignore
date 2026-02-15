@@ -55,12 +55,15 @@ htmlcov/
 *.pt
 *.safetensors
 
-# Audio files (test data)
+# Audio files (generated)
 *.mp3
 *.wav
 *.m4a
 *.ogg
 *.flac
+
+# But keep test assets
+!test_assets/audio/**
 
 # Logs
 *.log
