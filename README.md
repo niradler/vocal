@@ -42,6 +42,20 @@ uvx --from vocal-ai vocal run your_audio.mp3
 - 💻 **Cross-Platform**: Full support for Windows, macOS, and Linux
 - ✅ **Production Ready**: 47/47 tests passing with real audio assets
 
+## Prerequisites
+
+- **Python 3.10+**
+- **ffmpeg** — required for audio format conversion (mp3, opus, aac, flac, pcm). WAV output works without it.
+
+  ```bash
+  # macOS
+  brew install ffmpeg
+  # Ubuntu / Debian
+  sudo apt install ffmpeg
+  # Windows
+  choco install ffmpeg
+  ```
+
 ## Installation & Usage
 
 ### Quick Start (Recommended)
