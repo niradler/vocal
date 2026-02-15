@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "generated_at": "2026-02-15T23:37:12Z",
+  "generated_at": "2026-02-15T23:56:21Z",
   "models": [
     {
       "id": "Systran/faster-whisper-tiny",
@@ -1677,6 +1677,356 @@
       "downloads": 25618,
       "likes": 162,
       "sha": "f46687f7e41512228ae953af24a11b2640ea0f22"
+    },
+    {
+      "id": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+      "name": "Qwen3 Tts 12Hz 0.6B Base",
+      "alias": "qwen3-tts-0.6b",
+      "provider": "huggingface",
+      "task": "tts",
+      "backend": "onnx",
+      "parameters": "915M",
+      "size": 2516106051,
+      "size_readable": "2.3 GB",
+      "languages": [
+        "zh",
+        "en",
+        "ja",
+        "ko",
+        "de",
+        "fr",
+        "ru",
+        "pt",
+        "es",
+        "it"
+      ],
+      "recommended_vram": "8GB+",
+      "source_url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+      "description": "Text To Speech model",
+      "actual_parameter_count": 914643008,
+      "license": "apache-2.0",
+      "modified_at": "2026-01-29 08:01:19+00:00",
+      "files": [
+        {
+          "filename": ".gitattributes",
+          "size": 1519
+        },
+        {
+          "filename": "README.md",
+          "size": 3640
+        },
+        {
+          "filename": "config.json",
+          "size": 4494
+        },
+        {
+          "filename": "generation_config.json",
+          "size": 245
+        },
+        {
+          "filename": "merges.txt",
+          "size": 1671839
+        },
+        {
+          "filename": "model.safetensors",
+          "size": 1829344272
+        },
+        {
+          "filename": "preprocessor_config.json",
+          "size": 127
+        },
+        {
+          "filename": "speech_tokenizer/config.json",
+          "size": 2336
+        },
+        {
+          "filename": "speech_tokenizer/configuration.json",
+          "size": 76
+        },
+        {
+          "filename": "speech_tokenizer/model.safetensors",
+          "size": 682293092
+        }
+      ],
+      "author": "Qwen",
+      "tags": [
+        "safetensors",
+        "qwen3_tts",
+        "audio",
+        "tts",
+        "voice-clone",
+        "text-to-speech",
+        "zh",
+        "en",
+        "ja",
+        "ko",
+        "de",
+        "fr",
+        "ru",
+        "pt",
+        "es",
+        "it",
+        "arxiv:2601.15621",
+        "license:apache-2.0",
+        "region:us"
+      ],
+      "downloads": 209809,
+      "likes": 169,
+      "sha": "5d83992436eae1d760afd27aff78a71d676296fc"
+    },
+    {
+      "id": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+      "name": "Qwen3 Tts 12Hz 1.7B Base",
+      "alias": "qwen3-tts-1.7b",
+      "provider": "huggingface",
+      "task": "tts",
+      "backend": "onnx",
+      "parameters": "1.9B",
+      "size": 4544229700,
+      "size_readable": "4.2 GB",
+      "languages": [
+        "zh",
+        "en",
+        "ja",
+        "ko",
+        "de",
+        "fr",
+        "ru",
+        "pt",
+        "es",
+        "it"
+      ],
+      "recommended_vram": "8GB+",
+      "source_url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+      "actual_parameter_count": 1928677440,
+      "license": "apache-2.0",
+      "modified_at": "2026-01-23 05:25:33+00:00",
+      "files": [
+        {
+          "filename": ".gitattributes",
+          "size": 1519
+        },
+        {
+          "filename": "README.md",
+          "size": 57817
+        },
+        {
+          "filename": "config.json",
+          "size": 4494
+        },
+        {
+          "filename": "generation_config.json",
+          "size": 245
+        },
+        {
+          "filename": "merges.txt",
+          "size": 1671839
+        },
+        {
+          "filename": "model.safetensors",
+          "size": 3857413744
+        },
+        {
+          "filename": "preprocessor_config.json",
+          "size": 127
+        },
+        {
+          "filename": "speech_tokenizer/config.json",
+          "size": 2336
+        },
+        {
+          "filename": "speech_tokenizer/configuration.json",
+          "size": 76
+        },
+        {
+          "filename": "speech_tokenizer/model.safetensors",
+          "size": 682293092
+        }
+      ],
+      "author": "Qwen",
+      "tags": [
+        "safetensors",
+        "qwen3_tts",
+        "arxiv:2601.15621",
+        "license:apache-2.0",
+        "region:us"
+      ],
+      "downloads": 754392,
+      "likes": 308,
+      "sha": "fd4b254389122332181a7c3db7f27e918eec64e3"
+    },
+    {
+      "id": "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+      "name": "Qwen3 Tts 12Hz 0.6B Customvoice",
+      "alias": "qwen3-tts-0.6b-custom",
+      "provider": "huggingface",
+      "task": "tts",
+      "backend": "onnx",
+      "parameters": "906M",
+      "size": 2498388392,
+      "size_readable": "2.3 GB",
+      "languages": [
+        "zh",
+        "en",
+        "ja",
+        "ko",
+        "de",
+        "fr",
+        "ru",
+        "pt",
+        "es",
+        "it"
+      ],
+      "recommended_vram": "8GB+",
+      "source_url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+      "description": "Text To Speech model",
+      "actual_parameter_count": 905788672,
+      "license": "apache-2.0",
+      "modified_at": "2026-01-29 08:01:51+00:00",
+      "files": [
+        {
+          "filename": ".gitattributes",
+          "size": 1519
+        },
+        {
+          "filename": "README.md",
+          "size": 3263
+        },
+        {
+          "filename": "config.json",
+          "size": 4908
+        },
+        {
+          "filename": "generation_config.json",
+          "size": 245
+        },
+        {
+          "filename": "merges.txt",
+          "size": 1671839
+        },
+        {
+          "filename": "model.safetensors",
+          "size": 1811626576
+        },
+        {
+          "filename": "preprocessor_config.json",
+          "size": 127
+        },
+        {
+          "filename": "speech_tokenizer/config.json",
+          "size": 2336
+        },
+        {
+          "filename": "speech_tokenizer/configuration.json",
+          "size": 76
+        },
+        {
+          "filename": "speech_tokenizer/model.safetensors",
+          "size": 682293092
+        }
+      ],
+      "author": "Qwen",
+      "tags": [
+        "safetensors",
+        "qwen3_tts",
+        "tts",
+        "qwen",
+        "audio",
+        "text-to-speech",
+        "zh",
+        "en",
+        "ja",
+        "ko",
+        "de",
+        "fr",
+        "ru",
+        "pt",
+        "es",
+        "it",
+        "arxiv:2601.15621",
+        "license:apache-2.0",
+        "region:us"
+      ],
+      "downloads": 178829,
+      "likes": 103,
+      "sha": "85e237c12c027371202489a0ec509ded67b5e4b5"
+    },
+    {
+      "id": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+      "name": "Qwen3 Tts 12Hz 1.7B Customvoice",
+      "alias": "qwen3-tts-1.7b-custom",
+      "provider": "huggingface",
+      "task": "tts",
+      "backend": "onnx",
+      "parameters": "1.9B",
+      "size": 4520218951,
+      "size_readable": "4.2 GB",
+      "languages": [
+        "en",
+        "zh",
+        "ja",
+        "ko"
+      ],
+      "recommended_vram": "8GB+",
+      "source_url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+      "description": "Text To Speech model",
+      "actual_parameter_count": 1916676352,
+      "license": "apache-2.0",
+      "modified_at": "2026-01-29 08:00:54+00:00",
+      "files": [
+        {
+          "filename": ".gitattributes",
+          "size": 1519
+        },
+        {
+          "filename": "README.md",
+          "size": 57846
+        },
+        {
+          "filename": "config.json",
+          "size": 4908
+        },
+        {
+          "filename": "generation_config.json",
+          "size": 245
+        },
+        {
+          "filename": "merges.txt",
+          "size": 1671839
+        },
+        {
+          "filename": "model.safetensors",
+          "size": 3833402552
+        },
+        {
+          "filename": "preprocessor_config.json",
+          "size": 127
+        },
+        {
+          "filename": "speech_tokenizer/config.json",
+          "size": 2336
+        },
+        {
+          "filename": "speech_tokenizer/configuration.json",
+          "size": 76
+        },
+        {
+          "filename": "speech_tokenizer/model.safetensors",
+          "size": 682293092
+        }
+      ],
+      "author": "Qwen",
+      "tags": [
+        "safetensors",
+        "qwen3_tts",
+        "text-to-speech",
+        "arxiv:2601.15621",
+        "license:apache-2.0",
+        "region:us"
+      ],
+      "downloads": 628944,
+      "likes": 947,
+      "sha": "0c0e3051f131929182e2c023b9537f8b1c68adfe"
     },
     {
       "id": "fishaudio/fish-speech-1.5",

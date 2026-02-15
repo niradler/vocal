@@ -32,6 +32,10 @@ class HuggingFaceProvider(BaseProvider):
     KNOWN_TTS_MODELS = {
         "hexgrad/Kokoro-82M": "kokoro",
         "onnx-community/Kokoro-82M-ONNX": "kokoro-onnx",
+        "Qwen/Qwen3-TTS-12Hz-0.6B-Base": "qwen3-tts-0.6b",
+        "Qwen/Qwen3-TTS-12Hz-1.7B-Base": "qwen3-tts-1.7b",
+        "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice": "qwen3-tts-0.6b-custom",
+        "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice": "qwen3-tts-1.7b-custom",
         "fishaudio/fish-speech-1.5": "chatterbox",
         "coqui/XTTS-v2": "xtts-v2",
         "myshell-ai/MeloTTS-English": "melotts-en",
