@@ -50,7 +50,7 @@ class TTSService:
         text: str,
         voice: str | None = None,
         speed: float = 1.0,
-        output_format: str = "wav",
+        output_format: str = "mp3",
     ) -> TTSResult:
         """
         Synthesize text to speech using specified model

@@ -1,19 +1,19 @@
+from .model import (
+    ModelBackend,
+    ModelDownloadProgress,
+    ModelDownloadRequest,
+    ModelInfo,
+    ModelListResponse,
+    ModelProvider,
+    ModelStatus,
+    ModelTask,
+)
 from .transcription import (
     TranscriptionFormat,
     TranscriptionRequest,
     TranscriptionResponse,
     TranscriptionSegment,
     TranscriptionWord,
-)
-from .model import (
-    ModelInfo,
-    ModelListResponse,
-    ModelDownloadRequest,
-    ModelDownloadProgress,
-    ModelStatus,
-    ModelBackend,
-    ModelProvider,
-    ModelTask,
 )
 
 __all__ = [

@@ -33,7 +33,7 @@ class TTSAdapter(BaseAdapter):
         voice: str | None = None,
         speed: float = 1.0,
         pitch: float = 1.0,
-        output_format: str = "wav",
+        output_format: str = "mp3",
         **kwargs,
     ) -> TTSResult:
         """
@@ -44,7 +44,7 @@ class TTSAdapter(BaseAdapter):
             voice: Voice ID to use (None for default)
             speed: Speech speed multiplier (1.0 = normal)
             pitch: Voice pitch multiplier (1.0 = normal)
-            output_format: Output audio format (wav, mp3, etc.)
+            output_format: Output audio format (mp3, opus, aac, flac, wav, pcm)
             **kwargs: Additional backend-specific parameters
 
         Returns:

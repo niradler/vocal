@@ -23,8 +23,20 @@ from vocal_sdk import VocalSDK
 
 @pytest.fixture(scope="session")
 def api_server():
-    """Start API server for E2E testing"""
+    """Start API server for E2E testing, or reuse an already-running one."""
     import sys
+
+    base_url = "http://localhost:8000"
+
+    # Check if a server is already running
+    try:
+        response = requests.get(f"{base_url}/health", timeout=2)
+        if response.status_code == 200:
+            print(f"\nReusing existing API server on {base_url}")
+            yield base_url
+            return
+    except requests.exceptions.RequestException:
+        pass
 
     server_process = subprocess.Popen(
         [
@@ -33,7 +45,7 @@ def api_server():
             "uvicorn",
             "vocal_api.main:app",
             "--port",
-            "8001",
+            "8000",
             "--log-level",
             "error",
         ],
@@ -41,7 +53,6 @@ def api_server():
         stderr=subprocess.PIPE,
     )
 
-    base_url = "http://localhost:8001"
     max_retries = 60
     retry_delay = 0.5
 
@@ -91,7 +102,7 @@ def test_assets():
     expected_dir = Path("test_assets/expected")
 
     if not assets_dir.exists():
-        raise FileNotFoundError(f"Test assets not found at {assets_dir}")
+        pytest.skip(f"Test assets not found at {assets_dir} (download them to run STT tests)")
 
     return {
         "audio_dir": assets_dir,
@@ -339,7 +350,8 @@ class TestTextToSpeech:
 
         assert isinstance(audio_data, bytes), "Audio should be bytes"
         assert len(audio_data) > 0, "Audio should not be empty"
-        assert audio_data[:4] == b"RIFF", "Should be WAV format (RIFF header)"
+        # Default format is MP3 (ID3 tag or 0xFF sync word)
+        assert audio_data[:3] == b"ID3" or audio_data[0] == 0xFF, "Should be MP3 format"
 
         print(f"\n[OK] Synthesized '{text}'")
         print(f"  Size: {len(audio_data)} bytes")
@@ -390,7 +402,7 @@ class TestTextToSpeech:
     def test_synthesize_to_file(self, client, tmp_path):
         """Test TTS with file output"""
         text = "Save to file test."
-        output_file = tmp_path / "test_output.wav"
+        output_file = tmp_path / "test_output.mp3"
 
         try:
             audio_data = client.audio.text_to_speech(text=text, output_file=output_file)
@@ -406,6 +418,73 @@ class TestTextToSpeech:
                 pytest.skip("TTS save to file timed out (known issue with system TTS)")
             raise
 
+    @pytest.mark.parametrize(
+        "fmt,check",
+        [
+            ("mp3", lambda d: d[:3] == b"ID3" or d[0] == 0xFF),
+            ("wav", lambda d: d[:4] == b"RIFF"),
+            ("flac", lambda d: d[:4] == b"fLaC"),
+            ("opus", lambda d: d[:4] == b"OggS"),
+            ("aac", lambda d: len(d) > 0),
+            ("pcm", lambda d: len(d) > 0),
+        ],
+    )
+    def test_synthesize_formats(self, client, fmt, check):
+        """Test TTS output in each supported format"""
+        text = "Format test."
+
+        try:
+            audio_data = client.audio.text_to_speech(text=text, response_format=fmt)
+
+            assert isinstance(audio_data, bytes), "Audio should be bytes"
+            assert len(audio_data) > 0, f"{fmt} audio should not be empty"
+            assert check(audio_data), f"Invalid {fmt} header"
+
+            print(f"\n[OK] Format {fmt}: {len(audio_data)} bytes")
+        except Exception as e:
+            if "timeout" in str(e).lower():
+                pytest.skip(f"TTS {fmt} format test timed out")
+            raise
+
+    def test_synthesize_mp3_smaller_than_wav(self, client):
+        """Test that MP3 is smaller than WAV (compression works)"""
+        text = "Compression test for audio."
+
+        mp3_data = client.audio.text_to_speech(text=text, response_format="mp3")
+        wav_data = client.audio.text_to_speech(text=text, response_format="wav")
+
+        assert len(mp3_data) < len(wav_data), "MP3 should be smaller than WAV"
+
+        ratio = len(wav_data) / len(mp3_data)
+        print(f"\n[OK] MP3 ({len(mp3_data)}B) vs WAV ({len(wav_data)}B) - {ratio:.1f}x compression")
+
+    def test_synthesize_with_voice(self, client):
+        """Test TTS with a specific voice"""
+        text = "Voice selection test."
+
+        voices = client.audio.list_voices()
+        assert voices["total"] > 0, "Should have at least one voice"
+
+        voice_id = voices["voices"][0]["name"]
+        audio_data = client.audio.text_to_speech(text=text, voice=voice_id)
+
+        assert isinstance(audio_data, bytes), "Audio should be bytes"
+        assert len(audio_data) > 0, "Audio should not be empty"
+
+        print(f"\n[OK] Synthesized with voice '{voice_id}': {len(audio_data)} bytes")
+
+    def test_synthesize_invalid_format_rejected(self, client):
+        """Test that invalid format is rejected by API"""
+        import requests as req
+
+        response = req.post(
+            "http://localhost:8000/v1/audio/speech",
+            json={"model": "pyttsx3", "input": "test", "response_format": "wma"},
+        )
+        assert response.status_code == 422, "Invalid format should return 422"
+
+        print("\n[OK] Invalid format 'wma' correctly rejected with 422")
+
     def test_list_available_voices(self, client):
         """Test listing TTS voices"""
         try:
@@ -416,15 +495,19 @@ class TestTextToSpeech:
             assert "total" in result, "Should have total count"
             assert isinstance(result["voices"], list), "Voices should be a list"
             assert len(result["voices"]) == result["total"], "Count should match"
+            assert result["total"] > 0, "Should have at least one voice"
 
-            print(f"\n[OK] Found {result['total']} voice(s)")
-
+            # Verify voice structure
             for voice in result["voices"]:
                 assert "id" in voice, "Voice should have ID"
                 assert "name" in voice, "Voice should have name"
                 assert "language" in voice, "Voice should have language"
 
+            print(f"\n[OK] Found {result['total']} voice(s)")
+            for voice in result["voices"][:5]:
                 print(f"  - {voice['name']} ({voice['language']})")
+            if result["total"] > 5:
+                print(f"  ... and {result['total'] - 5} more")
         except Exception as e:
             if "timeout" in str(e).lower():
                 pytest.skip("Voice listing timed out (known issue with system TTS)")

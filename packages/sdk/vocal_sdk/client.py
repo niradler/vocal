@@ -254,7 +254,7 @@ class AudioAPI:
         model: str = "pyttsx3",
         voice: str | None = None,
         speed: float = 1.0,
-        response_format: str = "wav",
+        response_format: str = "mp3",
         output_file: str | Path | None = None,
     ) -> bytes:
         """

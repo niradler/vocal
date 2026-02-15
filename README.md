@@ -6,19 +6,20 @@ Vocal is an API-first speech AI platform with automatic OpenAPI spec generation,
 
 [![License: SSPL](https://img.shields.io/badge/License-SSPL-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Platform Support](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](https://github.com/niradler/vocal)
 
 ## 🚀 Quick Start (30 seconds)
 
 ```bash
 # 1. Run with uvx (no installation needed!)
-uvx vocal serve
+uvx --from vocal-ai vocal serve
 
 # 2. Visit interactive docs
 # Open: http://localhost:8000/docs
 
 # 3. Pull a model and transcribe
-uvx vocal models pull Systran/faster-whisper-tiny
-uvx vocal run your_audio.mp3
+uvx --from vocal-ai vocal models pull Systran/faster-whisper-tiny
+uvx --from vocal-ai vocal run your_audio.mp3
 ```
 
 **That's it!** Models auto-download on first use.
@@ -36,41 +37,48 @@ uvx vocal run your_audio.mp3
 - 🌍 **99+ Languages**: Support for multilingual transcription
 - 🔌 **Extensible**: Generic provider pattern (HuggingFace, local, custom)
 - 🎤 **OpenAI Compatible**: `/v1/audio/transcriptions` endpoint
-- 🔊 **Text-to-Speech**: Neural TTS with Piper or system voices
+- 🔊 **Text-to-Speech**: Neural TTS with Piper or system voices (SAPI5 on Windows, nsss on macOS, espeak on Linux)
 - 🎨 **CLI Tool**: Typer-based CLI with rich console output
-- ✅ **Production Ready**: 23/23 E2E tests passing with real audio assets
+- 💻 **Cross-Platform**: Full support for Windows, macOS, and Linux
+- ✅ **Production Ready**: 47/47 tests passing with real audio assets
 
-## Quick Start
+## Prerequisites
 
-### 1. Installation
+- **Python 3.10+**
+- **ffmpeg** — required for audio format conversion (mp3, opus, aac, flac, pcm). WAV output works without it.
+
+  ```bash
+  # macOS
+  brew install ffmpeg
+  # Ubuntu / Debian
+  sudo apt install ffmpeg
+  # Windows
+  choco install ffmpeg
+  ```
+
+## Installation & Usage
+
+### Quick Start (Recommended)
 
 ```bash
-# Option 1: Using uvx (recommended - no install needed)
-uvx vocal serve
+# Run directly with uvx (no installation needed)
+uvx --from vocal-ai vocal serve
 
-# Option 2: Using pip
+# Or install with pip
 pip install vocal-ai
 vocal serve
+```
 
-# Option 3: From source
+### From Source
+
+```bash
 git clone https://github.com/niradler/vocal
 cd vocal
 make install
 make serve
 ```
 
-### 2. Start API Server
-
-```bash
-# Using Makefile
-make serve
-
-# Or using uv directly
-uv run uvicorn vocal_api.main:app --port 8000
-
-# Development mode with auto-reload
-make serve-dev
-```
+### Start API Server
 
 The API will be available at:
 - **API**: http://localhost:8000
@@ -78,7 +86,15 @@ The API will be available at:
 - **OpenAPI Spec**: http://localhost:8000/openapi.json
 - **Health**: http://localhost:8000/health
 
-### 3. Use the SDK
+```bash
+# Production
+uvx --from vocal-ai vocal serve
+
+# Development with auto-reload (from source)
+make serve-dev
+```
+
+### Use the SDK
 
 ```python
 from vocal import VocalSDK
@@ -101,35 +117,42 @@ result = client.audio.transcribe(
 )
 print(result['text'])
 
-# Text-to-Speech
+# Text-to-Speech (default: mp3)
 audio = client.audio.text_to_speech(
     text="Hello, world!",
     model="pyttsx3"
 )
-with open("output.wav", "wb") as f:
+with open("output.mp3", "wb") as f:
     f.write(audio)
+
+# TTS with specific format and voice
+audio = client.audio.text_to_speech(
+    text="Hello!",
+    response_format="wav",  # mp3, wav, opus, aac, flac, pcm
+    voice="Samantha"
+)
 ```
 
-### 4. CLI Commands
+### CLI Commands
 
 ```bash
 # Start server
-vocal serve
+uvx --from vocal-ai vocal serve
 
 # Transcribe audio
-vocal run audio.mp3
+uvx --from vocal-ai vocal run audio.mp3
 
 # List models
-vocal models list
+uvx --from vocal-ai vocal models list
 
 # Download model
-vocal models pull Systran/faster-whisper-tiny
+uvx --from vocal-ai vocal models pull Systran/faster-whisper-tiny
 
 # Delete model
-vocal models delete Systran/faster-whisper-tiny
+uvx --from vocal-ai vocal models delete Systran/faster-whisper-tiny
 ```
 
-### 5. API Examples
+### API Examples
 
 **Transcribe Audio:**
 ```bash
@@ -140,13 +163,20 @@ curl -X POST "http://localhost:8000/v1/audio/transcriptions" \
 
 **Text-to-Speech:**
 ```bash
+# Default format is mp3
 curl -X POST "http://localhost:8000/v1/audio/speech" \
   -H "Content-Type: application/json" \
   -d '{"model":"pyttsx3","input":"Hello world"}' \
+  --output speech.mp3
+
+# Request specific format (mp3, wav, opus, aac, flac, pcm)
+curl -X POST "http://localhost:8000/v1/audio/speech" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"pyttsx3","input":"Hello world","response_format":"wav"}' \
   --output speech.wav
 ```
 
-### 6. Docker Deployment
+### Docker Deployment
 
 ```bash
 # Basic usage
@@ -159,7 +189,7 @@ docker compose --profile gpu up
 docker run -p 9000:8000 niradler/vocal-api
 ```
 
-### 7. Troubleshooting
+### Troubleshooting
 
 **Port already in use:**
 ```bash
@@ -178,16 +208,6 @@ python -c "import torch; print(torch.cuda.is_available())"
 
 # Check device info
 curl http://localhost:8000/v1/system/device
-```
-
-# Start API server
-vocal serve --port 8000
-```
-
-Or use the example:
-
-```bash
-uv run python sdk_example.py Recording.m4a
 ```
 
 ## Architecture
@@ -225,6 +245,18 @@ vocal/
 ├── pyproject.toml      # uv workspace config
 └── .gitignore
 ```
+
+## Cross-Platform Support
+
+Vocal runs on **Windows**, **macOS**, and **Linux** out of the box. The TTS engine automatically selects the best available backend per platform:
+
+| Platform | TTS Backend                 | Notes                            |
+| -------- | --------------------------- | -------------------------------- |
+| macOS    | `say` (NSSpeechSynthesizer) | 170+ built-in voices             |
+| Linux    | `espeak` / `espeak-ng`      | Install via `apt install espeak` |
+| Windows  | SAPI5 (via pyttsx3)         | Uses system voices               |
+
+Audio output is normalized through ffmpeg, supporting all formats (mp3, wav, opus, aac, flac, pcm) regardless of platform. Requires `ffmpeg` for non-WAV output formats.
 
 ## API Endpoints
 
@@ -290,11 +322,12 @@ Translate audio to English text.
 Convert text to speech.
 
 **Parameters:**
-- `model` (required): TTS model to use (e.g., "hexgrad/Kokoro-82M", "coqui/XTTS-v2")
+
+- `model` (required): TTS model to use (e.g., "pyttsx3" for system voices, "hexgrad/Kokoro-82M")
 - `input` (required): Text to synthesize
-- `voice` (optional): Voice ID to use
+- `voice` (optional): Voice ID to use (see `GET /v1/audio/voices`)
 - `speed` (optional): Speech speed multiplier (0.25-4.0, default: 1.0)
-- `response_format` (optional): Audio format (default: "wav")
+- `response_format` (optional): `mp3` (default), `wav`, `opus`, `aac`, `flac`, `pcm` - matches OpenAI TTS API
 
 **Response:**
 Returns audio file in specified format with headers:
@@ -498,14 +531,16 @@ make test-verbose
 uv run python -m pytest tests/test_e2e.py -v
 ```
 
-**Current Status: 23/23 tests passing ✅**
+**Current Status: 47/47 tests passing ✅**
 
 Test coverage includes:
 - API health and device information (GPU detection)
 - Model management (list, download, status, delete)
 - Audio transcription with real M4A and MP3 files
-- Text-to-Speech synthesis with speed control
-- Error handling for invalid models and files
+- Text-to-Speech synthesis in all formats (mp3, wav, opus, aac, flac, pcm)
+- TTS voice selection and speed control
+- Audio format validation and Content-Type headers
+- Error handling for invalid models, files, and formats
 - Performance and model reuse optimization
 
 #### Check GPU Support
@@ -566,53 +601,6 @@ make l             # Alias for lint
 make f             # Alias for format
 ```
 
-## Implementation Status
-
-- ✅ **Phase 0: Core Foundation**
-  - Generic model registry with provider pattern
-  - HuggingFace provider with automatic downloads
-  - faster-whisper adapter (4x faster than OpenAI)
-  - Model storage & caching
-
-- ✅ **Phase 1: API Layer**
-  - FastAPI with auto-generated OpenAPI spec
-  - Model management endpoints (Ollama-style)
-  - Transcription endpoints (OpenAI-compatible)
-  - Interactive Swagger UI at `/docs`
-  - Health & status endpoints
-
-- ✅ **Phase 2: SDK**
-  - Auto-generated from OpenAPI spec
-  - Clean Python client interface
-  - Type-safe with Pydantic models
-  - Namespaced APIs (models, audio)
-
-- ✅ **Phase 3: CLI** 
-  - `vocal run` - Transcribe audio files
-  - `vocal models list/pull/delete` - Model management
-  - `vocal serve` - Start API server
-  - Rich console output with progress
-
-- ✅ **Phase 4: Text-to-Speech**
-  - TTS API endpoints (`/v1/audio/speech`)
-  - Multiple adapters (pyttsx3, Piper)
-  - Voice selection and management
-  - Speed control and audio output
-
-- ✅ **Phase 5: GPU Optimization**
-  - Automatic CUDA detection
-  - Dynamic compute type selection (float16/int8)
-  - VRAM-based optimization
-  - CPU multi-threading fallback
-  - System device info endpoint
-
-- ✅ **Phase 6: Testing & Production Ready**
-  - 23 comprehensive E2E integration tests
-  - Real audio asset validation (100% accuracy)
-  - Full API stack coverage
-  - TTS timeout handling
-  - Error handling and edge cases
-  - **All tests passing: 23/23 ✅**
 
 ## Configuration
 
@@ -634,80 +622,24 @@ Models are cached at: `~/.cache/vocal/models/`
 
 ## Contributing
 
-We welcome contributions! Here's how to get started:
-
-### Development Setup
+We welcome contributions!
 
 ```bash
-# Clone the repository
-git clone <repo-url>
+# Fork and clone
+git clone <your-fork-url>
 cd vocal
 
-# Set up environment
-uv venv
-uv sync
-
-# Install packages in development mode
-uv add --editable packages/core
-uv add --editable packages/api
-uv add --editable packages/sdk
+# Setup
+uv venv && uv sync
 
 # Run tests
-uv run pytest packages/core/tests -v
+make test
+
+# Submit PR
+git checkout -b feature/your-feature
+# Make changes, commit, and push
 ```
 
-### Making Changes
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/your-feature`
-3. Make your changes
-4. Add tests for new functionality
-5. Ensure all tests pass: `uv run pytest`
-6. Update documentation if needed
-7. Commit with clear messages: `git commit -m "feat: add feature X"`
-8. Push and create a pull request
-
-### Code Style
-
-- Follow PEP 8 guidelines
-- Use type hints for all functions
-- Add docstrings for public APIs
-- Keep functions focused and testable
-
-### Adding New Models
-
-To add support for a new model provider:
-
-1. Create a new provider class in `packages/core/vocal_core/registry/providers/`
-2. Implement the `ModelProvider` interface
-3. Add tests
-4. Update documentation
-
-### Regenerating SDK
-
-When API changes:
-
-```bash
-# Start API server
-uv run uvicorn vocal_api.main:app --port 8000
-
-# Download new OpenAPI spec
-curl http://localhost:8000/openapi.json -o packages/sdk/openapi.json
-
-# SDK client is hand-crafted, just update if needed
-```
-
-## License
-
-**Server Side Public License (SSPL) v1**
-
-Vocal is open source but protects against exploitation:
-- ✅ Free for personal and commercial use
-- ✅ Free for self-hosting
-- ✅ Free to modify and distribute
-- ❌ Cannot offer as SaaS without open-sourcing your infrastructure
-
-See [LICENSE](LICENSE) for full details.
 
 ## Roadmap
 
