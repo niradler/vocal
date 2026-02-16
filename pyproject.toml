@@ -1,6 +1,6 @@
 [project]
 name = "vocal-ai"
-version = "0.3.1"
+version = "0.3.2"
 description = "Ollama-style Voice Model Management - Self-hosted OpenAI-compatible Speech AI"
 requires-python = ">=3.11"
 readme = "README.md"
@@ -101,7 +101,7 @@ force-single-line = false
 "__init__.py" = ["F401"] # Allow unused imports in __init__.py
 
 [tool.bumpversion]
-current_version = "0.3.1"
+current_version = "0.3.2"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 search = "{current_version}"
