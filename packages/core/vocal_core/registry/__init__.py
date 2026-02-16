@@ -1,4 +1,5 @@
 from .base import ModelRegistry
+from .metadata_cache import ModelMetadataCache
 from .model_info import (
     ModelBackend,
     ModelInfo,
@@ -10,6 +11,7 @@ from .model_info import (
 
 __all__ = [
     "ModelRegistry",
+    "ModelMetadataCache",
     "ModelInfo",
     "ModelStatus",
     "ModelBackend",

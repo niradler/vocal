@@ -1,10 +1,12 @@
 import asyncio
+import json
 from collections.abc import AsyncIterator
+from datetime import datetime
 from pathlib import Path
 
+from huggingface_hub import ModelCard, get_safetensors_metadata, snapshot_download
 from huggingface_hub import model_info as hf_model_info
-from huggingface_hub import snapshot_download
-from huggingface_hub.utils import HfHubHTTPError
+from huggingface_hub.hf_api import ModelInfo as HFModelInfo
 
 from ..model_info import (
     ModelBackend,
@@ -18,201 +20,184 @@ from .base import ModelProvider as BaseProvider
 
 
 class HuggingFaceProvider(BaseProvider):
-    """HuggingFace model provider implementation"""
-
-    KNOWN_TTS_MODELS = {
-        "hexgrad/Kokoro-82M": {
-            "name": "Kokoro-82M (Fast & High Quality)",
-            "parameters": "82M",
-            "backend": ModelBackend.ONNX,
-            "recommended_vram": "2GB+",
-            "languages": ["en", "es", "fr", "de", "it", "pt", "zh", "ja"],
-            "alias": "kokoro",
-        },
-        "onnx-community/Kokoro-82M-ONNX": {
-            "name": "Kokoro-82M ONNX (Optimized)",
-            "parameters": "82M",
-            "backend": ModelBackend.ONNX,
-            "recommended_vram": "2GB+",
-            "languages": ["en", "es", "fr", "de", "it", "pt", "zh", "ja"],
-            "alias": "kokoro-onnx",
-        },
-        "coqui/XTTS-v2": {
-            "name": "XTTS-v2 (Voice Cloning & Multilingual)",
-            "parameters": "467M",
-            "backend": ModelBackend.CUSTOM,
-            "recommended_vram": "4GB+",
-            "languages": [
-                "en",
-                "es",
-                "fr",
-                "de",
-                "it",
-                "pt",
-                "pl",
-                "tr",
-                "ru",
-                "nl",
-                "cs",
-                "ar",
-                "zh",
-                "ja",
-                "hu",
-                "ko",
-                "hi",
-            ],
-            "alias": "xtts-v2",
-        },
-        "myshell-ai/MeloTTS-English": {
-            "name": "MeloTTS English (Lightweight)",
-            "parameters": "~50M",
-            "backend": ModelBackend.CUSTOM,
-            "recommended_vram": "1GB+",
-            "languages": ["en"],
-            "alias": "melotts-en",
-        },
+    KNOWN_STT_MODELS = {
+        "Systran/faster-whisper-tiny": "whisper-tiny",
+        "Systran/faster-whisper-base": "whisper-base",
+        "Systran/faster-whisper-small": "whisper-small",
+        "Systran/faster-whisper-medium": "whisper-medium",
+        "Systran/faster-whisper-large-v2": "whisper-large-v2",
+        "Systran/faster-whisper-large-v3": "whisper-large-v3",
     }
 
-    KNOWN_STT_MODELS = {
-        "Systran/faster-whisper-tiny": {
-            "name": "Faster Whisper Tiny",
-            "parameters": "39M",
-            "backend": ModelBackend.FASTER_WHISPER,
-            "recommended_vram": "1GB+",
-            "alias": "whisper-tiny",
-        },
-        "Systran/faster-whisper-base": {
-            "name": "Faster Whisper Base",
-            "parameters": "74M",
-            "backend": ModelBackend.FASTER_WHISPER,
-            "recommended_vram": "1GB+",
-            "alias": "whisper-base",
-        },
-        "Systran/faster-whisper-small": {
-            "name": "Faster Whisper Small",
-            "parameters": "244M",
-            "backend": ModelBackend.FASTER_WHISPER,
-            "recommended_vram": "2GB+",
-            "alias": "whisper-small",
-        },
-        "Systran/faster-whisper-medium": {
-            "name": "Faster Whisper Medium",
-            "parameters": "769M",
-            "backend": ModelBackend.FASTER_WHISPER,
-            "recommended_vram": "5GB+",
-            "alias": "whisper-medium",
-        },
-        "Systran/faster-whisper-large-v3": {
-            "name": "Faster Whisper Large V3",
-            "parameters": "1.5B",
-            "backend": ModelBackend.FASTER_WHISPER,
-            "recommended_vram": "10GB+",
-            "alias": "whisper-large-v3",
-        },
-        "Systran/faster-distil-whisper-large-v3": {
-            "name": "Faster Distil Whisper Large V3",
-            "parameters": "809M",
-            "backend": ModelBackend.FASTER_WHISPER,
-            "recommended_vram": "6GB+",
-            "alias": "whisper-large-v3-turbo",
-        },
+    KNOWN_TTS_MODELS = {
+        "hexgrad/Kokoro-82M": "kokoro",
+        "onnx-community/Kokoro-82M-ONNX": "kokoro-onnx",
+        "Qwen/Qwen3-TTS-12Hz-0.6B-Base": "qwen3-tts-0.6b",
+        "Qwen/Qwen3-TTS-12Hz-1.7B-Base": "qwen3-tts-1.7b",
+        "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice": "qwen3-tts-0.6b-custom",
+        "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice": "qwen3-tts-1.7b-custom",
+        "fishaudio/fish-speech-1.5": "chatterbox",
+        "coqui/XTTS-v2": "xtts-v2",
+        "myshell-ai/MeloTTS-English": "melotts-en",
     }
 
     def __init__(self, cache_dir: Path | None = None):
-        """
-        Initialize HuggingFace provider
-
-        Args:
-            cache_dir: Optional custom cache directory
-        """
         self.cache_dir = cache_dir
+        self._supported_models: dict[str, dict] | None = None
+        self._alias_to_id: dict[str, str] = {}
 
     def get_provider_name(self) -> str:
         return "huggingface"
 
+    def _load_supported_models(self) -> dict[str, dict]:
+        if self._supported_models is not None:
+            return self._supported_models
+
+        supported_models_path = Path(__file__).parent.parent / "supported_models.json"
+
+        if not supported_models_path.exists():
+            return {}
+
+        try:
+            with open(supported_models_path) as f:
+                data = json.load(f)
+
+            self._supported_models = {}
+            for model in data.get("models", []):
+                model_id = model["id"]
+                self._supported_models[model_id] = model
+
+                if alias := model.get("alias"):
+                    self._alias_to_id[alias] = model_id
+
+            return self._supported_models
+        except Exception as e:
+            print(f"Error loading supported models: {e}")
+            return {}
+
+    def _resolve_alias(self, model_or_alias: str) -> str:
+        self._load_supported_models()
+        if model_or_alias in self._alias_to_id:
+            return self._alias_to_id[model_or_alias]
+        return model_or_alias
+
+    def _model_dict_to_info(
+        self,
+        model_dict: dict,
+        status: ModelStatus = ModelStatus.NOT_DOWNLOADED,
+        local_path: str | None = None,
+    ) -> ModelInfo:
+        return ModelInfo(
+            id=model_dict["id"],
+            name=model_dict["name"],
+            provider=ModelProvider.HUGGINGFACE,
+            description=model_dict.get("description"),
+            size=model_dict.get("size", 0),
+            size_readable=model_dict.get("size_readable", "Unknown"),
+            parameters=model_dict.get("parameters", "Unknown"),
+            languages=model_dict.get("languages", []),
+            backend=ModelBackend(model_dict.get("backend", "transformers")),
+            status=status,
+            source_url=model_dict.get("source_url"),
+            license=model_dict.get("license"),
+            recommended_vram=model_dict.get("recommended_vram"),
+            task=ModelTask(model_dict.get("task", "stt")),
+            local_path=local_path,
+            modified_at=model_dict.get("modified_at"),
+            downloaded_at=model_dict.get("downloaded_at"),
+            author=model_dict.get("author"),
+            tags=model_dict.get("tags", []),
+            downloads=model_dict.get("downloads"),
+            likes=model_dict.get("likes"),
+            sha=model_dict.get("sha"),
+            files=model_dict.get("files"),
+        )
+
     async def list_models(self, task: str | None = None) -> list[ModelInfo]:
-        """List available models from HuggingFace"""
         models = []
+        supported = self._load_supported_models()
 
-        if task is None or task == "stt":
-            for model_id, meta in self.KNOWN_STT_MODELS.items():
-                models.append(
-                    ModelInfo(
-                        id=model_id,
-                        name=meta["name"],
-                        provider=ModelProvider.HUGGINGFACE,
-                        backend=meta["backend"],
-                        task=ModelTask.STT,
-                        status=ModelStatus.NOT_DOWNLOADED,
-                        parameters=meta["parameters"],
-                        recommended_vram=meta["recommended_vram"],
-                        languages=self._get_whisper_languages(),
-                        source_url=f"https://huggingface.co/{model_id}",
-                    )
-                )
-
-        if task is None or task == "tts":
-            for model_id, meta in self.KNOWN_TTS_MODELS.items():
-                models.append(
-                    ModelInfo(
-                        id=model_id,
-                        name=meta["name"],
-                        provider=ModelProvider.HUGGINGFACE,
-                        backend=meta["backend"],
-                        task=ModelTask.TTS,
-                        status=ModelStatus.NOT_DOWNLOADED,
-                        parameters=meta["parameters"],
-                        recommended_vram=meta["recommended_vram"],
-                        languages=meta.get("languages", []),
-                        source_url=f"https://huggingface.co/{model_id}",
-                    )
-                )
+        for model_id, model_dict in supported.items():
+            if task is None or model_dict.get("task") == task:
+                models.append(self._model_dict_to_info(model_dict))
 
         return models
 
     async def get_model_info(self, model_id: str) -> ModelInfo | None:
-        """Get model info from HuggingFace"""
+        model_id = self._resolve_alias(model_id)
+        supported = self._load_supported_models()
+
+        if model_id in supported:
+            return self._model_dict_to_info(supported[model_id])
+
+        return None
+
+    async def fetch_metadata_from_hf(self, model_id: str) -> dict | None:  # noqa: C901
         try:
             loop = asyncio.get_event_loop()
-            info = await loop.run_in_executor(None, hf_model_info, model_id)
+            info: HFModelInfo = await loop.run_in_executor(None, hf_model_info, model_id, True)
 
-            meta_stt = self.KNOWN_STT_MODELS.get(model_id, {})
-            meta_tts = self.KNOWN_TTS_MODELS.get(model_id, {})
-            meta = meta_stt or meta_tts
+            total_size = 0
+            files = []
+            if info.siblings:
+                for sibling in info.siblings:
+                    if sibling.size:
+                        total_size += sibling.size
+                        files.append({"filename": sibling.rfilename, "size": sibling.size})
 
-            is_tts = model_id in self.KNOWN_TTS_MODELS
-            task = ModelTask.TTS if is_tts else ModelTask.STT
+            actual_param_count = None
+            try:
+                st_meta = await loop.run_in_executor(None, get_safetensors_metadata, model_id)
+                actual_param_count = sum(st_meta.parameter_count.values())
+            except Exception:
+                pass
 
-            size = getattr(info, "size", 0) or 0
+            license_info = None
+            languages = []
+            tags = info.tags or []
 
-            languages = meta.get("languages", [])
-            if not languages and "whisper" in model_id.lower():
-                languages = self._get_whisper_languages()
+            try:
+                card = await loop.run_in_executor(None, ModelCard.load, model_id)
+                card_data = card.data.to_dict()
+                license_info = card_data.get("license")
 
-            return ModelInfo(
-                id=model_id,
-                name=meta.get("name", info.modelId),
-                provider=ModelProvider.HUGGINGFACE,
-                description=getattr(info, "description", None),
-                size=size,
-                size_readable=format_bytes(size) if size > 0 else "Unknown",
-                parameters=meta.get("parameters", "Unknown"),
-                languages=languages,
-                backend=meta.get("backend", ModelBackend.TRANSFORMERS),
-                status=ModelStatus.NOT_DOWNLOADED,
-                source_url=f"https://huggingface.co/{model_id}",
-                license=getattr(info, "license", None),
-                recommended_vram=meta.get("recommended_vram"),
-                task=task,
-            )
-        except HfHubHTTPError:
-            return None
+                card_languages = card_data.get("language", [])
+                if isinstance(card_languages, str):
+                    languages = [card_languages]
+                elif isinstance(card_languages, list):
+                    languages = card_languages
+            except Exception:
+                pass
+
+            for tag in tags:
+                if tag.startswith("language:"):
+                    lang = tag.replace("language:", "")
+                    if lang not in languages:
+                        languages.append(lang)
+
+            return {
+                "model_id": model_id,
+                "size": total_size,
+                "size_readable": format_bytes(total_size),
+                "actual_parameter_count": actual_param_count,
+                "license": license_info,
+                "last_modified": str(info.last_modified) if info.last_modified else None,
+                "sha": info.sha,
+                "author": info.author,
+                "downloads": info.downloads,
+                "likes": info.likes,
+                "tags": tags,
+                "languages": languages,
+                "files": files[:10],
+                "downloaded": True,
+                "downloaded_at": datetime.now().isoformat(),
+            }
         except Exception as e:
-            print(f"Error fetching model info for {model_id}: {e}")
+            print(f"Error fetching metadata from HF: {e}")
             return None
 
     async def download_model(self, model_id: str, destination: Path, quantization: str | None = None) -> AsyncIterator[tuple[int, int]]:
-        """Download model from HuggingFace"""
+        model_id = self._resolve_alias(model_id)
         destination.mkdir(parents=True, exist_ok=True)
 
         loop = asyncio.get_event_loop()
@@ -235,7 +220,6 @@ class HuggingFaceProvider(BaseProvider):
             raise RuntimeError(f"Failed to download model {model_id}: {e}")
 
     async def verify_model(self, model_id: str, local_path: Path) -> bool:
-        """Verify downloaded model"""
         if not local_path.exists():
             return False
 
@@ -245,107 +229,3 @@ class HuggingFaceProvider(BaseProvider):
                 return False
 
         return True
-
-    def _get_whisper_languages(self) -> list[str]:
-        """Get list of languages supported by Whisper"""
-        return [
-            "en",
-            "zh",
-            "de",
-            "es",
-            "ru",
-            "ko",
-            "fr",
-            "ja",
-            "pt",
-            "tr",
-            "pl",
-            "ca",
-            "nl",
-            "ar",
-            "sv",
-            "it",
-            "id",
-            "hi",
-            "fi",
-            "vi",
-            "he",
-            "uk",
-            "el",
-            "ms",
-            "cs",
-            "ro",
-            "da",
-            "hu",
-            "ta",
-            "no",
-            "th",
-            "ur",
-            "hr",
-            "bg",
-            "lt",
-            "la",
-            "mi",
-            "ml",
-            "cy",
-            "sk",
-            "te",
-            "fa",
-            "lv",
-            "bn",
-            "sr",
-            "az",
-            "sl",
-            "kn",
-            "et",
-            "mk",
-            "br",
-            "eu",
-            "is",
-            "hy",
-            "ne",
-            "mn",
-            "bs",
-            "kk",
-            "sq",
-            "sw",
-            "gl",
-            "mr",
-            "pa",
-            "si",
-            "km",
-            "sn",
-            "yo",
-            "so",
-            "af",
-            "oc",
-            "ka",
-            "be",
-            "tg",
-            "sd",
-            "gu",
-            "am",
-            "yi",
-            "lo",
-            "uz",
-            "fo",
-            "ht",
-            "ps",
-            "tk",
-            "nn",
-            "mt",
-            "sa",
-            "lb",
-            "my",
-            "bo",
-            "tl",
-            "mg",
-            "as",
-            "tt",
-            "haw",
-            "ln",
-            "ha",
-            "ba",
-            "jw",
-            "su",
-        ]

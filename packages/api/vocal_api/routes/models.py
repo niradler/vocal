@@ -5,6 +5,8 @@ from ..models.model import (
     ModelDownloadProgress,
     ModelInfo,
     ModelListResponse,
+    ModelPullRequest,
+    ModelShowRequest,
 )
 from ..services import ModelService
 
@@ -14,28 +16,36 @@ router = APIRouter(prefix="/v1/models", tags=["models"])
 @router.get(
     "",
     response_model=ModelListResponse,
+    response_model_exclude_none=True,
     summary="List models",
-    description="List all available models (Ollama-style)",
+    description="List downloaded models (Ollama-style)",
 )
 async def list_models(
-    status: str | None = None,
     task: str | None = None,
     service: ModelService = Depends(get_model_service),
 ) -> ModelListResponse:
-    """
-    List all available models
+    models = await service.list_models(status_filter="available", task=task)
+    return ModelListResponse(models=models, total=len(models))
 
-    Query params:
-    - status: Filter by status (available, downloading, not_downloaded)
-    - task: Filter by task (stt, tts)
-    """
-    models = await service.list_models(status_filter=status, task=task)
+
+@router.get(
+    "/supported",
+    response_model=ModelListResponse,
+    response_model_exclude_none=True,
+    summary="List supported models",
+    description="List all curated supported models with accurate metadata",
+)
+async def list_supported_models(
+    service: ModelService = Depends(get_model_service),
+) -> ModelListResponse:
+    models = await service.list_supported_models()
     return ModelListResponse(models=models, total=len(models))
 
 
 @router.get(
     "/{model_id:path}",
     response_model=ModelInfo,
+    response_model_exclude_none=True,
     summary="Get model info",
     description="Get detailed information about a specific model",
 )
@@ -120,3 +130,51 @@ async def delete_model(model_id: str, service: ModelService = Depends(get_model_
         raise HTTPException(404, f"Model {model_id} not found or not downloaded")
 
     return {"status": "deleted", "model_id": model_id}
+
+
+@router.post(
+    "/show",
+    response_model=ModelInfo,
+    response_model_exclude_none=True,
+    summary="Show model details",
+    description="Get detailed model information (Ollama-style)",
+)
+async def show_model(
+    request: ModelShowRequest,
+    service: ModelService = Depends(get_model_service),
+) -> ModelInfo:
+    model = await service.show_model(request.model)
+    if not model:
+        raise HTTPException(404, f"Model {request.model} not found")
+    return model
+
+
+@router.post(
+    "/pull",
+    response_model=ModelDownloadProgress,
+    summary="Pull model",
+    description="Download a model (Ollama-style)",
+)
+async def pull_model(
+    request: ModelPullRequest,
+    background_tasks: BackgroundTasks,
+    service: ModelService = Depends(get_model_service),
+) -> ModelDownloadProgress:
+    model = await service.get_model(request.model)
+    if not model:
+        raise HTTPException(404, f"Model {request.model} not found")
+
+    async def download_task():
+        async for progress in service.download_model(request.model):
+            pass
+
+    background_tasks.add_task(download_task)
+
+    return ModelDownloadProgress(
+        model_id=request.model,
+        status="downloading",
+        progress=0.0,
+        downloaded_bytes=0,
+        total_bytes=0,
+        message="Starting download...",
+    )

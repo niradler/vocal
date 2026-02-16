@@ -1,4 +1,6 @@
+import json
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 from vocal_core import ModelRegistry
 
@@ -9,11 +11,63 @@ from ..models.model import (
 
 
 class ModelService:
-    """Service for managing models"""
-
     def __init__(self, registry: ModelRegistry):
         self.registry = registry
         self._download_status: dict[str, ModelDownloadProgress] = {}
+        self._supported_models: list[ModelInfo] | None = None
+
+    def _load_supported_models_json(self) -> list[dict]:
+        supported_path = Path(__file__).parent.parent.parent.parent / "core" / "vocal_core" / "registry" / "supported_models.json"
+
+        if not supported_path.exists():
+            return []
+
+        try:
+            with open(supported_path) as f:
+                data = json.load(f)
+            return data.get("models", [])
+        except Exception as e:
+            print(f"Error loading supported models: {e}")
+            return []
+
+    async def list_supported_models(self) -> list[ModelInfo]:
+        models_data = self._load_supported_models_json()
+        models = []
+
+        for model_dict in models_data:
+            models.append(
+                ModelInfo(
+                    id=model_dict["id"],
+                    name=model_dict["name"],
+                    provider=model_dict.get("provider", "huggingface"),
+                    description=model_dict.get("description"),
+                    size=model_dict.get("size", 0),
+                    size_readable=model_dict.get("size_readable", "Unknown"),
+                    parameters=model_dict.get("parameters", "Unknown"),
+                    languages=model_dict.get("languages", []),
+                    backend=model_dict.get("backend", "transformers"),
+                    status="not_downloaded",
+                    source_url=model_dict.get("source_url"),
+                    license=model_dict.get("license"),
+                    recommended_vram=model_dict.get("recommended_vram"),
+                    task=model_dict.get("task", "stt"),
+                    modified_at=model_dict.get("modified_at"),
+                    author=model_dict.get("author"),
+                    tags=model_dict.get("tags", []),
+                    downloads=model_dict.get("downloads"),
+                    likes=model_dict.get("likes"),
+                    sha=model_dict.get("sha"),
+                    files=model_dict.get("files"),
+                )
+            )
+
+        return models
+
+    async def show_model(self, model_or_alias: str) -> ModelInfo | None:
+        model = await self.registry.get_model(model_or_alias)
+        if model:
+            return self._convert_model_info(model)
+        return None
 
     async def list_models(self, status_filter: str | None = None, task: str | None = None) -> list[ModelInfo]:
         """List all available models"""
@@ -91,6 +145,12 @@ class ModelService:
             recommended_vram=model.recommended_vram,
             task=model.task.value,
             local_path=model.local_path,
-            created_at=model.created_at,
-            updated_at=model.updated_at,
+            modified_at=model.modified_at,
+            downloaded_at=model.downloaded_at,
+            author=model.author,
+            tags=model.tags,
+            downloads=model.downloads,
+            likes=model.likes,
+            sha=model.sha,
+            files=model.files,
         )

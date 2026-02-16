@@ -1,4 +1,4 @@
-.PHONY: help install test test-quick test-verbose lint format clean serve cli docs gpu-check bump-patch bump-minor bump-major
+.PHONY: help install test test-quick test-verbose lint format clean serve cli docs gpu-check bump-patch bump-minor bump-major generate-supported-models
 
 # Default target
 help:
@@ -25,6 +25,7 @@ help:
 	@echo "  make serve-dev     - Start API server with auto-reload"
 	@echo "  make cli           - Show CLI help"
 	@echo "  make docs          - Open API documentation in browser"
+	@echo "  make generate-supported-models - Regenerate supported models metadata"
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  make clean         - Remove cache files and build artifacts"
@@ -104,6 +105,13 @@ cli:
 docs:
 	@echo "Opening API documentation..."
 	@powershell -Command "Start-Process 'http://localhost:8000/docs'"
+
+generate-supported-models:
+	@echo "Regenerating supported models metadata from HuggingFace..."
+	@echo ""
+	uv run python scripts/generate_supported_models.py --force
+	@echo ""
+	@echo "Note: Commit the updated supported_models.json to version control"
 
 # Cleanup
 clean:
