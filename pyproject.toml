@@ -37,6 +37,12 @@ Issues = "https://github.com/niradler/vocal/issues"
 [project.scripts]
 vocal = "vocal_cli.main:app"
 
+[project.optional-dependencies]
+kokoro = [
+    "kokoro>=0.9.4",
+    "torch>=2.6.0",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

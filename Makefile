@@ -94,7 +94,7 @@ serve-dev:
 	@echo "Starting API server with auto-reload..."
 	@echo "Documentation: http://localhost:8000/docs"
 	@echo ""
-	uv run uvicorn vocal_api.main:app --host 0.0.0.0 --port 8000 --reload
+	uv run uvicorn vocal_api.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir packages
 
 cli:
 	@echo "Vocal CLI Help"

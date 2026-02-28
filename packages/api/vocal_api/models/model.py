@@ -20,6 +20,7 @@ class ModelBackend(str, Enum):
     CTRANSLATE2 = "ctranslate2"
     NEMO = "nemo"
     ONNX = "onnx"
+    KOKORO = "kokoro"
     CUSTOM = "custom"
 
 

@@ -3,7 +3,7 @@ import time
 from pathlib import Path
 
 from vocal_core import ModelRegistry
-from vocal_core.adapters.tts import SimpleTTSAdapter, TTSAdapter, TTSResult, Voice
+from vocal_core.adapters.tts import KOKORO_AVAILABLE, KokoroTTSAdapter, SimpleTTSAdapter, TTSAdapter, TTSResult, Voice
 
 
 class TTSService:
@@ -132,8 +132,8 @@ class TTSService:
         return self.adapters[model_id]
 
     def _create_adapter(self, backend: str) -> TTSAdapter:
-        """Create appropriate TTS adapter based on backend"""
-        if backend in ("onnx", "custom"):
-            return SimpleTTSAdapter()
-        else:
-            return SimpleTTSAdapter()
+        if backend == "kokoro":
+            if not KOKORO_AVAILABLE:
+                raise ImportError("kokoro package is required for this model. Install with: uv add kokoro")
+            return KokoroTTSAdapter()
+        return SimpleTTSAdapter()

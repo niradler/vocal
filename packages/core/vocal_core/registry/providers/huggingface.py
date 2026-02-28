@@ -36,7 +36,7 @@ class HuggingFaceProvider(BaseProvider):
         "Qwen/Qwen3-TTS-12Hz-1.7B-Base": "qwen3-tts-1.7b",
         "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice": "qwen3-tts-0.6b-custom",
         "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice": "qwen3-tts-1.7b-custom",
-        "fishaudio/fish-speech-1.5": "chatterbox",
+        "fishaudio/fish-speech-1.5": "fish-speech",
         "coqui/XTTS-v2": "xtts-v2",
         "myshell-ai/MeloTTS-English": "melotts-en",
     }
@@ -135,7 +135,7 @@ class HuggingFaceProvider(BaseProvider):
     async def fetch_metadata_from_hf(self, model_id: str) -> dict | None:  # noqa: C901
         try:
             loop = asyncio.get_event_loop()
-            info: HFModelInfo = await loop.run_in_executor(None, hf_model_info, model_id, True)
+            info: HFModelInfo = await loop.run_in_executor(None, lambda: hf_model_info(model_id))
 
             total_size = 0
             files = []
