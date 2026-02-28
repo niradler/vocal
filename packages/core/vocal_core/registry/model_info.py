@@ -21,6 +21,7 @@ class ModelBackend(str, Enum):
     NEMO = "nemo"
     ONNX = "onnx"
     KOKORO = "kokoro"
+    FASTER_QWEN3_TTS = "faster_qwen3_tts"
     CUSTOM = "custom"
 
 

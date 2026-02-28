@@ -473,17 +473,84 @@ class TestTextToSpeech:
 
         print(f"\n[OK] Synthesized with voice '{voice_id}': {len(audio_data)} bytes")
 
-    def test_synthesize_invalid_format_rejected(self, client):
+    def test_synthesize_invalid_format_rejected(self, client, api_server):
         """Test that invalid format is rejected by API"""
         import requests as req
 
         response = req.post(
-            "http://localhost:8000/v1/audio/speech",
+            f"{api_server}/v1/audio/speech",
             json={"model": "pyttsx3", "input": "test", "response_format": "wma"},
         )
         assert response.status_code == 422, "Invalid format should return 422"
 
         print("\n[OK] Invalid format 'wma' correctly rejected with 422")
+
+    def test_stream_pcm_returns_bytes(self, api_server):
+        """Test streaming TTS with pcm format yields raw PCM bytes"""
+        import requests as req
+
+        response = req.post(
+            f"{api_server}/v1/audio/speech",
+            json={"model": "pyttsx3", "input": "Streaming test.", "response_format": "pcm", "stream": True},
+            stream=True,
+        )
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        assert "audio/pcm" in response.headers.get("Content-Type", ""), "Should be PCM content type"
+
+        data = b"".join(response.iter_content(chunk_size=4096))
+        assert len(data) > 0, "Streamed PCM should not be empty"
+        assert "X-Duration" not in response.headers, "X-Duration should not be present in stream mode"
+
+        print(f"\n[OK] Streamed PCM: {len(data)} bytes")
+
+    def test_stream_wav_has_riff_header(self, api_server):
+        """Test streaming TTS with wav format starts with a valid RIFF header"""
+        import requests as req
+
+        response = req.post(
+            f"{api_server}/v1/audio/speech",
+            json={"model": "pyttsx3", "input": "WAV streaming test.", "response_format": "wav", "stream": True},
+            stream=True,
+        )
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+
+        data = b"".join(response.iter_content(chunk_size=4096))
+        assert len(data) >= 44, "WAV stream should include at least a header"
+        assert data[:4] == b"RIFF", "WAV stream should start with RIFF header"
+        assert data[8:12] == b"WAVE", "WAV stream should have WAVE marker"
+
+        print(f"\n[OK] Streamed WAV: {len(data)} bytes, valid RIFF header")
+
+    def test_stream_mp3_returns_audio(self, api_server):
+        """Test streaming TTS with mp3 format (batch fallback) returns valid audio"""
+        import requests as req
+
+        response = req.post(
+            f"{api_server}/v1/audio/speech",
+            json={"model": "pyttsx3", "input": "MP3 streaming test.", "response_format": "mp3", "stream": True},
+            stream=True,
+        )
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        assert "audio/mpeg" in response.headers.get("Content-Type", ""), "Should be MP3 content type"
+
+        data = b"".join(response.iter_content(chunk_size=4096))
+        assert len(data) > 0, "Streamed MP3 should not be empty"
+
+        print(f"\n[OK] Streamed MP3 (batch fallback): {len(data)} bytes")
+
+    def test_non_stream_preserves_duration_header(self, api_server):
+        """Test that stream=False (default) still returns X-Duration and X-Sample-Rate headers"""
+        import requests as req
+
+        response = req.post(
+            f"{api_server}/v1/audio/speech",
+            json={"model": "pyttsx3", "input": "Header test.", "response_format": "mp3", "stream": False},
+        )
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        assert "X-Duration" in response.headers, "X-Duration should be present in non-stream mode"
+        assert "X-Sample-Rate" in response.headers, "X-Sample-Rate should be present in non-stream mode"
+
+        print(f"\n[OK] Non-stream headers intact: X-Duration={response.headers['X-Duration']}")
 
     def test_list_available_voices(self, client):
         """Test listing TTS voices"""

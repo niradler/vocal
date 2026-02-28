@@ -1,6 +1,7 @@
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from ..dependencies import get_tts_service
@@ -29,6 +30,7 @@ class TTSRequest(BaseModel):
     voice: str | None = Field(None, description="Voice ID to use")
     speed: float = Field(1.0, ge=0.25, le=4.0, description="Speech speed multiplier")
     response_format: AudioFormat = Field("mp3", description="Audio format: mp3, opus, aac, flac, wav, pcm")
+    stream: bool = Field(False, description="Stream audio chunks as they are generated (wav/pcm yield true chunks; other formats send one chunk after full generation)")
 
 
 class VoiceInfo(BaseModel):
@@ -64,18 +66,32 @@ async def text_to_speech(request: TTSRequest, service: TTSService = Depends(get_
     - **speed**: Speech speed multiplier (0.25 to 4.0, default: 1.0)
     - **response_format**: Audio format (mp3, opus, aac, flac, wav, pcm)
     """
+    fmt = request.response_format
+    media_type = _MEDIA_TYPES.get(fmt, f"audio/{fmt}")
+    ext = fmt if fmt != "pcm" else "raw"
+
     try:
+        if request.stream:
+            generator = service.synthesize_stream(
+                model_id=request.model,
+                text=request.input,
+                voice=request.voice,
+                speed=request.speed,
+                output_format=fmt,
+            )
+            return StreamingResponse(
+                generator,
+                media_type=media_type,
+                headers={"Content-Disposition": f"attachment; filename=speech.{ext}"},
+            )
+
         result = await service.synthesize(
             model_id=request.model,
             text=request.input,
             voice=request.voice,
             speed=request.speed,
-            output_format=request.response_format,
+            output_format=fmt,
         )
-
-        fmt = result.format
-        media_type = _MEDIA_TYPES.get(fmt, f"audio/{fmt}")
-        ext = fmt if fmt != "pcm" else "raw"
 
         return Response(
             content=result.audio_data,

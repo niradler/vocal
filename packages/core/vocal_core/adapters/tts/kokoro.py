@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 import os
+import struct
 import tempfile
 import wave
+from collections.abc import AsyncGenerator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -36,63 +40,87 @@ LANG_CODE_TO_LANGUAGE = {
 }
 
 KOKORO_VOICE_DATA: dict[str, dict] = {
-    "af_heart":     {"lang": "a", "gender": "female"},
-    "af_alloy":     {"lang": "a", "gender": "female"},
-    "af_aoede":     {"lang": "a", "gender": "female"},
-    "af_bella":     {"lang": "a", "gender": "female"},
-    "af_jessica":   {"lang": "a", "gender": "female"},
-    "af_kore":      {"lang": "a", "gender": "female"},
-    "af_nicole":    {"lang": "a", "gender": "female"},
-    "af_nova":      {"lang": "a", "gender": "female"},
-    "af_river":     {"lang": "a", "gender": "female"},
-    "af_sarah":     {"lang": "a", "gender": "female"},
-    "af_sky":       {"lang": "a", "gender": "female"},
-    "am_adam":      {"lang": "a", "gender": "male"},
-    "am_echo":      {"lang": "a", "gender": "male"},
-    "am_eric":      {"lang": "a", "gender": "male"},
-    "am_fenrir":    {"lang": "a", "gender": "male"},
-    "am_liam":      {"lang": "a", "gender": "male"},
-    "am_michael":   {"lang": "a", "gender": "male"},
-    "am_onyx":      {"lang": "a", "gender": "male"},
-    "am_puck":      {"lang": "a", "gender": "male"},
-    "am_santa":     {"lang": "a", "gender": "male"},
-    "bf_alice":     {"lang": "b", "gender": "female"},
-    "bf_emma":      {"lang": "b", "gender": "female"},
-    "bf_isabella":  {"lang": "b", "gender": "female"},
-    "bf_lily":      {"lang": "b", "gender": "female"},
-    "bm_daniel":    {"lang": "b", "gender": "male"},
-    "bm_fable":     {"lang": "b", "gender": "male"},
-    "bm_george":    {"lang": "b", "gender": "male"},
-    "bm_lewis":     {"lang": "b", "gender": "male"},
-    "jf_alpha":     {"lang": "j", "gender": "female"},
-    "jf_gongitsune":{"lang": "j", "gender": "female"},
-    "jf_nezumi":    {"lang": "j", "gender": "female"},
-    "jf_tebukuro":  {"lang": "j", "gender": "female"},
-    "jm_kumo":      {"lang": "j", "gender": "male"},
-    "zf_xiaobei":   {"lang": "z", "gender": "female"},
-    "zf_xiaoni":    {"lang": "z", "gender": "female"},
-    "zf_xiaoxiao":  {"lang": "z", "gender": "female"},
-    "zf_xiaoyi":    {"lang": "z", "gender": "female"},
-    "zm_yunjian":   {"lang": "z", "gender": "male"},
-    "zm_yunxi":     {"lang": "z", "gender": "male"},
-    "zm_yunxia":    {"lang": "z", "gender": "male"},
-    "zm_yunyang":   {"lang": "z", "gender": "male"},
-    "ef_dora":      {"lang": "e", "gender": "female"},
-    "em_alex":      {"lang": "e", "gender": "male"},
-    "em_santa":     {"lang": "e", "gender": "male"},
-    "ff_siwis":     {"lang": "f", "gender": "female"},
-    "hf_alpha":     {"lang": "h", "gender": "female"},
-    "hf_beta":      {"lang": "h", "gender": "female"},
-    "hm_omega":     {"lang": "h", "gender": "male"},
-    "hm_psi":       {"lang": "h", "gender": "male"},
-    "if_sara":      {"lang": "i", "gender": "female"},
-    "im_nicola":    {"lang": "i", "gender": "male"},
-    "pf_dora":      {"lang": "p", "gender": "female"},
-    "pm_alex":      {"lang": "p", "gender": "male"},
-    "pm_santa":     {"lang": "p", "gender": "male"},
+    "af_heart": {"lang": "a", "gender": "female"},
+    "af_alloy": {"lang": "a", "gender": "female"},
+    "af_aoede": {"lang": "a", "gender": "female"},
+    "af_bella": {"lang": "a", "gender": "female"},
+    "af_jessica": {"lang": "a", "gender": "female"},
+    "af_kore": {"lang": "a", "gender": "female"},
+    "af_nicole": {"lang": "a", "gender": "female"},
+    "af_nova": {"lang": "a", "gender": "female"},
+    "af_river": {"lang": "a", "gender": "female"},
+    "af_sarah": {"lang": "a", "gender": "female"},
+    "af_sky": {"lang": "a", "gender": "female"},
+    "am_adam": {"lang": "a", "gender": "male"},
+    "am_echo": {"lang": "a", "gender": "male"},
+    "am_eric": {"lang": "a", "gender": "male"},
+    "am_fenrir": {"lang": "a", "gender": "male"},
+    "am_liam": {"lang": "a", "gender": "male"},
+    "am_michael": {"lang": "a", "gender": "male"},
+    "am_onyx": {"lang": "a", "gender": "male"},
+    "am_puck": {"lang": "a", "gender": "male"},
+    "am_santa": {"lang": "a", "gender": "male"},
+    "bf_alice": {"lang": "b", "gender": "female"},
+    "bf_emma": {"lang": "b", "gender": "female"},
+    "bf_isabella": {"lang": "b", "gender": "female"},
+    "bf_lily": {"lang": "b", "gender": "female"},
+    "bm_daniel": {"lang": "b", "gender": "male"},
+    "bm_fable": {"lang": "b", "gender": "male"},
+    "bm_george": {"lang": "b", "gender": "male"},
+    "bm_lewis": {"lang": "b", "gender": "male"},
+    "jf_alpha": {"lang": "j", "gender": "female"},
+    "jf_gongitsune": {"lang": "j", "gender": "female"},
+    "jf_nezumi": {"lang": "j", "gender": "female"},
+    "jf_tebukuro": {"lang": "j", "gender": "female"},
+    "jm_kumo": {"lang": "j", "gender": "male"},
+    "zf_xiaobei": {"lang": "z", "gender": "female"},
+    "zf_xiaoni": {"lang": "z", "gender": "female"},
+    "zf_xiaoxiao": {"lang": "z", "gender": "female"},
+    "zf_xiaoyi": {"lang": "z", "gender": "female"},
+    "zm_yunjian": {"lang": "z", "gender": "male"},
+    "zm_yunxi": {"lang": "z", "gender": "male"},
+    "zm_yunxia": {"lang": "z", "gender": "male"},
+    "zm_yunyang": {"lang": "z", "gender": "male"},
+    "ef_dora": {"lang": "e", "gender": "female"},
+    "em_alex": {"lang": "e", "gender": "male"},
+    "em_santa": {"lang": "e", "gender": "male"},
+    "ff_siwis": {"lang": "f", "gender": "female"},
+    "hf_alpha": {"lang": "h", "gender": "female"},
+    "hf_beta": {"lang": "h", "gender": "female"},
+    "hm_omega": {"lang": "h", "gender": "male"},
+    "hm_psi": {"lang": "h", "gender": "male"},
+    "if_sara": {"lang": "i", "gender": "female"},
+    "im_nicola": {"lang": "i", "gender": "male"},
+    "pf_dora": {"lang": "p", "gender": "female"},
+    "pm_alex": {"lang": "p", "gender": "male"},
+    "pm_santa": {"lang": "p", "gender": "male"},
 }
 
 KOKORO_VOICES = list(KOKORO_VOICE_DATA.keys())
+
+
+def _wav_header_open_ended(sample_rate: int, num_channels: int = 1, bits_per_sample: int = 16) -> bytes:
+    """Return a WAV header with 0xFFFFFFFF data-chunk size for streaming (no seek-back needed)."""
+    byte_rate = sample_rate * num_channels * bits_per_sample // 8
+    block_align = num_channels * bits_per_sample // 8
+    data_size = 0xFFFFFFFF
+    riff_size = 36 + data_size
+    return struct.pack(
+        "<4sI4s4sIHHIIHH4sI",
+        b"RIFF",
+        riff_size,
+        b"WAVE",
+        b"fmt ",
+        16,
+        1,
+        num_channels,
+        sample_rate,
+        byte_rate,
+        block_align,
+        bits_per_sample,
+        b"data",
+        data_size,
+    )
 
 
 def _voice_lang_code(voice_id: str) -> str:
@@ -207,14 +235,61 @@ class KokoroTTSAdapter(TTSAdapter):
                 wav_file.writeframes((audio_array * 32767).astype(np.int16).tobytes())
 
             with ThreadPoolExecutor(max_workers=1) as executor:
-                audio_bytes, sample_rate, duration = await loop.run_in_executor(
-                    executor, _convert_audio, temp_path, output_format
-                )
+                audio_bytes, sample_rate, duration = await loop.run_in_executor(executor, _convert_audio, temp_path, output_format)
         finally:
             if os.path.exists(temp_path):
                 os.unlink(temp_path)
 
         return TTSResult(audio_data=audio_bytes, sample_rate=sample_rate, duration=duration, format=output_format)
+
+    async def synthesize_stream(
+        self,
+        text: str,
+        voice: str | None = None,
+        speed: float = 1.0,
+        output_format: str = "pcm",
+        **kwargs,
+    ) -> AsyncGenerator[bytes, None]:
+        if not self.is_loaded():
+            raise RuntimeError("Model not loaded. Call load_model() first.")
+
+        if output_format not in SUPPORTED_FORMATS:
+            raise ValueError(f"Unsupported format '{output_format}'. Supported: {', '.join(sorted(SUPPORTED_FORMATS))}")
+
+        if output_format not in ("pcm", "wav"):
+            async for chunk in super().synthesize_stream(text=text, voice=voice, speed=speed, output_format=output_format, **kwargs):
+                yield chunk
+            return
+
+        voice_id = voice or "af_heart"
+        lang_code = _voice_lang_code(voice_id)
+        loop = asyncio.get_event_loop()
+        queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+
+        def _run() -> None:
+            try:
+                pipeline = self._get_pipeline(lang_code)
+                loaded_voice = self._load_voice(voice_id)
+                for _, _, audio_chunk in pipeline(text, voice=loaded_voice, speed=speed, split_pattern=r"\n+"):
+                    pcm_bytes = (audio_chunk * 32767).astype(np.int16).tobytes()
+                    loop.call_soon_threadsafe(queue.put_nowait, pcm_bytes)
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, None)
+
+        if output_format == "wav":
+            yield _wav_header_open_ended(KOKORO_SAMPLE_RATE)
+
+        executor = ThreadPoolExecutor(max_workers=1)
+        executor.submit(_run)
+
+        try:
+            while True:
+                chunk = await queue.get()
+                if chunk is None:
+                    break
+                yield chunk
+        finally:
+            executor.shutdown(wait=False)
 
     def _load_single_voice(self, voice_id: str) -> torch.Tensor | str:
         voice_id = voice_id.strip()

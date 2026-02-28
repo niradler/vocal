@@ -1,9 +1,19 @@
 import asyncio
 import time
+from collections.abc import AsyncGenerator
 from pathlib import Path
 
 from vocal_core import ModelRegistry
-from vocal_core.adapters.tts import KOKORO_AVAILABLE, KokoroTTSAdapter, SimpleTTSAdapter, TTSAdapter, TTSResult, Voice
+from vocal_core.adapters.tts import (
+    FASTER_QWEN3_TTS_AVAILABLE,
+    KOKORO_AVAILABLE,
+    FasterQwen3TTSAdapter,
+    KokoroTTSAdapter,
+    SimpleTTSAdapter,
+    TTSAdapter,
+    TTSResult,
+    Voice,
+)
 
 
 class TTSService:
@@ -87,6 +97,51 @@ class TTSService:
 
         return await adapter.synthesize(text=text, voice=voice, speed=speed, output_format=output_format)
 
+    async def synthesize_stream(
+        self,
+        model_id: str,
+        text: str,
+        voice: str | None = None,
+        speed: float = 1.0,
+        output_format: str = "pcm",
+    ) -> AsyncGenerator[bytes, None]:
+        """
+        Stream audio bytes as they are generated.
+
+        Args:
+            model_id: TTS model identifier (use "pyttsx3" for system TTS)
+            text: Text to convert to speech
+            voice: Voice ID to use
+            speed: Speech speed multiplier
+            output_format: Output audio format
+
+        Yields:
+            bytes chunks of audio data
+        """
+        if model_id == "pyttsx3":
+            adapter = await self._get_or_create_simple_adapter()
+            self.last_used[model_id] = time.time()
+            async for chunk in adapter.synthesize_stream(text=text, voice=voice, speed=speed, output_format=output_format):
+                yield chunk
+            return
+
+        model_info = await self.registry.get_model(model_id)
+        if not model_info:
+            raise ValueError(f"Model {model_id} not found in registry")
+
+        if model_info.task.value != "tts":
+            raise ValueError(f"Model {model_id} is not a TTS model (task: {model_info.task})")
+
+        model_path = self.registry.get_model_path(model_id)
+        if not model_path:
+            raise ValueError(f"Model {model_id} not downloaded. Download it first: POST /v1/models/{model_id}/download")
+
+        adapter = await self._get_or_create_adapter(model_id, model_path, model_info.backend.value)
+        self.last_used[model_id] = time.time()
+
+        async for chunk in adapter.synthesize_stream(text=text, voice=voice, speed=speed, output_format=output_format):
+            yield chunk
+
     async def get_voices(self, model_id: str | None = None) -> list[Voice]:
         """
         Get list of available voices
@@ -136,4 +191,8 @@ class TTSService:
             if not KOKORO_AVAILABLE:
                 raise ImportError("kokoro package is required for this model. Install with: uv add kokoro")
             return KokoroTTSAdapter()
-        return SimpleTTSAdapter()
+        if backend == "faster_qwen3_tts":
+            if not FASTER_QWEN3_TTS_AVAILABLE:
+                raise ImportError("faster-qwen3-tts package is required for this model. Install with: uv add faster-qwen3-tts")
+            return FasterQwen3TTSAdapter()
+        raise ValueError(f"Unsupported TTS backend: '{backend}'. Supported backends: kokoro, faster_qwen3_tts")

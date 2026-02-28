@@ -36,11 +36,12 @@ uvx --from vocal-ai vocal run your_audio.mp3
 - ⚡ **GPU Acceleration**: Automatic CUDA detection with VRAM optimization
 - 🌍 **99+ Languages**: Support for multilingual transcription
 - 🔌 **Extensible**: Generic provider pattern (HuggingFace, local, custom)
-- 🎤 **OpenAI Compatible**: `/v1/audio/transcriptions` endpoint
-- 🔊 **Text-to-Speech**: Neural TTS with Piper or system voices (SAPI5 on Windows, nsss on macOS, espeak on Linux)
+- 🎤 **OpenAI Compatible**: `/v1/audio/transcriptions` and `/v1/audio/speech` endpoints
+- 🔊 **Neural TTS**: Kokoro-82M, Qwen3-TTS (0.6B / 1.7B), Piper, or system voices
+- 📡 **Streaming TTS**: Chunked audio delivery via `"stream": true` — first bytes arrive immediately
 - 🎨 **CLI Tool**: Typer-based CLI with rich console output
 - 💻 **Cross-Platform**: Full support for Windows, macOS, and Linux
-- ✅ **Production Ready**: 47/47 tests passing with real audio assets
+- ✅ **Production Ready**: 36/36 tests passing with real audio assets
 
 ## Prerequisites
 
@@ -67,6 +68,10 @@ uvx --from vocal-ai vocal serve
 # Or install with pip
 pip install vocal-ai
 vocal serve
+
+# Optional backends (install what you need)
+pip install vocal-ai[kokoro]     # Kokoro-82M neural TTS (CPU/GPU)
+pip install vocal-ai[qwen3-tts]  # Qwen3-TTS 0.6B / 1.7B (CUDA required)
 ```
 
 ### From Source
@@ -177,6 +182,24 @@ curl -X POST "http://localhost:8000/v1/audio/speech" \
   -H "Content-Type: application/json" \
   -d '{"model":"pyttsx3","input":"Hello world","response_format":"wav"}' \
   --output speech.wav
+
+# Streaming: receive audio chunks as they are generated
+curl -X POST "http://localhost:8000/v1/audio/speech" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"kokoro","input":"Hello world","response_format":"pcm","stream":true}' \
+  --output - | play -r 24000 -e signed -b 16 -c 1 -t raw -
+
+# Kokoro neural TTS (requires: pip install vocal-ai[kokoro])
+curl -X POST "http://localhost:8000/v1/audio/speech" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"hexgrad/Kokoro-82M","input":"Hello world","voice":"af_heart"}' \
+  --output speech.mp3
+
+# Qwen3-TTS (requires: pip install vocal-ai[qwen3-tts] + CUDA GPU)
+curl -X POST "http://localhost:8000/v1/audio/speech" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qwen3-tts-1.7b-custom","input":"Hello world","voice":"aiden"}' \
+  --output speech.mp3
 ```
 
 ### Docker Deployment
@@ -300,17 +323,21 @@ Convert text to speech.
 
 **Parameters:**
 
-- `model` (required): TTS model to use (e.g., "pyttsx3" for system voices, "hexgrad/Kokoro-82M")
+- `model` (required): TTS model to use (e.g., `"pyttsx3"`, `"hexgrad/Kokoro-82M"`, `"qwen3-tts-1.7b-custom"`)
 - `input` (required): Text to synthesize
 - `voice` (optional): Voice ID to use (see `GET /v1/audio/voices`)
 - `speed` (optional): Speech speed multiplier (0.25-4.0, default: 1.0)
-- `response_format` (optional): `mp3` (default), `wav`, `opus`, `aac`, `flac`, `pcm` - matches OpenAI TTS API
+- `response_format` (optional): `mp3` (default), `wav`, `opus`, `aac`, `flac`, `pcm`
+- `stream` (optional): `false` (default) — set to `true` to receive audio as chunked transfer. With Kokoro, `wav` and `pcm` formats yield real per-sentence chunks; other formats fall back to a single chunk after generation.
 
-**Response:**
+**Response (stream: false):**
 Returns audio file in specified format with headers:
 
 - `X-Duration`: Audio duration in seconds
 - `X-Sample-Rate`: Audio sample rate
+
+**Response (stream: true):**
+Returns `Transfer-Encoding: chunked` streaming response. Audio bytes arrive as they are generated — first chunk delivered before full synthesis completes.
 
 #### `GET /v1/audio/voices`
 
@@ -348,18 +375,44 @@ OpenAPI specification (auto-generated)
 
 ## Available Models
 
-| Model ID                                 | Size   | Parameters | VRAM  | Speed       | Status      |
+### STT (Speech-to-Text)
+
+| Model ID                                 | Size   | Parameters | VRAM  | Speed       | Backend     |
 | ---------------------------------------- | ------ | ---------- | ----- | ----------- | ----------- |
 | `Systran/faster-whisper-tiny`            | ~75MB  | 39M        | 1GB+  | Fastest     | CTranslate2 |
 | `Systran/faster-whisper-base`            | ~145MB | 74M        | 1GB+  | Fast        | CTranslate2 |
 | `Systran/faster-whisper-small`           | ~488MB | 244M       | 2GB+  | Good        | CTranslate2 |
 | `Systran/faster-whisper-medium`          | ~1.5GB | 769M       | 5GB+  | Better      | CTranslate2 |
 | `Systran/faster-whisper-large-v3`        | ~3.1GB | 1.5B       | 10GB+ | Best        | CTranslate2 |
-| `Systran/faster-distil-whisper-large-v3` | ~756MB | 809M       | 6GB+  | Fast & Good | CTranslate2 |
 
-All models support 99+ languages including English, Spanish, French, German, Chinese, Japanese, Arabic, and more.
+All STT models support 99+ languages. Use alias `whisper-tiny`, `whisper-base`, etc. for short names.
 
-**Note:** These use the CTranslate2-optimized models from Systran for faster-whisper, which are ~4x faster than the original OpenAI Whisper models.
+### TTS (Text-to-Speech)
+
+| Alias / Model ID                              | Size   | Parameters | VRAM   | Languages       | Install extra  |
+| --------------------------------------------- | ------ | ---------- | ------ | --------------- | -------------- |
+| `pyttsx3`                                     | —      | —          | None   | System voices   | built-in       |
+| `kokoro` / `hexgrad/Kokoro-82M`               | ~347MB | 82M        | 4GB+   | en (30+ voices) | `[kokoro]`     |
+| `kokoro-onnx` / `onnx-community/Kokoro-82M-ONNX` | ~1.3GB | 82M     | 6GB+   | en              | `[kokoro]`     |
+| `qwen3-tts-0.6b` / `Qwen/Qwen3-TTS-...-0.6B-Base` | ~2.3GB | 915M  | 8GB+   | zh/en/ja/ko/de/fr/ru/pt/es/it | `[qwen3-tts]` |
+| `qwen3-tts-1.7b` / `Qwen/Qwen3-TTS-...-1.7B-Base` | ~4.2GB | 1.9B  | 8GB+   | zh/en/ja/ko/de/fr/ru/pt/es/it | `[qwen3-tts]` |
+| `qwen3-tts-0.6b-custom`                       | ~2.3GB | 906M       | 8GB+   | zh/en/ja/ko/de/fr/ru/pt/es/it | `[qwen3-tts]` |
+| `qwen3-tts-1.7b-custom`                       | ~4.2GB | 1.9B       | 8GB+   | zh/en/ja/ko     | `[qwen3-tts]` |
+
+**Kokoro** runs on CPU or GPU and supports real per-sentence streaming. **Qwen3-TTS** requires an NVIDIA CUDA GPU.
+
+```bash
+# Install optional backends
+pip install vocal-ai[kokoro]      # Kokoro neural TTS
+pip install vocal-ai[qwen3-tts]   # Qwen3-TTS (CUDA required)
+pip install vocal-ai[kokoro,qwen3-tts]  # Both
+```
+
+> **Note (Kokoro):** The `kokoro` package uses the spaCy `en_core_web_sm` model for English text processing. PyPI does not allow packages to declare direct URL dependencies, so it is not listed in the install extras. If Kokoro raises an error about a missing spaCy model, install it manually:
+>
+> ```bash
+> python -m spacy download en_core_web_sm
+> ```
 
 ## Performance & Optimization
 
@@ -518,7 +571,7 @@ make test-verbose
 uv run python -m pytest tests/test_e2e.py -v
 ```
 
-**Current Status: 47/47 tests passing ✅**
+**Current Status: 36/36 tests passing ✅**
 
 Test coverage includes:
 
@@ -649,6 +702,10 @@ git checkout -b feature/your-feature
 - GPU acceleration with CUDA
 - OpenAI-compatible endpoints
 - Published to PyPI as `vocal-ai`
+- Kokoro-82M neural TTS adapter (CPU/GPU, 30+ voices, streaming)
+- Qwen3-TTS 0.6B / 1.7B adapter (CUDA, 10 languages, custom-voice variants)
+- Streaming TTS via `"stream": true` — chunked transfer, first bytes before full generation
+- `faster-qwen3-tts` as optional install extra (`pip install vocal-ai[qwen3-tts]`)
 
 ### 🎯 Next Release (v0.4.0)
 
