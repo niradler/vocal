@@ -726,17 +726,27 @@ git checkout -b feature/your-feature
 
 ### 🚀 Future (v0.5.0+)
 
-**4. Voice Registry System**
+**4. OpenAI Realtime API Compatible Endpoint (`/v1/realtime`)**
+
+- **Why:** The OpenAI Realtime API is becoming the standard protocol for low-latency voice agents. A self-hosted, local-first drop-in would make Vocal the go-to backend for any voice agent that currently points at OpenAI.
+- **How:** WebSocket endpoint implementing the OpenAI Realtime event protocol (session lifecycle, `input_audio_buffer.append`, `response.audio.delta`). Audio input is piped through Vocal's STT adapters, text response comes from a configurable external LLM URL (Ollama, vLLM, or any OpenAI-compatible chat endpoint), and audio output streams back via Vocal's TTS adapters. Vocal stays focused on voice; the LLM is pluggable.
+
+```
+/v1/realtime  (WebSocket)
+  mic audio → Vocal STT → text → [your LLM] → text → Vocal TTS → audio chunks
+```
+
+**5. Voice Registry System**
 
 - **Why:** Voices should be managed like models, not just system TTS
 - **How:** `vocal voices list/pull/show` with downloadable voice models
 
-**5. Voice Cloning (XTTS-v2)**
+**6. Voice Cloning (XTTS-v2)**
 
 - **Why:** Custom voices are the killer feature for TTS
 - **How:** `vocal voices clone my-voice --sample recording.wav`
 
-**6. Voice Preview**
+**7. Voice Preview**
 
 - **Why:** Users want to test voices before using them
 - **How:** `vocal voices sample kokoro-en "Hello world"` generates quick sample
