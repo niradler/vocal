@@ -1,10 +1,20 @@
+import json
 from pathlib import Path
 
+import httpx
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from vocal_sdk import VocalSDK
+from vocal_sdk import VocalClient
+from vocal_sdk.api.models import (
+    delete_model_v1_models_model_id_delete,
+    download_model_v1_models_model_id_download_post,
+    list_models_v1_models_get,
+)
+from vocal_sdk.api.transcription import create_transcription_v1_audio_transcriptions_post
+from vocal_sdk.models import BodyCreateTranscriptionV1AudioTranscriptionsPost, TranscriptionFormat
+from vocal_sdk.types import UNSET, File, Unset
 
 app = typer.Typer(
     name="vocal",
@@ -16,6 +26,10 @@ models_app = typer.Typer(help="Model management commands")
 app.add_typer(models_app, name="models")
 
 console = Console()
+
+
+def _make_client(api_url: str) -> VocalClient:
+    return VocalClient(base_url=api_url, timeout=httpx.Timeout(300.0), raise_on_unexpected_status=True)
 
 
 @app.command()
@@ -37,38 +51,37 @@ def run(
         raise typer.Exit(1)
 
     try:
-        client = VocalSDK(base_url=api_url)
-
+        vc = _make_client(api_url)
         console.print("Transcribing audio...")
 
-        result = client.audio.transcribe(
-            file=str(audio_file),
-            model=model,
-            language=language,
-            response_format="json",
-        )
+        with open(audio_file, "rb") as fobj:
+            body = BodyCreateTranscriptionV1AudioTranscriptionsPost(
+                file=File(payload=fobj, file_name=audio_file.name),
+                model=model,
+                language=language if language is not None else UNSET,
+                response_format=TranscriptionFormat.JSON,
+            )
+            result = create_transcription_v1_audio_transcriptions_post.sync(client=vc, body=body)
+
+        if result is None:
+            console.print("[red]Error:[/red] Transcription failed - no response")
+            raise typer.Exit(1)
 
         if output_format == "text":
-            console.print(result["text"])
+            console.print(result.text)
         elif output_format == "json":
-            import json
-
-            console.print_json(json.dumps(result))
-        elif output_format == "srt":
-            for seg in result.get("segments", []):
-                console.print(f"{seg['id'] + 1}")
-                start = _format_timestamp(seg["start"])
-                end = _format_timestamp(seg["end"])
-                console.print(f"{start} --> {end}")
-                console.print(seg["text"])
-                console.print()
-        elif output_format == "vtt":
-            console.print("WEBVTT\n")
-            for seg in result.get("segments", []):
-                start = _format_timestamp(seg["start"], use_comma=False)
-                end = _format_timestamp(seg["end"], use_comma=False)
-                console.print(f"{start} --> {end}")
-                console.print(seg["text"])
+            console.print_json(json.dumps(result.to_dict()))
+        elif output_format in ("srt", "vtt"):
+            segs = [] if isinstance(result.segments, Unset) or result.segments is None else result.segments
+            if output_format == "vtt":
+                console.print("WEBVTT\n")
+            for seg in segs:
+                if output_format == "srt":
+                    console.print(f"{seg.id + 1}")
+                    console.print(f"{_format_timestamp(seg.start)} --> {_format_timestamp(seg.end)}")
+                else:
+                    console.print(f"{_format_timestamp(seg.start, use_comma=False)} --> {_format_timestamp(seg.end, use_comma=False)}")
+                console.print(seg.text)
                 console.print()
 
     except Exception as e:
@@ -78,19 +91,17 @@ def run(
 
 @models_app.command("list")
 def models_list(
-    status: str | None = typer.Option(
-        None,
-        "--status",
-        "-s",
-        help="Filter by status: available, downloading, not_downloaded",
-    ),
     task: str | None = typer.Option(None, "--task", "-t", help="Filter by task: stt, tts"),
     api_url: str = typer.Option("http://localhost:8000", "--api-url", help="Vocal API URL"),
 ):
     """List all available models"""
     try:
-        client = VocalSDK(base_url=api_url)
-        response = client.models.list(status=status, task=task)
+        vc = _make_client(api_url)
+        response = list_models_v1_models_get.sync(client=vc, task=task if task is not None else UNSET)
+
+        if response is None:
+            console.print("[red]Error:[/red] Failed to list models")
+            raise typer.Exit(1)
 
         table = Table(title="Vocal Models")
         table.add_column("Model ID", style="cyan")
@@ -98,22 +109,23 @@ def models_list(
         table.add_column("Status", style="green")
         table.add_column("Size", style="yellow")
 
-        for model in response["models"]:
+        for m in response.models:
+            status_val = m.status.value
             status_color = {
                 "available": "green",
                 "downloading": "yellow",
                 "not_downloaded": "red",
-            }.get(model["status"], "white")
-
+            }.get(status_val, "white")
+            size = str(m.size_readable) if not isinstance(m.size_readable, Unset) else "N/A"
             table.add_row(
-                model["id"],
-                model.get("task", "N/A"),
-                f"[{status_color}]{model['status']}[/{status_color}]",
-                str(model.get("size", "N/A")),
+                m.id,
+                m.task.value,
+                f"[{status_color}]{status_val}[/{status_color}]",
+                size,
             )
 
         console.print(table)
-        console.print(f"\nTotal models: {response['total']}")
+        console.print(f"\nTotal models: {response.total}")
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {str(e)}")
@@ -127,15 +139,12 @@ def models_pull(
 ):
     """Download a model (Ollama-style pull)"""
     try:
-        client = VocalSDK(base_url=api_url)
-
+        vc = _make_client(api_url)
         console.print(f"Downloading {model_id}...")
-
-        result = client.models.download(model_id)
-
+        result = download_model_v1_models_model_id_download_post.sync(model_id=model_id, client=vc)
         console.print(f"[green]Successfully downloaded:[/green] {model_id}")
-        console.print(f"Status: {result.get('status', 'unknown')}")
-
+        if result is not None:
+            console.print(f"Status: {result.status.value}")
     except Exception as e:
         console.print(f"[red]Error:[/red] {str(e)}")
         raise typer.Exit(1)
@@ -155,11 +164,9 @@ def models_delete(
             raise typer.Exit(0)
 
     try:
-        client = VocalSDK(base_url=api_url)
-        client.models.delete(model_id)
-
+        vc = _make_client(api_url)
+        delete_model_v1_models_model_id_delete.sync(model_id=model_id, client=vc)
         console.print(f"[green]Successfully deleted:[/green] {model_id}")
-
     except Exception as e:
         console.print(f"[red]Error:[/red] {str(e)}")
         raise typer.Exit(1)
@@ -179,12 +186,7 @@ def serve(
     console.print(f"Docs: http://{host}:{port}/docs")
 
     try:
-        uvicorn.run(
-            "vocal_api.main:app",
-            host=host,
-            port=port,
-            reload=reload,
-        )
+        uvicorn.run("vocal_api.main:app", host=host, port=port, reload=reload)
     except KeyboardInterrupt:
         console.print("\n[yellow]Server stopped[/yellow]")
     except Exception as e:
@@ -193,15 +195,12 @@ def serve(
 
 
 def _format_timestamp(seconds: float, use_comma: bool = True) -> str:
-    """Format timestamp for SRT/VTT output"""
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
     secs = seconds % 60
-
     if use_comma:
         return f"{hours:02d}:{minutes:02d}:{secs:06.3f}".replace(".", ",")
-    else:
-        return f"{hours:02d}:{minutes:02d}:{secs:06.3f}"
+    return f"{hours:02d}:{minutes:02d}:{secs:06.3f}"
 
 
 if __name__ == "__main__":

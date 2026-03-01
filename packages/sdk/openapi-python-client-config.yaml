@@ -1,0 +1,13 @@
+project_name_override: vocal-sdk
+package_name_override: vocal_sdk
+use_path_prefixes_for_title_model_names: false
+content_type_overrides:
+  audio/mpeg: application/octet-stream
+  audio/wav: application/octet-stream
+  audio/opus: application/octet-stream
+  audio/aac: application/octet-stream
+  audio/flac: application/octet-stream
+  audio/pcm: application/octet-stream
+post_hooks:
+  - "ruff check . --fix-only --unsafe-fixes"
+  - "ruff format ."

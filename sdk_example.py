@@ -1,28 +1,31 @@
 """
 Example: Using Vocal SDK (auto-generated from OpenAPI spec)
 
-This demonstrates the clean SDK interface for interacting with Vocal API.
+This demonstrates the typed SDK interface for interacting with Vocal API.
 """
 
 import sys
 
-from vocal_sdk import VocalSDK
+from vocal_sdk import VocalClient
+from vocal_sdk.api.health import health_health_get
+from vocal_sdk.api.models import download_model_v1_models_model_id_download_post, get_model_v1_models_model_id_get, list_models_v1_models_get
+from vocal_sdk.api.transcription import create_transcription_v1_audio_transcriptions_post
+from vocal_sdk.models import BodyCreateTranscriptionV1AudioTranscriptionsPost, ModelStatus
+from vocal_sdk.types import File
 
 
 def main():
-    """Demo using the auto-generated SDK"""
-
-    # Initialize SDK client
-    client = VocalSDK(base_url="http://localhost:8000")
+    vc = VocalClient(base_url="http://localhost:8000", raise_on_unexpected_status=True)
 
     print("=" * 60)
     print("Vocal SDK Demo - Auto-Generated from OpenAPI")
     print("=" * 60)
 
-    # 1. Check API health
     print("\n1. Checking API health...")
     try:
-        health = client.health()
+        import json
+
+        health = json.loads(health_health_get.sync_detailed(client=vc).content)
         print(f"   Status: {health['status']}")
         print(f"   Version: {health['api_version']}")
     except Exception as e:
@@ -30,29 +33,30 @@ def main():
         print("   Make sure API is running: uv run uvicorn vocal_api.main:app --port 8000")
         return
 
-    # 2. List available models
     print("\n2. Listing available models...")
-    models_response = client.models.list()
-    print(f"   Found {models_response['total']} models")
+    models_resp = list_models_v1_models_get.sync(client=vc)
+    if models_resp is None:
+        print("   ERROR: Could not list models")
+        return
 
-    for model in models_response["models"][:5]:
-        status = "[OK]" if model["status"] == "available" else "[ ]"
-        print(f"   {status} {model['id']}")
-        print(f"       {model['name']} - {model['parameters']}, {model['recommended_vram']}")
+    print(f"   Found {models_resp.total} models")
+    for model in models_resp.models[:5]:
+        status_ok = model.status == ModelStatus.AVAILABLE
+        marker = "[OK]" if status_ok else "[ ]"
+        print(f"   {marker} {model.id}")
+        print(f"       {model.name} - {model.parameters}, {model.recommended_vram}")
 
-    # 3. Ensure model is downloaded
     model_id = "Systran/faster-whisper-tiny"
     print(f"\n3. Checking model: {model_id}")
 
-    model_info = client.models.get(model_id)
-    if model_info["status"] != "available":
+    model_info = get_model_v1_models_model_id_get.sync(model_id=model_id, client=vc)
+    if model_info is None or model_info.status != ModelStatus.AVAILABLE:
         print("   Downloading model...")
-        client.models.download(model_id)
+        download_model_v1_models_model_id_download_post.sync(model_id=model_id, client=vc)
         print("   Download started!")
     else:
         print("   Model ready!")
 
-    # 4. Transcribe audio
     if len(sys.argv) < 2:
         print("\n4. No audio file provided")
         print("   Usage: python sdk_example.py <audio_file>")
@@ -64,16 +68,28 @@ def main():
     print(f"\n4. Transcribing: {audio_file}")
 
     try:
-        result = client.audio.transcribe(file=audio_file, model=model_id, response_format="json")
+        with open(audio_file, "rb") as fobj:
+            body = BodyCreateTranscriptionV1AudioTranscriptionsPost(
+                file=File(payload=fobj, file_name=Path(audio_file).name),
+                model=model_id,
+            )
+            result = create_transcription_v1_audio_transcriptions_post.sync(client=vc, body=body)
 
-        print(f"\n   Text: {result['text']}")
-        print(f"   Language: {result['language']}")
-        print(f"   Duration: {result['duration']:.2f}s")
+        if result is None:
+            print("   ERROR: Transcription failed")
+            return
 
-        if result.get("segments"):
+        print(f"\n   Text: {result.text}")
+        print(f"   Language: {result.language}")
+        print(f"   Duration: {result.duration:.2f}s")
+
+        from vocal_sdk.types import Unset
+
+        segs = [] if isinstance(result.segments, Unset) or result.segments is None else result.segments
+        if segs:
             print("\n   Segments:")
-            for seg in result["segments"][:3]:
-                print(f"     [{seg['start']:.2f}s - {seg['end']:.2f}s] {seg['text']}")
+            for seg in segs[:3]:
+                print(f"     [{seg.start:.2f}s - {seg.end:.2f}s] {seg.text}")
 
     except Exception as e:
         print(f"   ERROR: {e}")
