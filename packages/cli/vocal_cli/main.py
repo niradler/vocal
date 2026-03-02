@@ -17,6 +17,7 @@ import websockets
 from rich.console import Console
 from rich.table import Table
 
+from vocal_core.config import vocal_settings
 from vocal_sdk import VocalClient
 from vocal_sdk.api.models import (
     delete_model_v1_models_model_id_delete,
@@ -45,10 +46,10 @@ app.add_typer(models_app, name="models")
 
 console = Console()
 
-_SAMPLE_RATE = 16000
-_FRAME_SIZE = 1600
-_CHANNELS = 1
-_PLAYBACK_COOLDOWN = 0.5
+_SAMPLE_RATE = vocal_settings.STT_SAMPLE_RATE
+_FRAME_SIZE = vocal_settings.AUDIO_FRAME_SIZE
+_CHANNELS = vocal_settings.AUDIO_CHANNELS
+_PLAYBACK_COOLDOWN = vocal_settings.PLAYBACK_COOLDOWN
 _CALIB_FRAMES = 15
 
 _print_lock = threading.Lock()
@@ -521,7 +522,7 @@ def listen(
         raise typer.Exit(1)
 
 
-_DEFAULT_SYSTEM_PROMPT = "You are a helpful voice assistant. Keep answers short and conversational, 1 sentence max, no symbols or punctuation."
+_DEFAULT_SYSTEM_PROMPT = vocal_settings.CHAT_SYSTEM_PROMPT
 
 
 def _output_devices() -> list[dict]:
@@ -640,9 +641,8 @@ async def _chat_handle_delta(etype: str, event: dict, state: dict, verbose: bool
     elif etype == "response.output_audio_transcript.delta":
         delta = event.get("delta", "")
         state["text"].append(delta)
-        if verbose:
-            sys.stdout.write(delta)
-            sys.stdout.flush()
+        sys.stdout.write(delta)
+        sys.stdout.flush()
     elif etype == "response.output_audio.delta":
         playing.set()
         try:
@@ -664,10 +664,10 @@ async def _chat_handle_done(
         transcript = event.get("transcript", "").strip() or " ".join(state["transcript"]).strip()
         state["transcript"] = []
         sys.stdout.write("\r" + " " * 60 + "\r")
-        if transcript and verbose:
-            console.print(f"[dim]You:[/dim] {transcript}")
+        if transcript:
+            console.print(f"You: {transcript}")
     elif etype == "response.output_audio.done":
-        if verbose and state["text"]:
+        if state["text"]:
             sys.stdout.write("\n")
             sys.stdout.flush()
         if state["audio"]:

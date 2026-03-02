@@ -19,11 +19,13 @@ from ..dependencies import get_transcription_service, get_tts_service
 router = APIRouter(tags=["realtime"])
 logger = logging.getLogger(__name__)
 
-_INPUT_SAMPLE_RATE = 24000
-_STT_SAMPLE_RATE = 16000
-_VAD_THRESHOLD = 300.0
-_SILENCE_FRAMES_NEEDED = 15
-_MAX_BUFFER_FRAMES = 150
+_INPUT_SAMPLE_RATE = vocal_settings.REALTIME_DEFAULT_INPUT_RATE
+_STT_SAMPLE_RATE = vocal_settings.STT_SAMPLE_RATE
+_VAD_THRESHOLD = vocal_settings.VAD_THRESHOLD
+_SILENCE_FRAMES_NEEDED = vocal_settings.VAD_SILENCE_FRAMES
+_MAX_BUFFER_FRAMES = vocal_settings.VAD_MAX_BUFFER_FRAMES
+_SPEECH_ONSET_FRAMES = vocal_settings.VAD_SPEECH_ONSET_FRAMES
+_MIN_SPEECH_FRAMES = vocal_settings.VAD_MIN_SPEECH_FRAMES
 
 
 @dataclass
@@ -38,6 +40,8 @@ class _Session:
     speech_started: bool = False
     silence_count: int = 0
     has_speech: bool = False
+    speech_onset_count: int = 0
+    speech_frames_count: int = 0
     current_item_id: str = field(default_factory=lambda: f"item_{uuid.uuid4().hex[:16]}")
     system_prompt: str = "You are a helpful voice assistant. Keep answers short and conversational, 1-2 sentences max."
     conversation_history: list = field(default_factory=list)
@@ -239,20 +243,32 @@ async def _handle_audio_append(ws: WebSocket, session: _Session, event: dict, tr
     frame_count = len(session.audio_buffer) // 2
 
     if energy >= session.vad_threshold:
-        if not session.speech_started:
+        session.speech_onset_count += 1
+        if session.speech_started:
+            session.speech_frames_count += 1
+            session.silence_count = 0
+        elif session.speech_onset_count >= _SPEECH_ONSET_FRAMES:
             session.speech_started = True
             session.has_speech = True
             session.silence_count = 0
+            session.speech_frames_count = 1
             audio_start_ms = int((frame_count / session.input_sample_rate) * 1000)
             await ws.send_text(_make_event("input_audio_buffer.speech_started", audio_start_ms=audio_start_ms, item_id=session.current_item_id))
-        session.silence_count = 0
-    elif session.speech_started:
-        session.silence_count += 1
-        if session.silence_count >= _SILENCE_FRAMES_NEEDED or frame_count >= _MAX_BUFFER_FRAMES * session.input_sample_rate:
-            audio_end_ms = int((len(session.audio_buffer) / 2 / session.input_sample_rate) * 1000)
-            await ws.send_text(_make_event("input_audio_buffer.speech_stopped", audio_end_ms=audio_end_ms, item_id=session.current_item_id))
-            session.speech_started = False
-            await _commit_and_process(ws, session, transcription_service, tts_service)
+    else:
+        session.speech_onset_count = 0
+        if session.speech_started:
+            session.silence_count += 1
+            if session.silence_count >= _SILENCE_FRAMES_NEEDED or frame_count >= _MAX_BUFFER_FRAMES * session.input_sample_rate:
+                if session.speech_frames_count >= _MIN_SPEECH_FRAMES:
+                    audio_end_ms = int((len(session.audio_buffer) / 2 / session.input_sample_rate) * 1000)
+                    await ws.send_text(_make_event("input_audio_buffer.speech_stopped", audio_end_ms=audio_end_ms, item_id=session.current_item_id))
+                    session.speech_started = False
+                    await _commit_and_process(ws, session, transcription_service, tts_service)
+                else:
+                    session.speech_started = False
+                    session.speech_frames_count = 0
+                    session.silence_count = 0
+                    session.audio_buffer = bytearray()
 
 
 async def _dispatch_event(ws: WebSocket, session: _Session, event: dict, transcription_service, tts_service) -> None:
@@ -273,6 +289,8 @@ async def _dispatch_event(ws: WebSocket, session: _Session, event: dict, transcr
         session.speech_started = False
         session.silence_count = 0
         session.has_speech = False
+        session.speech_onset_count = 0
+        session.speech_frames_count = 0
         await ws.send_text(_make_event("input_audio_buffer.cleared"))
     else:
         await ws.send_text(_make_event("error", error={"code": "unknown_event", "message": f"Unknown event type: {event_type}"}))

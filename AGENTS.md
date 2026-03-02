@@ -349,6 +349,10 @@ Full implementation of the OpenAI Realtime Transcription Session protocol. Clien
 
 **LLM integration (realtime mode):** `httpx.AsyncClient` streams from `vocal_settings.LLM_BASE_URL/chat/completions` — works with Ollama, vLLM, OpenAI, or any OpenAI-compatible endpoint.
 
+**TTS in realtime mode (current):** `tts_service.synthesize()` — full batch synthesis, then the result is chunked into 4800-byte WebSocket frames. Time-to-first-audio is ~1-2s (full generation before any audio is sent).
+
+> **Future: TTS streaming** — `tts_service.synthesize_stream()` already exists and yields audio bytes incrementally. Wiring it to the WebSocket `response.output_audio.delta` loop would reduce time-to-first-audio from ~1-2s to ~200ms. Implement in `_run_voice_agent()` in `packages/api/vocal_api/routes/realtime.py` by replacing the `synthesize()` call with an `async for chunk in synthesize_stream(...)` loop.
+
 ### Core streaming adapter
 
 `FasterWhisperAdapter.transcribe_stream()` — async generator:

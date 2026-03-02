@@ -15,7 +15,7 @@ router = APIRouter(tags=["stream"])
 logger = logging.getLogger(__name__)
 
 _FRAME_DURATION_MS = 100
-_SILENCE_DURATION_S = 1.5
+_SILENCE_DURATION_S = vocal_settings.VAD_SILENCE_DURATION_S
 _MAX_CHUNK_DURATION_S = 10.0
 
 
