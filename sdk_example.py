@@ -5,13 +5,14 @@ This demonstrates the typed SDK interface for interacting with Vocal API.
 """
 
 import sys
+from pathlib import Path
 
 from vocal_sdk import VocalClient
 from vocal_sdk.api.health import health_health_get
 from vocal_sdk.api.models import download_model_v1_models_model_id_download_post, get_model_v1_models_model_id_get, list_models_v1_models_get
 from vocal_sdk.api.transcription import create_transcription_v1_audio_transcriptions_post
 from vocal_sdk.models import BodyCreateTranscriptionV1AudioTranscriptionsPost, ModelStatus
-from vocal_sdk.types import File
+from vocal_sdk.types import File, Unset
 
 
 def main():
@@ -43,8 +44,10 @@ def main():
     for model in models_resp.models[:5]:
         status_ok = model.status == ModelStatus.AVAILABLE
         marker = "[OK]" if status_ok else "[ ]"
+        params = "Unknown" if isinstance(model.parameters, Unset) else model.parameters
+        vram = "Unknown" if isinstance(model.recommended_vram, Unset) else model.recommended_vram
         print(f"   {marker} {model.id}")
-        print(f"       {model.name} - {model.parameters}, {model.recommended_vram}")
+        print(f"       {model.name} - {params}, {vram}")
 
     model_id = "Systran/faster-whisper-tiny"
     print(f"\n3. Checking model: {model_id}")
@@ -82,8 +85,6 @@ def main():
         print(f"\n   Text: {result.text}")
         print(f"   Language: {result.language}")
         print(f"   Duration: {result.duration:.2f}s")
-
-        from vocal_sdk.types import Unset
 
         segs = [] if isinstance(result.segments, Unset) or result.segments is None else result.segments
         if segs:
