@@ -39,9 +39,10 @@ uvx --from vocal-ai vocal run your_audio.mp3
 - 🎤 **OpenAI Compatible**: `/v1/audio/transcriptions` and `/v1/audio/speech` endpoints
 - 🔊 **Neural TTS**: Kokoro-82M, Qwen3-TTS (0.6B / 1.7B), Piper, or system voices
 - 📡 **Streaming TTS**: Chunked audio delivery via `"stream": true` — first bytes arrive immediately
+- 🎙️ **Voice Agent**: `vocal chat` — full STT → LLM → TTS loop, OpenAI Realtime API compatible
 - 🎨 **CLI Tool**: Typer-based CLI with rich console output
 - 💻 **Cross-Platform**: Full support for Windows, macOS, and Linux
-- ✅ **Production Ready**: 36/36 tests passing with real audio assets
+- ✅ **Production Ready**: 41/41 tests passing with real audio assets
 
 ## Prerequisites
 
@@ -165,6 +166,10 @@ uvx --from vocal-ai vocal run audio.mp3
 uvx --from vocal-ai vocal listen
 uvx --from vocal-ai vocal listen --device "Razer"   # select mic by name
 uvx --from vocal-ai vocal devices                   # list available microphones
+
+# Voice agent — full STT → LLM → TTS loop
+uvx --from vocal-ai vocal chat --device "Razer" --output-device 1
+uvx --from vocal-ai vocal output-devices            # list available speakers
 
 # List models
 uvx --from vocal-ai vocal models list
@@ -542,12 +547,13 @@ vocal models delete Systran/faster-whisper-tiny --force
 
 ### Real-time Transcription (ASR Streaming)
 
-Vocal has two real-time modes with different latency/complexity trade-offs:
+Vocal has three real-time modes with different latency/complexity trade-offs:
 
 | Command | Transport | Latency | How it works |
 |---------|-----------|---------|--------------|
 | `vocal listen` | REST (chunk-based) | ~1-2s | Sends audio after silence detected |
 | `vocal live` | WebSocket streaming | ~200ms | Streams raw PCM, server returns partial tokens |
+| `vocal chat` | WebSocket (OpenAI Realtime) | ~1-2s | Full STT → LLM → TTS voice agent loop |
 
 #### `vocal listen` — Chunk-based (REST)
 
@@ -594,6 +600,48 @@ vocal live --task translate --verbose
 3. Server does energy-based VAD, triggers faster-whisper's streaming transcription
 4. Partial tokens arrive word-by-word as faster-whisper decodes each segment
 
+#### `vocal chat` — Voice agent (STT → LLM → TTS)
+
+```bash
+# Full voice loop: speak → transcribe → LLM → speak back
+vocal chat
+
+# Select microphone and speaker
+vocal chat --device "Razer" --output-device 1
+
+# List available speakers first
+vocal output-devices
+
+# Options
+vocal chat --device "Razer"              # select mic by name substring or index
+vocal chat --output-device 1             # select speaker by index
+vocal chat --language en                 # force STT language (faster)
+vocal chat --model Systran/faster-whisper-tiny  # STT model
+vocal chat --system-prompt "You are a pirate. Keep answers short."
+vocal chat --verbose                     # show event trace (debug)
+```
+
+**How it works:**
+1. Connects to `/v1/realtime` WebSocket in `realtime` session mode
+2. Streams mic audio — server VAD detects speech start/end
+3. Transcribes utterance with faster-whisper
+4. Sends transcript to LLM (`LLM_BASE_URL`, default: local Ollama)
+5. Synthesises LLM response with TTS, streams audio back
+6. Mic is muted during playback to prevent echo
+
+**LLM configuration** (via env vars or `.env`):
+
+```env
+LLM_BASE_URL=http://localhost:11434/v1   # Ollama (default)
+LLM_MODEL=gemma3n:latest
+LLM_API_KEY=ollama
+
+# Or point at OpenAI:
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_MODEL=gpt-4o-mini
+LLM_API_KEY=sk-...
+```
+
 #### `vocal devices` — List audio input devices
 
 ```bash
@@ -601,6 +649,14 @@ vocal devices
 ```
 
 Shows all available microphone devices with index, name, channel count, and default sample rate. Use the index or a name substring with `--device` to select.
+
+#### `vocal output-devices` — List audio output devices
+
+```bash
+vocal output-devices
+```
+
+Shows all available speaker/output devices. Use the index with `--output-device` in `vocal chat`.
 
 ### Server Management
 
@@ -653,7 +709,7 @@ make test-verbose
 uv run python -m pytest tests/test_e2e.py -v
 ```
 
-**Current Status: 36/36 tests passing ✅**
+**Current Status: 41/41 tests passing ✅**
 
 Test coverage includes:
 
@@ -728,23 +784,40 @@ make f             # Alias for format
 
 ### Environment Variables
 
-Create a `.env` file:
+All defaults are defined in `vocal_core/config.py` (`VocalSettings`) and can be overridden via environment variables or a `.env` file in your working directory.
 
 ```env
-APP_NAME=Vocal API
-VERSION=0.1.0
-DEBUG=true
-CORS_ORIGINS=["*"]
-MAX_UPLOAD_SIZE=26214400
+# LLM backend (used by vocal chat / /v1/realtime in realtime mode)
+LLM_BASE_URL=http://localhost:11434/v1   # OpenAI-compatible endpoint (Ollama default)
+LLM_MODEL=gemma3n:latest                 # Model to use
+LLM_API_KEY=ollama                       # "ollama" = no auth; set sk-... for OpenAI
 
-# TTS Configuration
-VOCAL_TTS_SAMPLE_RATE=16000  # Output sample rate in Hz (default: 16000)
+# STT defaults
+STT_DEFAULT_MODEL=Systran/faster-whisper-tiny
+STT_DEFAULT_LANGUAGE=                    # empty = auto-detect
+STT_SAMPLE_RATE=16000                    # internal STT sample rate (Hz)
+
+# VAD tuning (server-side voice activity detection)
+VAD_THRESHOLD=400.0                      # RMS energy threshold (0–32768 scale)
+VAD_SILENCE_FRAMES=15                    # silence frames before end-of-speech
+VAD_MAX_BUFFER_FRAMES=150               # max buffer before forced commit
+VAD_SPEECH_ONSET_FRAMES=3               # consecutive loud frames to trigger speech_started
+VAD_MIN_SPEECH_FRAMES=4                 # min speech frames required before committing
+VAD_SILENCE_DURATION_S=1.5              # vocal live: silence duration before sending chunk
+
+# Audio / CLI
+AUDIO_FRAME_SIZE=1600                    # mic frame size (samples)
+AUDIO_CHANNELS=1                         # mono
+PLAYBACK_COOLDOWN=0.5                    # seconds mic stays muted after TTS playback
+
+# vocal chat default system prompt
+CHAT_SYSTEM_PROMPT=You are a helpful voice assistant. Keep answers short and conversational, 1 sentence max, no symbols or punctuation.
 ```
 
-**TTS Configuration:**
-- `VOCAL_TTS_SAMPLE_RATE`: Output sample rate for all TTS audio (default: `16000` Hz / 16 kHz)
-  - Common values: `8000` (phone quality), `16000` (wideband), `22050` (CD half), `44100` (CD quality), `48000` (professional)
-  - All TTS output will be resampled to this rate via ffmpeg
+**VAD tuning tips:**
+- Too many false triggers (background noise) → raise `VAD_THRESHOLD` or `VAD_SPEECH_ONSET_FRAMES`
+- Missing short utterances → lower `VAD_MIN_SPEECH_FRAMES` or `VAD_SPEECH_ONSET_FRAMES`
+- Echo from speakers → raise `PLAYBACK_COOLDOWN`
 
 ### Model Storage
 
@@ -834,10 +907,16 @@ All defaults live in `vocal_core/config.py` and are overridable via env vars or 
 | Env var | Default | Purpose |
 |---------|---------|---------|
 | `LLM_BASE_URL` | `http://localhost:11434/v1` | OpenAI-compatible LLM endpoint (Ollama default) |
-| `LLM_MODEL` | `gemma3n:latest` | LLM model to use for voice agent mode |
+| `LLM_MODEL` | `gemma3n:latest` | LLM model for voice agent mode |
 | `LLM_API_KEY` | `ollama` | API key (`ollama` = no auth; set `sk-...` for OpenAI) |
 | `STT_DEFAULT_MODEL` | `Systran/faster-whisper-tiny` | Default STT model |
-| `STT_SAMPLE_RATE` | `16000` | Internal STT sample rate |
+| `STT_SAMPLE_RATE` | `16000` | Internal STT sample rate (Hz) |
+| `VAD_THRESHOLD` | `400.0` | RMS energy threshold for speech detection |
+| `VAD_SPEECH_ONSET_FRAMES` | `3` | Consecutive loud frames before speech_started fires |
+| `VAD_MIN_SPEECH_FRAMES` | `4` | Min speech frames before committing to Whisper |
+| `VAD_SILENCE_FRAMES` | `15` | Silence frames before end-of-speech |
+| `PLAYBACK_COOLDOWN` | `0.5` | Seconds mic stays muted after TTS finishes |
+| `CHAT_SYSTEM_PROMPT` | `You are a helpful voice assistant...` | Default system prompt for `vocal chat` |
 
 ### 🚀 Future (v0.5.0+)
 
