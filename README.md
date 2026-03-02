@@ -158,8 +158,13 @@ Path("output.mp3").write_bytes(audio_bytes)
 # Start server
 uvx --from vocal-ai vocal serve
 
-# Transcribe audio
+# Transcribe audio file
 uvx --from vocal-ai vocal run audio.mp3
+
+# Real-time microphone transcription (ASR streaming)
+uvx --from vocal-ai vocal listen
+uvx --from vocal-ai vocal listen --device "Razer"   # select mic by name
+uvx --from vocal-ai vocal devices                   # list available microphones
 
 # List models
 uvx --from vocal-ai vocal models list
@@ -535,6 +540,37 @@ vocal models delete Systran/faster-whisper-tiny
 vocal models delete Systran/faster-whisper-tiny --force
 ```
 
+### Real-time Transcription (ASR Streaming)
+
+```bash
+# Listen to default microphone and transcribe speech live
+vocal listen
+
+# Select microphone by name substring or index
+vocal listen --device "Razer"
+vocal listen --device 3
+
+# List available audio input devices
+vocal devices
+
+# Translate speech to English (any source language)
+vocal listen --task translate
+
+# Tuning options
+vocal listen --model Systran/faster-whisper-tiny  # STT model
+vocal listen --language en                         # force language (skips auto-detect)
+vocal listen --silence-duration 2.0               # seconds of silence before sending chunk
+vocal listen --max-chunk-duration 15.0            # max chunk length before forced send
+vocal listen --silence-threshold 300              # manual RMS threshold (skip auto-calibration)
+vocal listen --verbose                            # show API latency per chunk
+```
+
+**How it works:**
+1. Calibrates mic noise floor for ~1.5s on startup (stay quiet)
+2. Shows a live energy bar while listening
+3. Sends audio chunks to the STT API when silence is detected
+4. Prints transcribed text in real-time
+
 ### Server Management
 
 ```bash
@@ -741,7 +777,18 @@ git checkout -b feature/your-feature
 
 ### 🚀 Future (v0.5.0+)
 
-**4. OpenAI Realtime API Compatible Endpoint (`/v1/realtime`)**
+**4. `vocal live` — True WebSocket Streaming ASR**
+
+- **Why:** `vocal listen` today is chunk-based (sends audio after silence). A real-time WebSocket endpoint would return partial transcriptions word-by-word as you speak, dropping latency from ~1-2s to ~200ms.
+- **How:** New `/v1/audio/stream` WebSocket endpoint on the API. `faster-whisper`'s `transcribe()` already yields segments as a generator — the server pipes raw PCM frames into it and pushes partial results downstream. The CLI connects via WebSocket instead of REST, printing words as they arrive.
+- **CLI:** `vocal live` command (distinct from `vocal listen`) — same mic/device options but true streaming output.
+
+```
+/v1/audio/stream  (WebSocket)
+  mic PCM frames → faster-whisper streaming → partial text segments → client
+```
+
+**5. OpenAI Realtime API Compatible Endpoint (`/v1/realtime`)**
 
 - **Why:** The OpenAI Realtime API is becoming the standard protocol for low-latency voice agents. A self-hosted, local-first drop-in would make Vocal the go-to backend for any voice agent that currently points at OpenAI.
 - **How:** WebSocket endpoint implementing the OpenAI Realtime event protocol (session lifecycle, `input_audio_buffer.append`, `response.audio.delta`). Audio input is piped through Vocal's STT adapters, text response comes from a configurable external LLM URL (Ollama, vLLM, or any OpenAI-compatible chat endpoint), and audio output streams back via Vocal's TTS adapters. Vocal stays focused on voice; the LLM is pluggable.

@@ -130,6 +130,13 @@ class Service:
 - OpenAI-compatible: `/v1/audio/speech`, `/v1/audio/transcriptions`
 - Model management: `/v1/models`
 
+### CLI — Real-time ASR (`vocal listen`)
+- `vocal listen` — chunk-based mic transcription via REST (current)
+- `vocal devices` — list audio input devices
+- Key options: `--device`, `--task`, `--language`, `--verbose`, `--silence-duration`, `--max-chunk-duration`
+- Audio constants: `_SAMPLE_RATE=16000`, `_FRAME_SIZE=1600`, `_CHANNELS=1` (module-level in `main.py`)
+- Architecture: PortAudio callback → `queue.SimpleQueue` → `_run_stream` → `_schedule_flush` (daemon thread) → REST API
+
 ---
 
 ## Code Standards
@@ -266,6 +273,27 @@ uvx vocal serve      # Run without installing
 - [ ] `make test` passes (23/23)
 - [ ] Docs updated (if API changed)
 - [ ] Task complete
+
+---
+
+## Future: `vocal live` (WebSocket Streaming ASR)
+
+**Not yet implemented.** Planned as a distinct command from `vocal listen`.
+
+`vocal listen` sends audio chunks over REST after silence — latency ~1-2s.
+`vocal live` would stream raw PCM over WebSocket and receive partial transcriptions word-by-word — latency ~200ms.
+
+**What needs building:**
+1. **API** — `/v1/audio/stream` WebSocket endpoint in `packages/api/vocal_api/routes/`
+2. **Core** — expose `faster-whisper`'s generator-based `transcribe()` as a streaming adapter method
+3. **CLI** — `vocal live` command using `websockets` client instead of REST, printing tokens as they arrive
+
+```
+/v1/audio/stream  (WebSocket)
+  raw PCM frames → faster-whisper streaming generator → partial segments → client
+```
+
+This is the foundation for OpenAI Realtime API compatibility (`/v1/realtime`).
 
 ---
 

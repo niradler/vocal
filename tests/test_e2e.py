@@ -157,6 +157,34 @@ def test_model():
     return "Systran/faster-whisper-tiny"
 
 
+@pytest.fixture(scope="session", autouse=True)
+def ensure_stt_model(client, test_model):
+    """Download the STT test model once per session and wait until it is cached.
+
+    Runs automatically before any test. Subsequent runs use the on-disk cache
+    and complete immediately.
+    """
+    model_info = get_model_v1_models_model_id_get.sync(model_id=test_model, client=client)
+    if model_info is not None and model_info.status == ModelStatus.AVAILABLE:
+        print(f"\n[cache] {test_model} already available — skipping download")
+        return
+
+    print(f"\n[setup] Downloading {test_model}...")
+    download_model_v1_models_model_id_download_post.sync(model_id=test_model, client=client)
+
+    max_wait = 120
+    for elapsed in range(max_wait):
+        model_info = get_model_v1_models_model_id_get.sync(model_id=test_model, client=client)
+        if model_info and model_info.status == ModelStatus.AVAILABLE:
+            print(f"[setup] {test_model} ready after {elapsed}s")
+            return
+        if elapsed % 10 == 0:
+            print(f"[setup] Waiting for model... ({elapsed}s)")
+        time.sleep(1)
+
+    pytest.skip(f"Model {test_model} not available after {max_wait}s — skipping all tests")
+
+
 @pytest.fixture(scope="session")
 def test_assets():
     """Return path to test assets directory and expected transcriptions"""
@@ -250,33 +278,24 @@ class TestModelManagement:
         print(f"\n[OK] Retrieved model info for {test_model}")
         print(f"  Status: {result.status.value}")
 
-    def test_download_model(self, client, test_model):
-        """Test downloading a model"""
-        result = download_model_v1_models_model_id_download_post.sync(model_id=test_model, client=client)
-
-        assert result is not None, "Download result should not be None"
-
-        print(f"\n[OK] Model download initiated: {test_model}")
-
-        time.sleep(2)
-
+    def test_download_model(self, client, test_model, ensure_stt_model):
+        """Test that the test model is downloaded and available (pre-pulled by session fixture)"""
         model_info = get_model_v1_models_model_id_get.sync(model_id=test_model, client=client)
-        assert model_info is not None
-        assert model_info.status in (ModelStatus.AVAILABLE, ModelStatus.DOWNLOADING), "Model should be available or downloading"
 
-        print(f"  Final status: {model_info.status.value}")
+        assert model_info is not None, "Model info should not be None"
+        assert model_info.status == ModelStatus.AVAILABLE, f"Model should be available, got: {model_info.status.value}"
 
-    def test_download_status(self, client, test_model):
-        """Test checking download status"""
+        print(f"\n[OK] Model available: {test_model} ({model_info.status.value})")
+
+    def test_download_status(self, client, test_model, ensure_stt_model):
+        """Test download status endpoint (model is pre-cached so no active download expected)"""
         try:
             result = get_download_status_v1_models_model_id_download_status_get.sync(model_id=test_model, client=client)
-
             assert result is not None, "Status should not be None"
-
             print(f"\n[OK] Download status: {result.status.value}")
         except Exception as e:
             if "404" in str(e) or "not found" in str(e).lower():
-                print("\n[OK] Download status check handled correctly (no active download)")
+                print("\n[OK] No active download (model already cached)")
             else:
                 raise
 
@@ -284,24 +303,7 @@ class TestModelManagement:
 class TestAudioTranscription:
     """Test STT (Speech-to-Text) functionality"""
 
-    @pytest.fixture(autouse=True)
-    def ensure_model(self, client, test_model):
-        """Ensure test model is downloaded before tests"""
-        model_info = get_model_v1_models_model_id_get.sync(model_id=test_model, client=client)
-        if model_info is None or model_info.status != ModelStatus.AVAILABLE:
-            print(f"\nDownloading {test_model} for testing...")
-            download_model_v1_models_model_id_download_post.sync(model_id=test_model, client=client)
-
-            max_wait = 60
-            for _ in range(max_wait):
-                model_info = get_model_v1_models_model_id_get.sync(model_id=test_model, client=client)
-                if model_info and model_info.status == ModelStatus.AVAILABLE:
-                    break
-                time.sleep(1)
-            else:
-                pytest.skip(f"Model {test_model} not available after {max_wait}s")
-
-    def test_transcribe_short_audio(self, client, test_model, test_assets):
+    def test_transcribe_short_audio(self, client, test_model, test_assets, ensure_stt_model):
         """Test transcribing short audio file"""
         audio_file = test_assets["audio_dir"] / "Recording.m4a"
         expected_text = test_assets["files"]["Recording.m4a"]
@@ -324,7 +326,7 @@ class TestAudioTranscription:
         print(f"  Expected: '{expected_text}'")
         print(f"  Got: '{transcribed}'")
 
-    def test_transcribe_medium_audio(self, client, test_model, test_assets):
+    def test_transcribe_medium_audio(self, client, test_model, test_assets, ensure_stt_model):
         """Test transcribing medium-length audio"""
         audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
         expected_text = test_assets["files"]["en-AU-WilliamNeural.mp3"]
@@ -341,7 +343,7 @@ class TestAudioTranscription:
         print(f"  Expected: '{expected_text}'")
         print(f"  Got: '{transcribed}'")
 
-    def test_transcribe_with_language_specification(self, client, test_model, test_assets):
+    def test_transcribe_with_language_specification(self, client, test_model, test_assets, ensure_stt_model):
         """Test transcription with specified language"""
         audio_file = test_assets["audio_dir"] / "Recording.m4a"
 
@@ -352,7 +354,7 @@ class TestAudioTranscription:
 
         print("\n[OK] Transcribed with language=en")
 
-    def test_transcribe_json_format_with_segments(self, client, test_model, test_assets):
+    def test_transcribe_json_format_with_segments(self, client, test_model, test_assets, ensure_stt_model):
         """Test JSON format response with segments"""
         audio_file = test_assets["audio_dir"] / "Recording.m4a"
 
@@ -372,7 +374,7 @@ class TestAudioTranscription:
 
         print(f"\n[OK] Got JSON format with {len(segs)} segments")
 
-    def test_transcribe_silence(self, client, test_model, test_assets):
+    def test_transcribe_silence(self, client, test_model, test_assets, ensure_stt_model):
         """Test transcribing second audio file"""
         audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
 
@@ -382,7 +384,7 @@ class TestAudioTranscription:
         assert isinstance(result.text, str), "Should have text field"
         print(f"\n[OK] Transcribed second file: '{result.text}'")
 
-    def test_transcribe_both_formats(self, client, test_model, test_assets):
+    def test_transcribe_both_formats(self, client, test_model, test_assets, ensure_stt_model):
         """Test transcribing different audio formats (m4a and mp3)"""
         for filename in test_assets["files"].keys():
             audio_file = test_assets["audio_dir"] / filename
@@ -639,7 +641,7 @@ class TestTextToSpeech:
 class TestErrorHandling:
     """Test error handling and edge cases"""
 
-    def test_transcribe_nonexistent_model(self, client, test_assets):
+    def test_transcribe_nonexistent_model(self, client, test_assets, ensure_stt_model):
         """Test transcription with non-existent model"""
         audio_file = test_assets["audio_dir"] / "Recording.m4a"
 
@@ -648,7 +650,7 @@ class TestErrorHandling:
 
         print("\n[OK] Correctly raised error for invalid model")
 
-    def test_transcribe_nonexistent_file(self, client, test_model):
+    def test_transcribe_nonexistent_file(self, client, test_model, ensure_stt_model):
         """Test transcription with non-existent file"""
         with pytest.raises(Exception):
             _transcribe(client, "nonexistent_audio.wav", test_model)
@@ -673,7 +675,7 @@ class TestErrorHandling:
 class TestPerformance:
     """Test performance and optimization"""
 
-    def test_model_reuse(self, client, test_model, test_assets):
+    def test_model_reuse(self, client, test_model, test_assets, ensure_stt_model):
         """Test that model stays loaded for multiple transcriptions"""
         audio_file = test_assets["audio_dir"] / "Recording.m4a"
 
