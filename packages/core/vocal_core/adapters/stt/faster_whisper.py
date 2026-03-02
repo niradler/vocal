@@ -1,5 +1,7 @@
+import asyncio
 import logging
 import tempfile
+from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any, BinaryIO
 
@@ -212,6 +214,71 @@ class FasterWhisperAdapter(STTAdapter):
                 segments=segments_list if segments_list else None,
                 words=words_list if words_list else None,
             )
+
+        finally:
+            if temp_file and Path(temp_file.name).exists():
+                Path(temp_file.name).unlink()
+
+    async def transcribe_stream(
+        self,
+        audio: str | Path | BinaryIO,
+        language: str | None = None,
+        task: str = "transcribe",
+        beam_size: int = 1,
+        vad_filter: bool = True,
+        **kwargs,
+    ) -> AsyncGenerator[TranscriptionSegment, None]:
+        if not self.is_loaded():
+            raise RuntimeError("Model not loaded. Call load_model() first.")
+
+        loop = asyncio.get_running_loop()
+        q: asyncio.Queue = asyncio.Queue()
+        temp_file = None
+
+        try:
+            if isinstance(audio, (str, Path)):
+                audio_path = str(audio)
+            else:
+                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".audio")
+                temp_file.write(audio.read())
+                temp_file.close()
+                audio_path = temp_file.name
+
+            transcribe_kwargs = {
+                "language": language,
+                "task": task,
+                "beam_size": beam_size,
+                "vad_filter": vad_filter,
+                **kwargs,
+            }
+
+            def _run_in_thread() -> None:
+                try:
+                    segments, _ = self.model.transcribe(audio_path, **transcribe_kwargs)
+                    for idx, seg in enumerate(segments):
+                        item = TranscriptionSegment(
+                            id=idx,
+                            start=seg.start,
+                            end=seg.end,
+                            text=seg.text,
+                            avg_logprob=seg.avg_logprob,
+                            no_speech_prob=seg.no_speech_prob,
+                        )
+                        loop.call_soon_threadsafe(q.put_nowait, item)
+                except Exception as exc:
+                    loop.call_soon_threadsafe(q.put_nowait, exc)
+                finally:
+                    loop.call_soon_threadsafe(q.put_nowait, None)
+
+            loop.run_in_executor(None, _run_in_thread)
+
+            while True:
+                item = await q.get()
+                if item is None:
+                    break
+                if isinstance(item, Exception):
+                    raise item
+                yield item
 
         finally:
             if temp_file and Path(temp_file.name).exists():

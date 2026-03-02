@@ -6,6 +6,7 @@ from .adapters import (
     TranscriptionSegment,
     TranscriptionWord,
 )
+from .config import VocalSettings, vocal_settings
 from .registry import (
     ModelBackend,
     ModelInfo,
@@ -16,7 +17,7 @@ from .registry import (
     format_bytes,
 )
 
-__version__ = "0.3.4"
+__version__ = "0.3.5"
 
 __all__ = [
     "ModelRegistry",
@@ -32,4 +33,6 @@ __all__ = [
     "TranscriptionSegment",
     "TranscriptionWord",
     "FasterWhisperAdapter",
+    "VocalSettings",
+    "vocal_settings",
 ]

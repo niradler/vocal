@@ -4,7 +4,7 @@ from fastapi.openapi.utils import get_openapi
 
 from .config import settings
 from .dependencies import get_transcription_service, get_tts_service
-from .routes import models_router, system_router, transcription_router, tts_router
+from .routes import models_router, realtime_router, stream_router, system_router, transcription_router, tts_router
 
 app = FastAPI(
     title="Vocal API",
@@ -26,6 +26,8 @@ app.include_router(transcription_router)
 app.include_router(models_router)
 app.include_router(tts_router)
 app.include_router(system_router)
+app.include_router(stream_router)
+app.include_router(realtime_router)
 
 
 @app.on_event("startup")

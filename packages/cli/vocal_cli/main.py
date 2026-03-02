@@ -1,3 +1,5 @@
+import asyncio
+import base64
 import io
 import json
 import queue
@@ -11,9 +13,11 @@ import httpx
 import numpy as np
 import sounddevice as sd
 import typer
+import websockets
 from rich.console import Console
 from rich.table import Table
 
+from vocal_core.config import vocal_settings
 from vocal_sdk import VocalClient
 from vocal_sdk.api.models import (
     delete_model_v1_models_model_id_delete,
@@ -42,9 +46,10 @@ app.add_typer(models_app, name="models")
 
 console = Console()
 
-_SAMPLE_RATE = 16000
-_FRAME_SIZE = 1600
-_CHANNELS = 1
+_SAMPLE_RATE = vocal_settings.STT_SAMPLE_RATE
+_FRAME_SIZE = vocal_settings.AUDIO_FRAME_SIZE
+_CHANNELS = vocal_settings.AUDIO_CHANNELS
+_PLAYBACK_COOLDOWN = vocal_settings.PLAYBACK_COOLDOWN
 _CALIB_FRAMES = 15
 
 _print_lock = threading.Lock()
@@ -266,7 +271,7 @@ def _print_devices_table() -> None:
             "* default" if dev["is_default"] else "",
         )
     console.print(table)
-    console.print("\nUse [cyan]--device <#>[/cyan] or [cyan]--device \"name\"[/cyan] to select.")
+    console.print('\nUse [cyan]--device <#>[/cyan] or [cyan]--device "name"[/cyan] to select.')
 
 
 @app.command()
@@ -493,10 +498,7 @@ def listen(
 
     vc = VocalClient(base_url=api_url, timeout=httpx.Timeout(60.0), raise_on_unexpected_status=False)
     threshold_hint = f"threshold=[cyan]{silence_threshold:.0f}[/cyan]" if silence_threshold is not None else "threshold=[cyan]auto[/cyan]"
-    console.print(
-        f"[green]Listening...[/green] model=[cyan]{model}[/cyan] task=[cyan]{task}[/cyan] "
-        f"device={device_label}  {threshold_hint}  Ctrl+C to stop\n"
-    )
+    console.print(f"[green]Listening...[/green] model=[cyan]{model}[/cyan] task=[cyan]{task}[/cyan] device={device_label}  {threshold_hint}  Ctrl+C to stop\n")
 
     audio_queue: queue.SimpleQueue = queue.SimpleQueue()
 
@@ -518,6 +520,336 @@ def listen(
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
+
+
+_DEFAULT_SYSTEM_PROMPT = vocal_settings.CHAT_SYSTEM_PROMPT
+
+
+def _output_devices() -> list[dict]:
+    seen: set[str] = set()
+    devices = []
+    default_idx = sd.default.device[1]
+    for idx, dev in enumerate(sd.query_devices()):
+        if dev["max_output_channels"] > 0 and dev["name"] not in seen:
+            seen.add(dev["name"])
+            devices.append(
+                {
+                    "index": idx,
+                    "name": dev["name"],
+                    "channels": dev["max_output_channels"],
+                    "sample_rate": int(dev["default_samplerate"]),
+                    "is_default": idx == default_idx,
+                }
+            )
+    return devices
+
+
+def _resolve_output_device(device: str | None) -> int | None:
+    if device is None:
+        return None
+    if device.isdigit():
+        return int(device)
+    for dev in _output_devices():
+        if device.lower() in dev["name"].lower():
+            return dev["index"]
+    raise ValueError(f"No output device matching '{device}'. Run `vocal output-devices` to list available outputs.")
+
+
+@app.command("output-devices")
+def output_devices() -> None:
+    """List available audio output devices"""
+    devs = _output_devices()
+    if not devs:
+        console.print("[red]No output devices found.[/red]")
+        return
+    table = Table(title="Available Output Devices")
+    table.add_column("#", style="cyan", justify="right")
+    table.add_column("Name", style="white")
+    table.add_column("Ch", justify="right")
+    table.add_column("Default Rate", justify="right", style="yellow")
+    table.add_column("", style="green")
+    for dev in devs:
+        table.add_row(str(dev["index"]), dev["name"], str(dev["channels"]), f"{dev['sample_rate']} Hz", "* default" if dev["is_default"] else "")
+    console.print(table)
+    console.print('\nUse [cyan]--output-device <#>[/cyan] or [cyan]--output-device "name"[/cyan] to select.')
+
+
+@app.command()
+def chat(
+    model: str = typer.Option(
+        "Systran/faster-whisper-tiny",
+        "--model",
+        "-m",
+        help="STT model to use for transcription",
+    ),
+    device: str | None = typer.Option(None, "--device", "-d", help="Input device index or name substring. Run `vocal devices` to list."),
+    output_device: str | None = typer.Option(None, "--output-device", "-o", help="Output device index or name. Run `vocal output-devices` to list."),
+    language: str | None = typer.Option(None, "--language", "-l", help="Language code (e.g. 'en'). Auto-detect if omitted."),
+    system_prompt: str = typer.Option(_DEFAULT_SYSTEM_PROMPT, "--system-prompt", "-s", help="System prompt sent to the LLM."),
+    api_url: str = typer.Option("http://localhost:8000", "--api-url", help="Vocal API URL"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show transcription and LLM response text"),
+) -> None:
+    """Voice chat: speak to the AI and hear it respond (STT -> LLM -> TTS loop via /v1/realtime)"""
+    try:
+        device_idx = _resolve_device(device)
+        output_device_idx = _resolve_output_device(output_device)
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    ws_url = api_url.replace("http://", "ws://").replace("https://", "wss://")
+    active_device = sd.query_devices(device_idx if device_idx is not None else sd.default.device[0])
+    device_label = f"[dim]{active_device['name']}[/dim]"
+
+    console.print(f"[green]Voice chat started[/green] model=[cyan]{model}[/cyan] device={device_label}  Ctrl+C to stop\n")
+    console.print("[dim]Speak — I'll transcribe, think, and respond with audio.[/dim]\n")
+
+    try:
+        asyncio.run(_chat_async(ws_url, device_idx, output_device_idx, model, language, system_prompt, verbose))
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Stopped.[/yellow]")
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+def _play_pcm16(pcm_bytes: bytes, sample_rate: int = 24000, device: int | None = None) -> None:
+    if not pcm_bytes:
+        return
+    arr = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+    sd.play(arr, samplerate=sample_rate, device=device)
+    sd.wait()
+
+
+_TRACE_SKIP = {"response.output_audio_transcript.delta", "conversation.item.input_audio_transcription.delta"}
+
+
+def _chat_trace(etype: str, event: dict, state: dict) -> None:
+    if etype in _TRACE_SKIP:
+        return
+    extra = ""
+    if etype == "response.output_audio.delta":
+        extra = f" ({len(event.get('delta', ''))} b64 chars)"
+    elif etype == "response.output_audio.done":
+        extra = f" (chunks={len(state['audio'])})"
+    console.print(f"[dim]  [{etype}{extra}][/dim]", markup=False)
+
+
+async def _chat_handle_delta(etype: str, event: dict, state: dict, verbose: bool, playing: asyncio.Event) -> None:
+    if etype == "conversation.item.input_audio_transcription.delta":
+        state["transcript"].append(event.get("delta", ""))
+    elif etype == "response.output_audio_transcript.delta":
+        delta = event.get("delta", "")
+        state["text"].append(delta)
+        sys.stdout.write(delta)
+        sys.stdout.flush()
+    elif etype == "response.output_audio.delta":
+        playing.set()
+        try:
+            state["audio"].append(base64.b64decode(event.get("delta", "")))
+        except Exception:
+            pass
+
+
+async def _chat_handle_done(
+    etype: str,
+    event: dict,
+    state: dict,
+    verbose: bool,
+    loop: asyncio.AbstractEventLoop,
+    output_device_idx: int | None,
+    playing: asyncio.Event,
+) -> None:
+    if etype == "conversation.item.input_audio_transcription.completed":
+        transcript = event.get("transcript", "").strip() or " ".join(state["transcript"]).strip()
+        state["transcript"] = []
+        sys.stdout.write("\r" + " " * 60 + "\r")
+        if transcript:
+            console.print(f"You: {transcript}")
+    elif etype == "response.output_audio.done":
+        if state["text"]:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+        if state["audio"]:
+            pcm = b"".join(state["audio"])
+            await loop.run_in_executor(None, _play_pcm16, pcm, 24000, output_device_idx)
+        state["audio"] = []
+        state["text"] = []
+        await asyncio.sleep(_PLAYBACK_COOLDOWN)
+        playing.clear()
+
+
+async def _chat_receiver(ws, output_device_idx: int | None, verbose: bool, loop: asyncio.AbstractEventLoop, stop_event: asyncio.Event, playing: asyncio.Event) -> None:
+    state: dict = {"audio": [], "text": [], "transcript": []}
+
+    async for msg in ws:
+        if stop_event.is_set():
+            break
+        event = json.loads(msg)
+        etype = event.get("type", "")
+
+        if verbose:
+            _chat_trace(etype, event, state)
+
+        if "delta" in etype:
+            await _chat_handle_delta(etype, event, state, verbose, playing)
+        elif "done" in etype or "completed" in etype:
+            await _chat_handle_done(etype, event, state, verbose, loop, output_device_idx, playing)
+        elif etype == "input_audio_buffer.speech_started":
+            sys.stdout.write("\r[detecting speech...]     \r")
+            sys.stdout.flush()
+        elif etype == "response.done":
+            sys.stdout.write("[listening...]\r")
+            sys.stdout.flush()
+        elif etype == "error":
+            console.print(f"\n[red]error:[/red] {event.get('error', {}).get('message', 'unknown')}")
+
+
+async def _chat_async(ws_url: str, device_idx: int | None, output_device_idx: int | None, model: str, language: str | None, system_prompt: str, verbose: bool) -> None:
+    audio_q: queue.SimpleQueue = queue.SimpleQueue()
+    loop = asyncio.get_running_loop()
+    stop_event = asyncio.Event()
+    playing = asyncio.Event()
+
+    def _audio_callback(indata, _frames, _ts, _status) -> None:
+        audio_q.put_nowait(indata.copy().tobytes())
+
+    async def _sender(ws) -> None:
+        while not stop_event.is_set():
+            try:
+                frame = await loop.run_in_executor(None, audio_q.get, True, 0.1)
+                if playing.is_set():
+                    continue
+                b64 = base64.b64encode(frame).decode()
+                await ws.send(json.dumps({"type": "input_audio_buffer.append", "audio": b64}))
+            except queue.Empty:
+                continue
+            except Exception:
+                break
+
+    async with websockets.connect(f"{ws_url}/v1/realtime", open_timeout=10) as ws:
+        await asyncio.wait_for(ws.recv(), timeout=5.0)
+
+        session_cfg: dict = {
+            "type": "realtime",
+            "model": model,
+            "input_sample_rate": _SAMPLE_RATE,
+            "system_prompt": system_prompt,
+        }
+        if language:
+            session_cfg["language"] = language
+        await ws.send(json.dumps({"type": "session.update", "session": session_cfg}))
+        await asyncio.wait_for(ws.recv(), timeout=5.0)
+
+        sys.stdout.write("[listening...]  \r")
+        sys.stdout.flush()
+
+        with sd.InputStream(samplerate=_SAMPLE_RATE, channels=_CHANNELS, dtype="int16", blocksize=_FRAME_SIZE, device=device_idx, callback=_audio_callback):
+            sender_task = asyncio.create_task(_sender(ws))
+            receiver_task = asyncio.create_task(_chat_receiver(ws, output_device_idx, verbose, loop, stop_event, playing))
+            try:
+                await asyncio.gather(sender_task, receiver_task)
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                stop_event.set()
+                sender_task.cancel()
+                receiver_task.cancel()
+                raise KeyboardInterrupt
+
+
+@app.command()
+def live(
+    model: str = typer.Option(
+        "Systran/faster-whisper-tiny",
+        "--model",
+        "-m",
+        help="STT model to use",
+    ),
+    language: str | None = typer.Option(None, "--language", "-l", help="Language code (e.g. 'en'). Auto-detect if omitted."),
+    task: str = typer.Option("transcribe", "--task", help="'transcribe' or 'translate'"),
+    device: str | None = typer.Option(None, "--device", "-d", help="Input device index or name substring. Run `vocal devices` to list."),
+    api_url: str = typer.Option("http://localhost:8000", "--api-url", help="Vocal API URL"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show timing info on each utterance"),
+) -> None:
+    """Stream microphone audio over WebSocket and print transcriptions as they arrive (~200ms latency)"""
+    try:
+        device_idx = _resolve_device(device)
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    ws_url = api_url.replace("http://", "ws://").replace("https://", "wss://")
+    params = f"model={model}&task={task}"
+    if language:
+        params += f"&language={language}"
+    endpoint = f"{ws_url}/v1/audio/stream?{params}"
+
+    active_device = sd.query_devices(device_idx if device_idx is not None else sd.default.device[0])
+    device_label = f"[dim]{active_device['name']}[/dim]"
+    console.print(f"[green]Live streaming...[/green] model=[cyan]{model}[/cyan] task=[cyan]{task}[/cyan] device={device_label}  Ctrl+C to stop\n")
+
+    try:
+        asyncio.run(_live_async(endpoint, device_idx, verbose))
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Stopped.[/yellow]")
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+async def _ws_sender(ws, audio_q: queue.SimpleQueue, stop_event: asyncio.Event, loop: asyncio.AbstractEventLoop) -> None:
+    while not stop_event.is_set():
+        try:
+            frame = await loop.run_in_executor(None, audio_q.get, True, 0.1)
+            await ws.send(frame)
+        except queue.Empty:
+            continue
+        except Exception:
+            break
+
+
+async def _ws_receiver(ws, verbose: bool) -> None:
+    current_line = ""
+    t_start = time.monotonic()
+    async for msg in ws:
+        event = json.loads(msg)
+        etype = event.get("type", "")
+        if etype == "transcript.delta":
+            current_line = current_line + event.get("text", "") + " "
+            sys.stdout.write(f"\r> {current_line}  ")
+            sys.stdout.flush()
+        elif etype == "transcript.done":
+            full = event.get("text", "").strip()
+            elapsed = time.monotonic() - t_start
+            suffix = f"  ({elapsed:.1f}s)" if verbose else ""
+            sys.stdout.write("\r" + " " * 80 + "\r")
+            sys.stdout.flush()
+            if full:
+                console.print(f"[cyan]>[/cyan] {full}{suffix}")
+            current_line = ""
+            t_start = time.monotonic()
+        elif etype == "error":
+            console.print(f"\n[red]error:[/red] {event.get('message', 'unknown')}")
+
+
+async def _live_async(endpoint: str, device_idx: int | None, verbose: bool) -> None:
+    audio_q: queue.SimpleQueue = queue.SimpleQueue()
+    loop = asyncio.get_running_loop()
+    stop_event = asyncio.Event()
+
+    def _audio_callback(indata, _frames, _ts, _status) -> None:
+        audio_q.put_nowait(indata.copy().tobytes())
+
+    async with websockets.connect(endpoint) as ws:
+        with sd.InputStream(samplerate=_SAMPLE_RATE, channels=_CHANNELS, dtype="int16", blocksize=_FRAME_SIZE, device=device_idx, callback=_audio_callback):
+            sender_task = asyncio.create_task(_ws_sender(ws, audio_q, stop_event, loop))
+            receiver_task = asyncio.create_task(_ws_receiver(ws, verbose))
+            try:
+                await asyncio.gather(sender_task, receiver_task)
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                stop_event.set()
+                sender_task.cancel()
+                receiver_task.cancel()
+                raise KeyboardInterrupt
 
 
 def _format_timestamp(seconds: float, use_comma: bool = True) -> str:
