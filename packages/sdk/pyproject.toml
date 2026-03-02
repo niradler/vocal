@@ -30,7 +30,7 @@ Issues = "https://github.com/niradler/vocal/issues"
 
 [project.optional-dependencies]
 dev = [
-    "datamodel-code-generator>=0.25.0",
+    "openapi-python-client>=0.28.0",
 ]
 test = [
     "pytest>=8.0.0",

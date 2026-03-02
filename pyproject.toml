@@ -78,6 +78,7 @@ torch = { index = "pytorch" }
 dev = [
     "build>=1.4.0",
     "bump-my-version>=1.2.7",
+    "openapi-python-client>=0.28.2",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "pytest-xdist>=3.5.0",
@@ -88,6 +89,16 @@ dev = [
 [tool.ruff]
 line-length = 300
 target-version = "py311"
+exclude = [
+    "packages/sdk/vocal_sdk/api",
+    "packages/sdk/vocal_sdk/models",
+    "packages/sdk/vocal_sdk/client.py",
+    "packages/sdk/vocal_sdk/errors.py",
+    "packages/sdk/vocal_sdk/types.py",
+    "packages/sdk/gen-test",
+    "packages/sdk/gen-test2",
+    "packages/sdk/.gen-test",
+]
 
 [tool.ruff.lint]
 select = [
@@ -108,7 +119,7 @@ known-first-party = ["vocal_core", "vocal_api", "vocal_sdk", "vocal_cli"]
 force-single-line = false
 
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"] # Allow unused imports in __init__.py
+"__init__.py" = ["F401", "E402"] # Allow unused imports and late imports in __init__.py
 
 [tool.bumpversion]
 current_version = "0.3.3"

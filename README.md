@@ -102,42 +102,55 @@ make serve-dev
 
 ### Use the SDK
 
-```python
-from vocal import VocalSDK
+The SDK is auto-generated from the OpenAPI spec and provides a fully typed async/sync client.
 
-# Initialize client
-client = VocalSDK(base_url="http://localhost:8000")
+```python
+from pathlib import Path
+
+from vocal_sdk import VocalClient
+from vocal_sdk.api.models import (
+    download_model_v1_models_model_id_download_post,
+    list_models_v1_models_get,
+)
+from vocal_sdk.api.transcription import create_transcription_v1_audio_transcriptions_post
+from vocal_sdk.api.audio import text_to_speech_v1_audio_speech_post
+from vocal_sdk.models import (
+    BodyCreateTranscriptionV1AudioTranscriptionsPost,
+    TTSRequest,
+    ModelStatus,
+)
+from vocal_sdk.types import File
+
+client = VocalClient(base_url="http://localhost:8000")
 
 # List models (Ollama-style)
-models = client.models.list()
-for model in models['models']:
-    print(f"{model['id']}: {model['status']}")
+resp = list_models_v1_models_get.sync(client=client)
+for model in resp.models:
+    print(f"{model.id}: {model.status.value}")
 
 # Download model if needed (Ollama-style pull)
-client.models.download("Systran/faster-whisper-tiny")
+download_model_v1_models_model_id_download_post.sync(
+    model_id="Systran/faster-whisper-tiny", client=client
+)
 
 # Transcribe audio (OpenAI-compatible)
-result = client.audio.transcribe(
-    file="audio.mp3",
-    model="Systran/faster-whisper-tiny"
-)
-print(result['text'])
+with open("audio.mp3", "rb") as f:
+    body = BodyCreateTranscriptionV1AudioTranscriptionsPost(
+        file=File(payload=f, file_name="audio.mp3"),
+        model="Systran/faster-whisper-tiny",
+    )
+    result = create_transcription_v1_audio_transcriptions_post.sync(client=client, body=body)
+print(result.text)
 
 # Text-to-Speech (default: mp3)
-audio = client.audio.text_to_speech(
-    text="Hello, world!",
-    model="pyttsx3"
+audio_bytes = text_to_speech_v1_audio_speech_post.sync(
+    client=client,
+    body=TTSRequest(model="pyttsx3", input="Hello, world!"),
 )
-with open("output.mp3", "wb") as f:
-    f.write(audio)
-
-# TTS with specific format and voice
-audio = client.audio.text_to_speech(
-    text="Hello!",
-    response_format="wav",  # mp3, wav, opus, aac, flac, pcm
-    voice="Samantha"
-)
+Path("output.mp3").write_bytes(audio_bytes)
 ```
+
+> **Backward compatibility:** The legacy `VocalSDK` dict-based wrapper is still available via `from vocal_sdk import VocalSDK` for existing code. New code should use `VocalClient` with the typed generated API functions above.
 
 ### CLI Commands
 
@@ -445,9 +458,11 @@ When GPU is not available:
 curl http://localhost:8000/v1/system/device
 
 # Or via SDK
-from vocal_sdk import VocalSDK
-client = VocalSDK()
-info = client._request('GET', '/v1/system/device')
+from vocal_sdk import VocalClient
+from vocal_sdk.api.system import get_device_v1_system_device_get
+
+client = VocalClient(base_url="http://localhost:8000")
+info = get_device_v1_system_device_get.sync(client=client)
 print(info)
 ```
 
@@ -508,9 +523,9 @@ vocal run audio.mp3 --format vtt
 # List all models
 vocal models list
 
-# Filter by status
-vocal models list --status available
-vocal models list --status not_downloaded
+# Filter by task
+vocal models list --task stt
+vocal models list --task tts
 
 # Download a model
 vocal models pull Systran/faster-whisper-tiny

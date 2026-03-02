@@ -11,14 +11,73 @@ These tests validate the entire API stack using real test assets:
 Test assets are located in test_assets/audio/ directory.
 """
 
+import json
 import subprocess
 import time
 from pathlib import Path
 
+import httpx
 import pytest
 import requests
 
-from vocal_sdk import VocalSDK
+from vocal_sdk import VocalClient
+from vocal_sdk.api.audio import list_voices_v1_audio_voices_get, text_to_speech_v1_audio_speech_post
+from vocal_sdk.api.health import health_health_get
+from vocal_sdk.api.models import (
+    delete_model_v1_models_model_id_delete,
+    download_model_v1_models_model_id_download_post,
+    get_download_status_v1_models_model_id_download_status_get,
+    get_model_v1_models_model_id_get,
+    list_models_v1_models_get,
+)
+from vocal_sdk.api.transcription import create_transcription_v1_audio_transcriptions_post
+from vocal_sdk.models import (
+    BodyCreateTranscriptionV1AudioTranscriptionsPost,
+    ModelStatus,
+    TranscriptionFormat,
+    TranscriptionResponse,
+    TTSRequest,
+    TTSRequestResponseFormat,
+)
+from vocal_sdk.types import UNSET, File, Unset
+
+
+def _transcribe(
+    client: VocalClient,
+    audio_file: Path | str,
+    model: str,
+    language: str | None = None,
+    response_format: TranscriptionFormat | Unset = UNSET,
+) -> TranscriptionResponse | None:
+    audio_path = Path(str(audio_file))
+    with open(audio_path, "rb") as fobj:
+        body = BodyCreateTranscriptionV1AudioTranscriptionsPost(
+            file=File(payload=fobj, file_name=audio_path.name),
+            model=model,
+            language=language if language is not None else UNSET,
+            response_format=response_format,
+        )
+        return create_transcription_v1_audio_transcriptions_post.sync(client=client, body=body)
+
+
+def _tts(
+    client: VocalClient,
+    text: str,
+    model: str = "pyttsx3",
+    response_format: TTSRequestResponseFormat = TTSRequestResponseFormat.MP3,
+    voice: str | None = None,
+    speed: float = 1.0,
+    stream: bool = False,
+) -> bytes:
+    body = TTSRequest(
+        model=model,
+        input_=text,
+        response_format=response_format,
+        voice=voice if voice is not None else UNSET,
+        speed=speed,
+        stream=stream,
+    )
+    return text_to_speech_v1_audio_speech_post.sync_detailed(client=client, body=body).content
 
 
 @pytest.fixture(scope="session")
@@ -28,7 +87,6 @@ def api_server():
 
     base_url = "http://localhost:8000"
 
-    # Check if a server is already running
     try:
         response = requests.get(f"{base_url}/health", timeout=2)
         if response.status_code == 200:
@@ -84,9 +142,13 @@ def api_server():
 
 
 @pytest.fixture(scope="session")
-def client(api_server):
+def client(api_server) -> VocalClient:
     """Create SDK client for testing"""
-    return VocalSDK(base_url=api_server)
+    return VocalClient(
+        base_url=api_server,
+        timeout=httpx.Timeout(300.0),
+        raise_on_unexpected_status=True,
+    )
 
 
 @pytest.fixture(scope="session")
@@ -119,7 +181,8 @@ class TestAPIHealth:
 
     def test_health_endpoint(self, client):
         """Test that API health endpoint returns correct structure"""
-        result = client.health()
+        resp = health_health_get.sync_detailed(client=client)
+        result = json.loads(resp.content)
 
         assert isinstance(result, dict), "Health response should be a dict"
         assert "status" in result, "Health response should have 'status'"
@@ -130,7 +193,9 @@ class TestAPIHealth:
 
     def test_device_information(self, client):
         """Test device information endpoint"""
-        result = client._request("GET", "/v1/system/device")
+        resp = client.get_httpx_client().get("/v1/system/device")
+        resp.raise_for_status()
+        result = resp.json()
 
         assert isinstance(result, dict), "Device info should be a dict"
         assert "platform" in result, "Should have platform info"
@@ -153,68 +218,62 @@ class TestModelManagement:
 
     def test_list_all_models(self, client):
         """Test listing all available models"""
-        result = client.models.list()
+        result = list_models_v1_models_get.sync(client=client)
 
-        assert isinstance(result, dict), "Models list should be a dict"
-        assert "models" in result, "Should have 'models' key"
-        assert "total" in result, "Should have 'total' key"
-        assert isinstance(result["models"], list), "Models should be a list"
-        assert result["total"] >= 0, "Total should be non-negative"
-        assert len(result["models"]) == result["total"], "Count should match"
+        assert result is not None, "Models list should not be None"
+        assert isinstance(result.models, list), "Models should be a list"
+        assert result.total >= 0, "Total should be non-negative"
+        assert len(result.models) == result.total, "Count should match"
 
-        print(f"\n[OK] Found {result['total']} models in registry")
+        print(f"\n[OK] Found {result.total} models in registry")
 
     def test_filter_models_by_task(self, client):
         """Test filtering models by task type"""
-        stt_models = client.models.list(task="stt")
+        stt_models = list_models_v1_models_get.sync(client=client, task="stt")
 
-        assert isinstance(stt_models, dict), "Filtered result should be a dict"
-        assert "models" in stt_models, "Should have 'models' key"
+        assert stt_models is not None, "Filtered result should not be None"
+        assert isinstance(stt_models.models, list), "Models should be a list"
 
-        for model in stt_models["models"]:
-            assert model["task"] == "stt", "All models should be STT"
+        for model in stt_models.models:
+            assert model.task.value == "stt", "All models should be STT"
 
-        print(f"\n[OK] Filtered {stt_models['total']} STT models")
+        print(f"\n[OK] Filtered {stt_models.total} STT models")
 
     def test_get_model_info(self, client, test_model):
         """Test getting specific model information"""
-        result = client.models.get(test_model)
+        result = get_model_v1_models_model_id_get.sync(model_id=test_model, client=client)
 
-        assert isinstance(result, dict), "Model info should be a dict"
-        assert "id" in result, "Should have model ID"
-        assert result["id"] == test_model, "Model ID should match"
-        assert "status" in result, "Should have status"
-        assert "task" in result, "Should have task type"
-        assert result["task"] == "stt", "Test model should be STT"
+        assert result is not None, "Model info should not be None"
+        assert result.id == test_model, "Model ID should match"
+        assert result.task.value == "stt", "Test model should be STT"
 
         print(f"\n[OK] Retrieved model info for {test_model}")
-        print(f"  Status: {result['status']}")
+        print(f"  Status: {result.status.value}")
 
     def test_download_model(self, client, test_model):
         """Test downloading a model"""
-        result = client.models.download(test_model)
+        result = download_model_v1_models_model_id_download_post.sync(model_id=test_model, client=client)
 
-        assert isinstance(result, dict), "Download result should be a dict"
-        assert "status" in result, "Should have status"
+        assert result is not None, "Download result should not be None"
 
         print(f"\n[OK] Model download initiated: {test_model}")
 
         time.sleep(2)
 
-        model_info = client.models.get(test_model)
-        assert model_info["status"] in ["available", "downloading"], "Model should be available or downloading"
+        model_info = get_model_v1_models_model_id_get.sync(model_id=test_model, client=client)
+        assert model_info is not None
+        assert model_info.status in (ModelStatus.AVAILABLE, ModelStatus.DOWNLOADING), "Model should be available or downloading"
 
-        print(f"  Final status: {model_info['status']}")
+        print(f"  Final status: {model_info.status.value}")
 
     def test_download_status(self, client, test_model):
         """Test checking download status"""
         try:
-            result = client.models.download_status(test_model)
+            result = get_download_status_v1_models_model_id_download_status_get.sync(model_id=test_model, client=client)
 
-            assert isinstance(result, dict), "Status should be a dict"
-            assert "status" in result, "Should have status"
+            assert result is not None, "Status should not be None"
 
-            print(f"\n[OK] Download status: {result['status']}")
+            print(f"\n[OK] Download status: {result.status.value}")
         except Exception as e:
             if "404" in str(e) or "not found" in str(e).lower():
                 print("\n[OK] Download status check handled correctly (no active download)")
@@ -228,15 +287,15 @@ class TestAudioTranscription:
     @pytest.fixture(autouse=True)
     def ensure_model(self, client, test_model):
         """Ensure test model is downloaded before tests"""
-        model_info = client.models.get(test_model)
-        if model_info["status"] != "available":
+        model_info = get_model_v1_models_model_id_get.sync(model_id=test_model, client=client)
+        if model_info is None or model_info.status != ModelStatus.AVAILABLE:
             print(f"\nDownloading {test_model} for testing...")
-            client.models.download(test_model)
+            download_model_v1_models_model_id_download_post.sync(model_id=test_model, client=client)
 
             max_wait = 60
             for _ in range(max_wait):
-                model_info = client.models.get(test_model)
-                if model_info["status"] == "available":
+                model_info = get_model_v1_models_model_id_get.sync(model_id=test_model, client=client)
+                if model_info and model_info.status == ModelStatus.AVAILABLE:
                     break
                 time.sleep(1)
             else:
@@ -249,23 +308,19 @@ class TestAudioTranscription:
 
         assert audio_file.exists(), f"Test asset not found: {audio_file}"
 
-        result = client.audio.transcribe(file=audio_file, model=test_model)
+        result = _transcribe(client, audio_file, test_model)
 
-        assert isinstance(result, dict), "Result should be a dict"
-        assert "text" in result, "Should have 'text' field"
-        assert "language" in result, "Should have 'language' field"
-        assert "duration" in result, "Should have 'duration' field"
+        assert result is not None, "Result should not be None"
+        assert isinstance(result.text, str), "Text should be a string"
+        assert isinstance(result.duration, (int, float)), "Duration should be numeric"
+        assert result.duration > 0, "Duration should be positive"
 
-        assert isinstance(result["text"], str), "Text should be a string"
-        assert isinstance(result["duration"], (int, float)), "Duration should be numeric"
-        assert result["duration"] > 0, "Duration should be positive"
-
-        transcribed = result["text"].strip()
+        transcribed = result.text.strip()
         assert expected_text.lower() in transcribed.lower() or transcribed.lower() in expected_text.lower(), f"Transcription mismatch. Expected: '{expected_text}', Got: '{transcribed}'"
 
         print("\n[OK] Transcribed short audio")
-        print(f"  Duration: {result['duration']:.2f}s")
-        print(f"  Language: {result['language']}")
+        print(f"  Duration: {result.duration:.2f}s")
+        print(f"  Language: {result.language}")
         print(f"  Expected: '{expected_text}'")
         print(f"  Got: '{transcribed}'")
 
@@ -274,16 +329,15 @@ class TestAudioTranscription:
         audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
         expected_text = test_assets["files"]["en-AU-WilliamNeural.mp3"]
 
-        result = client.audio.transcribe(file=audio_file, model=test_model)
+        result = _transcribe(client, audio_file, test_model)
 
-        assert "text" in result, "Should have transcription text"
-        assert "duration" in result, "Should have duration"
-        assert result["duration"] > 0, "Should have positive duration"
+        assert result is not None
+        assert result.duration > 0, "Should have positive duration"
 
-        transcribed = result["text"].strip()
+        transcribed = result.text.strip()
         assert expected_text.lower() in transcribed.lower() or transcribed.lower() in expected_text.lower(), f"Transcription mismatch. Expected: '{expected_text}', Got: '{transcribed}'"
 
-        print(f"\n[OK] Transcribed medium audio ({result['duration']:.2f}s)")
+        print(f"\n[OK] Transcribed medium audio ({result.duration:.2f}s)")
         print(f"  Expected: '{expected_text}'")
         print(f"  Got: '{transcribed}'")
 
@@ -291,10 +345,10 @@ class TestAudioTranscription:
         """Test transcription with specified language"""
         audio_file = test_assets["audio_dir"] / "Recording.m4a"
 
-        result = client.audio.transcribe(file=audio_file, model=test_model, language="en")
+        result = _transcribe(client, audio_file, test_model, language="en")
 
-        assert "language" in result, "Should have language field"
-        assert result["language"] == "en", "Language should be English"
+        assert result is not None
+        assert result.language == "en", "Language should be English"
 
         print("\n[OK] Transcribed with language=en")
 
@@ -302,39 +356,42 @@ class TestAudioTranscription:
         """Test JSON format response with segments"""
         audio_file = test_assets["audio_dir"] / "Recording.m4a"
 
-        result = client.audio.transcribe(file=audio_file, model=test_model, response_format="json")
+        result = _transcribe(client, audio_file, test_model, response_format=TranscriptionFormat.JSON)
 
-        assert "text" in result, "Should have text"
-        assert "segments" in result, "Should have segments"
+        assert result is not None
+        assert isinstance(result.text, str), "Should have text"
 
-        if result["segments"]:
-            segment = result["segments"][0]
-            assert "id" in segment, "Segment should have ID"
-            assert "start" in segment, "Segment should have start time"
-            assert "end" in segment, "Segment should have end time"
-            assert "text" in segment, "Segment should have text"
-            assert segment["start"] <= segment["end"], "Start should be <= end"
+        segs = [] if isinstance(result.segments, Unset) or result.segments is None else result.segments
+        if segs:
+            seg = segs[0]
+            assert seg.id is not None, "Segment should have ID"
+            assert seg.start is not None, "Segment should have start time"
+            assert seg.end is not None, "Segment should have end time"
+            assert isinstance(seg.text, str), "Segment should have text"
+            assert seg.start <= seg.end, "Start should be <= end"
 
-        print(f"\n[OK] Got JSON format with {len(result.get('segments', []))} segments")
+        print(f"\n[OK] Got JSON format with {len(segs)} segments")
 
     def test_transcribe_silence(self, client, test_model, test_assets):
         """Test transcribing second audio file"""
         audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
 
-        result = client.audio.transcribe(file=audio_file, model=test_model)
+        result = _transcribe(client, audio_file, test_model)
 
-        assert "text" in result, "Should have text field"
-        print(f"\n[OK] Transcribed second file: '{result['text']}'")
+        assert result is not None
+        assert isinstance(result.text, str), "Should have text field"
+        print(f"\n[OK] Transcribed second file: '{result.text}'")
 
     def test_transcribe_both_formats(self, client, test_model, test_assets):
         """Test transcribing different audio formats (m4a and mp3)"""
         for filename in test_assets["files"].keys():
             audio_file = test_assets["audio_dir"] / filename
 
-            result = client.audio.transcribe(file=audio_file, model=test_model)
+            result = _transcribe(client, audio_file, test_model)
 
-            assert "text" in result, "Should have text"
-            assert "duration" in result, "Should have duration"
+            assert result is not None
+            assert isinstance(result.text, str), "Should have text"
+            assert result.duration > 0, "Should have duration"
 
             print(f"\n[OK] Transcribed {filename}")
 
@@ -346,11 +403,10 @@ class TestTextToSpeech:
         """Test synthesizing short text"""
         text = "Hello, world!"
 
-        audio_data = client.audio.text_to_speech(text=text)
+        audio_data = _tts(client, text)
 
         assert isinstance(audio_data, bytes), "Audio should be bytes"
         assert len(audio_data) > 0, "Audio should not be empty"
-        # Default format is MP3 (ID3 tag or 0xFF sync word)
         assert audio_data[:3] == b"ID3" or audio_data[0] == 0xFF, "Should be MP3 format"
 
         print(f"\n[OK] Synthesized '{text}'")
@@ -361,8 +417,8 @@ class TestTextToSpeech:
         text = "This is a speed test."
 
         try:
-            normal_audio = client.audio.text_to_speech(text=text, speed=1.0)
-            fast_audio = client.audio.text_to_speech(text=text, speed=1.5)
+            normal_audio = _tts(client, text, speed=1.0)
+            fast_audio = _tts(client, text, speed=1.5)
 
             assert isinstance(normal_audio, bytes), "Normal audio should be bytes"
             assert isinstance(fast_audio, bytes), "Fast audio should be bytes"
@@ -387,7 +443,7 @@ class TestTextToSpeech:
         text = "Testing speech synthesis."
 
         try:
-            audio_data = client.audio.text_to_speech(text=text)
+            audio_data = _tts(client, text)
 
             assert isinstance(audio_data, bytes), "Should return bytes"
             assert len(audio_data) > 1000, "Should produce audio data"
@@ -405,7 +461,8 @@ class TestTextToSpeech:
         output_file = tmp_path / "test_output.mp3"
 
         try:
-            audio_data = client.audio.text_to_speech(text=text, output_file=output_file)
+            audio_data = _tts(client, text)
+            output_file.write_bytes(audio_data)
 
             assert output_file.exists(), "Output file should exist"
             assert output_file.stat().st_size > 0, "File should not be empty"
@@ -434,7 +491,7 @@ class TestTextToSpeech:
         text = "Format test."
 
         try:
-            audio_data = client.audio.text_to_speech(text=text, response_format=fmt)
+            audio_data = _tts(client, text, response_format=TTSRequestResponseFormat(fmt))
 
             assert isinstance(audio_data, bytes), "Audio should be bytes"
             assert len(audio_data) > 0, f"{fmt} audio should not be empty"
@@ -450,8 +507,8 @@ class TestTextToSpeech:
         """Test that MP3 is smaller than WAV (compression works)"""
         text = "Compression test for audio."
 
-        mp3_data = client.audio.text_to_speech(text=text, response_format="mp3")
-        wav_data = client.audio.text_to_speech(text=text, response_format="wav")
+        mp3_data = _tts(client, text, response_format=TTSRequestResponseFormat.MP3)
+        wav_data = _tts(client, text, response_format=TTSRequestResponseFormat.WAV)
 
         assert len(mp3_data) < len(wav_data), "MP3 should be smaller than WAV"
 
@@ -462,11 +519,12 @@ class TestTextToSpeech:
         """Test TTS with a specific voice"""
         text = "Voice selection test."
 
-        voices = client.audio.list_voices()
-        assert voices["total"] > 0, "Should have at least one voice"
+        voices_resp = list_voices_v1_audio_voices_get.sync(client=client)
+        assert voices_resp is not None
+        assert voices_resp.total > 0, "Should have at least one voice"
 
-        voice_id = voices["voices"][0]["name"]
-        audio_data = client.audio.text_to_speech(text=text, voice=voice_id)
+        voice_id = voices_resp.voices[0].name
+        audio_data = _tts(client, text, voice=voice_id)
 
         assert isinstance(audio_data, bytes), "Audio should be bytes"
         assert len(audio_data) > 0, "Audio should not be empty"
@@ -555,26 +613,23 @@ class TestTextToSpeech:
     def test_list_available_voices(self, client):
         """Test listing TTS voices"""
         try:
-            result = client.audio.list_voices()
+            result = list_voices_v1_audio_voices_get.sync(client=client)
 
-            assert isinstance(result, dict), "Result should be a dict"
-            assert "voices" in result, "Should have voices list"
-            assert "total" in result, "Should have total count"
-            assert isinstance(result["voices"], list), "Voices should be a list"
-            assert len(result["voices"]) == result["total"], "Count should match"
-            assert result["total"] > 0, "Should have at least one voice"
+            assert result is not None, "Result should not be None"
+            assert isinstance(result.voices, list), "Voices should be a list"
+            assert len(result.voices) == result.total, "Count should match"
+            assert result.total > 0, "Should have at least one voice"
 
-            # Verify voice structure
-            for voice in result["voices"]:
-                assert "id" in voice, "Voice should have ID"
-                assert "name" in voice, "Voice should have name"
-                assert "language" in voice, "Voice should have language"
+            for voice in result.voices:
+                assert voice.id is not None, "Voice should have ID"
+                assert voice.name is not None, "Voice should have name"
+                assert voice.language is not None, "Voice should have language"
 
-            print(f"\n[OK] Found {result['total']} voice(s)")
-            for voice in result["voices"][:5]:
-                print(f"  - {voice['name']} ({voice['language']})")
-            if result["total"] > 5:
-                print(f"  ... and {result['total'] - 5} more")
+            print(f"\n[OK] Found {result.total} voice(s)")
+            for voice in result.voices[:5]:
+                print(f"  - {voice.name} ({voice.language})")
+            if result.total > 5:
+                print(f"  ... and {result.total - 5} more")
         except Exception as e:
             if "timeout" in str(e).lower():
                 pytest.skip("Voice listing timed out (known issue with system TTS)")
@@ -589,28 +644,28 @@ class TestErrorHandling:
         audio_file = test_assets["audio_dir"] / "Recording.m4a"
 
         with pytest.raises(Exception):
-            client.audio.transcribe(file=audio_file, model="non-existent-model-xyz123")
+            _transcribe(client, audio_file, "non-existent-model-xyz123")
 
         print("\n[OK] Correctly raised error for invalid model")
 
     def test_transcribe_nonexistent_file(self, client, test_model):
         """Test transcription with non-existent file"""
         with pytest.raises(Exception):
-            client.audio.transcribe(file="nonexistent_audio.wav", model=test_model)
+            _transcribe(client, "nonexistent_audio.wav", test_model)
 
         print("\n[OK] Correctly raised error for missing file")
 
     def test_get_nonexistent_model(self, client):
         """Test getting info for non-existent model"""
         with pytest.raises(Exception):
-            client.models.get("fake-model-12345")
+            get_model_v1_models_model_id_get.sync(model_id="fake-model-12345", client=client)
 
         print("\n[OK] Correctly raised error for fake model")
 
     def test_delete_nonexistent_model(self, client):
         """Test deleting non-existent model"""
         with pytest.raises(Exception):
-            client.models.delete("fake-model-to-delete")
+            delete_model_v1_models_model_id_delete.sync(model_id="fake-model-to-delete", client=client)
 
         print("\n[OK] Correctly raised error when deleting fake model")
 
@@ -623,14 +678,15 @@ class TestPerformance:
         audio_file = test_assets["audio_dir"] / "Recording.m4a"
 
         start_time = time.time()
-        result1 = client.audio.transcribe(file=audio_file, model=test_model)
+        result1 = _transcribe(client, audio_file, test_model)
         first_duration = time.time() - start_time
 
         start_time = time.time()
-        result2 = client.audio.transcribe(file=audio_file, model=test_model)
+        result2 = _transcribe(client, audio_file, test_model)
         second_duration = time.time() - start_time
 
-        assert result1["text"] == result2["text"], "Results should be consistent"
+        assert result1 is not None and result2 is not None
+        assert result1.text == result2.text, "Results should be consistent"
 
         print("\n[OK] Model reuse tested")
         print(f"  First call: {first_duration:.2f}s")
