@@ -14,6 +14,7 @@ from vocal_core.adapters.tts import (
     TTSResult,
     Voice,
 )
+from vocal_core.config import optional_dependency_install_hint
 
 
 class TTSService:
@@ -189,10 +190,10 @@ class TTSService:
     def _create_adapter(self, backend: str) -> TTSAdapter:
         if backend == "kokoro":
             if not KOKORO_AVAILABLE:
-                raise ImportError("kokoro package is required for this model. Install with: uv add kokoro")
+                raise ImportError(optional_dependency_install_hint("kokoro"))
             return KokoroTTSAdapter()
         if backend == "faster_qwen3_tts":
             if not FASTER_QWEN3_TTS_AVAILABLE:
-                raise ImportError("faster-qwen3-tts package is required for this model. Install with: uv add faster-qwen3-tts")
+                raise ImportError(optional_dependency_install_hint("qwen3-tts", "faster-qwen3-tts"))
             return FasterQwen3TTSAdapter()
         raise ValueError(f"Unsupported TTS backend: '{backend}'. Supported backends: kokoro, faster_qwen3_tts")

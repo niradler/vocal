@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
+from ...config import optional_dependency_install_hint
 from .base import TTSAdapter, TTSResult, Voice
 from .piper import SUPPORTED_FORMATS, _convert_audio
 
@@ -137,7 +138,7 @@ class KokoroTTSAdapter(TTSAdapter):
 
     async def load_model(self, model_path: Path, device: str = "auto", **kwargs) -> None:
         if not KOKORO_AVAILABLE:
-            raise ImportError("kokoro is required. Install with: uv add kokoro")
+            raise ImportError(optional_dependency_install_hint("kokoro"))
 
         self.model_path = model_path
         if device == "auto":

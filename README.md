@@ -70,10 +70,18 @@ uvx --from vocal-ai vocal serve
 pip install vocal-ai
 vocal serve
 
-# Optional backends (install what you need)
+# Optional backends (pip install)
+pip install vocal-ai[piper]      # Piper TTS backend
 pip install vocal-ai[kokoro]     # Kokoro-82M neural TTS (CPU/GPU)
 pip install vocal-ai[qwen3-tts]  # Qwen3-TTS 0.6B / 1.7B (CUDA required)
+
+# Optional backends (uvx run, no install)
+uvx --from "vocal-ai[piper]" vocal serve
+uvx --from "vocal-ai[kokoro]" vocal serve
+uvx --from "vocal-ai[qwen3-tts]" vocal serve
 ```
+
+If you request a model with a missing optional backend, Vocal now prints an install hint showing the exact `uvx --from "vocal-ai[...]"` and `pip install "vocal-ai[...]"` command to run.
 
 ### From Source
 
@@ -426,9 +434,15 @@ All STT models support 99+ languages. Use alias `whisper-tiny`, `whisper-base`, 
 
 ```bash
 # Install optional backends
+pip install vocal-ai[piper]       # Piper TTS backend
 pip install vocal-ai[kokoro]      # Kokoro neural TTS
 pip install vocal-ai[qwen3-tts]   # Qwen3-TTS (CUDA required)
-pip install vocal-ai[kokoro,qwen3-tts]  # Both
+pip install vocal-ai[piper,kokoro,qwen3-tts]  # All
+
+# uvx one-off runs with extras
+uvx --from "vocal-ai[piper]" vocal serve
+uvx --from "vocal-ai[kokoro]" vocal serve
+uvx --from "vocal-ai[qwen3-tts]" vocal serve
 ```
 
 > **Note (Kokoro):** The `kokoro` package uses the spaCy `en_core_web_sm` model for English text processing. PyPI does not allow packages to declare direct URL dependencies, so it is not listed in the install extras. If Kokoro raises an error about a missing spaCy model, install it manually:

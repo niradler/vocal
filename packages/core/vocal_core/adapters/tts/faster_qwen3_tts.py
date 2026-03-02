@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy as np
 
+from ...config import optional_dependency_install_hint
 from .base import TTSAdapter, TTSResult, Voice
 from .piper import SUPPORTED_FORMATS, _convert_audio
 
@@ -60,7 +61,7 @@ class FasterQwen3TTSAdapter(TTSAdapter):
 
     async def load_model(self, model_path: Path, device: str = "auto", **kwargs) -> None:
         if not FASTER_QWEN3_TTS_AVAILABLE:
-            raise ImportError("faster-qwen3-tts is required. Install with: uv add faster-qwen3-tts")
+            raise ImportError(optional_dependency_install_hint("qwen3-tts", "faster-qwen3-tts"))
         if not torch.cuda.is_available():
             raise RuntimeError("faster-qwen3-tts requires NVIDIA CUDA. No CUDA device detected. Use a Kokoro or Piper model for CPU-only inference.")
 

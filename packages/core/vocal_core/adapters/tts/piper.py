@@ -14,6 +14,7 @@ from pathlib import Path
 import aiofiles
 import numpy as np
 
+from ...config import optional_dependency_install_hint
 from ...utils import detect_device
 from .base import TTSAdapter, TTSResult, Voice
 
@@ -136,7 +137,7 @@ class PiperTTSAdapter(TTSAdapter):
             **kwargs: Additional parameters (use_cuda=True for GPU)
         """
         if not PIPER_AVAILABLE:
-            raise ImportError("piper-tts is required for TTS. Install with: uv sync --extra piper")
+            raise ImportError(optional_dependency_install_hint("piper", "piper-tts"))
 
         self.model_path = model_path
         onnx_path = model_path / "model.onnx"

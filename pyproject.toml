@@ -38,6 +38,10 @@ Issues = "https://github.com/niradler/vocal/issues"
 vocal = "vocal_cli.main:app"
 
 [project.optional-dependencies]
+piper = [
+    "piper-tts>=1.2.0",
+    "scipy>=1.11.0",
+]
 kokoro = [
     "kokoro>=0.9.4",
     "torch>=2.6.0",
