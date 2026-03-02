@@ -1,5 +1,5 @@
 """
-End-to-End Integration Tests for Vocal API
+End-to-End Integration Tests for Vocal API + WebSocket Realtime Endpoints
 
 These tests validate the entire API stack using real test assets:
 - Model management lifecycle
@@ -11,14 +11,18 @@ These tests validate the entire API stack using real test assets:
 Test assets are located in test_assets/audio/ directory.
 """
 
+import asyncio
+import base64
 import json
 import subprocess
 import time
 from pathlib import Path
 
 import httpx
+import numpy as np
 import pytest
 import requests
+import websockets
 
 from vocal_sdk import VocalClient
 from vocal_sdk.api.audio import list_voices_v1_audio_voices_get, text_to_speech_v1_audio_speech_post
@@ -696,6 +700,159 @@ class TestPerformance:
 
         if second_duration < first_duration:
             print(f"  Speedup: {first_duration / second_duration:.2f}x")
+
+
+def _make_sine_pcm(duration_s: float = 1.5, sample_rate: int = 16000, freq: float = 440.0) -> bytes:
+    t = np.linspace(0, duration_s, int(sample_rate * duration_s), endpoint=False)
+    sine = (np.sin(2 * np.pi * freq * t) * 16383).astype(np.int16)
+    return sine.tobytes()
+
+
+def _make_sine_pcm_24k(duration_s: float = 1.5) -> bytes:
+    return _make_sine_pcm(duration_s=duration_s, sample_rate=24000)
+
+
+def _ws_run(coro):
+    return asyncio.run(coro)
+
+
+class TestRealtimeStream:
+    """Test /v1/audio/stream WebSocket endpoint"""
+
+    def test_stream_protocol(self, api_server, test_model, ensure_stt_model):
+        async def _test():
+            base_uri = api_server.replace("http://", "ws://")
+            silence = bytes(3200)
+            pcm = _make_sine_pcm(duration_s=2.0)
+            frame_size = 3200
+
+            async with websockets.connect(f"{base_uri}/v1/audio/stream?language=en&task=transcribe", open_timeout=10) as ws:
+                assert ws is not None
+
+            silence_events = []
+            async with websockets.connect(f"{base_uri}/v1/audio/stream?threshold=100", open_timeout=10) as ws:
+                for _ in range(20):
+                    await ws.send(silence)
+                try:
+                    msg = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                    silence_events.append(json.loads(msg))
+                except TimeoutError:
+                    pass
+            assert not any(e.get("type") == "transcript.delta" and e.get("text") for e in silence_events)
+
+            done_event = None
+            async with websockets.connect(f"{base_uri}/v1/audio/stream?model={test_model}&threshold=200", open_timeout=10) as ws:
+                for i in range(0, len(pcm), frame_size):
+                    await ws.send(pcm[i : i + frame_size])
+                await ws.send(bytes(frame_size * 20))
+                deadline = time.monotonic() + 30.0
+                while time.monotonic() < deadline:
+                    try:
+                        msg = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                        event = json.loads(msg)
+                        if event.get("type") == "transcript.done":
+                            done_event = event
+                            break
+                    except TimeoutError:
+                        break
+            assert done_event is not None, "transcript.done not received"
+            assert "text" in done_event, "transcript.done must have 'text' field"
+
+        _ws_run(_test())
+        print("\n[OK] /v1/audio/stream: connects, silence=no output, audio=transcript.done with text")
+
+    def test_stream_invalid_model(self, api_server):
+        async def _test():
+            uri = f"{api_server.replace('http://', 'ws://')}/v1/audio/stream?model=nonexistent-xyz&threshold=100"
+            pcm = _make_sine_pcm(duration_s=1.0)
+            frame_size = 3200
+            events = []
+            async with websockets.connect(uri, open_timeout=10) as ws:
+                for i in range(0, len(pcm), frame_size):
+                    await ws.send(pcm[i : i + frame_size])
+                await ws.send(bytes(frame_size * 20))
+                deadline = time.monotonic() + 20.0
+                while time.monotonic() < deadline:
+                    try:
+                        msg = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                        events.append(json.loads(msg))
+                        if events[-1].get("type") in ("error", "transcript.done"):
+                            break
+                    except TimeoutError:
+                        break
+            types = {e["type"] for e in events}
+            assert "error" in types or "transcript.done" in types
+
+        _ws_run(_test())
+        print("\n[OK] /v1/audio/stream: invalid model returns error or done")
+
+
+class TestRealtimeOAI:
+    """Test /v1/realtime OpenAI Realtime API compatible endpoint"""
+
+    def test_realtime_session_lifecycle(self, api_server):
+        async def _test():
+            uri = f"{api_server.replace('http://', 'ws://')}/v1/realtime"
+            async with websockets.connect(uri, open_timeout=10) as ws:
+                msg = await asyncio.wait_for(ws.recv(), timeout=5.0)
+                created = json.loads(msg)
+                assert created["type"] == "session.created"
+                assert "event_id" in created
+                sess = created["session"]
+                assert "id" in sess and "model" in sess and "input_audio_format" in sess and "turn_detection" in sess
+
+                await ws.send(json.dumps({"type": "transcription_session.update", "session": {"language": "en"}}))
+                msg = await asyncio.wait_for(ws.recv(), timeout=5.0)
+                updated = json.loads(msg)
+                assert updated["type"] == "transcription_session.updated"
+                return created
+
+        created = _ws_run(_test())
+        print(f"\n[OK] /v1/realtime: session.created({created['session']['id']}) + session.update -> updated")
+
+    def test_realtime_audio_pipeline(self, api_server, test_model, ensure_stt_model):
+        async def _test():
+            uri = f"{api_server.replace('http://', 'ws://')}/v1/realtime"
+            pcm = _make_sine_pcm_24k(duration_s=1.0)
+            audio_b64 = base64.b64encode(pcm).decode()
+            events = []
+            async with websockets.connect(uri, open_timeout=10) as ws:
+                await asyncio.wait_for(ws.recv(), timeout=5.0)
+                await ws.send(json.dumps({"type": "transcription_session.update", "session": {"model": test_model}}))
+                await asyncio.wait_for(ws.recv(), timeout=5.0)
+                await ws.send(json.dumps({"type": "input_audio_buffer.append", "audio": audio_b64}))
+                await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
+                deadline = time.monotonic() + 30.0
+                while time.monotonic() < deadline:
+                    try:
+                        msg = await asyncio.wait_for(ws.recv(), timeout=3.0)
+                        event = json.loads(msg)
+                        events.append(event)
+                        if event.get("type") == "conversation.item.input_audio_transcription.completed":
+                            break
+                    except TimeoutError:
+                        break
+            types = [e["type"] for e in events]
+            assert "input_audio_buffer.committed" in types, f"committed missing: {types}"
+            completed = next((e for e in events if e.get("type") == "conversation.item.input_audio_transcription.completed"), None)
+            assert completed is not None and "transcript" in completed
+            return types, completed["transcript"]
+
+        types, transcript = _ws_run(_test())
+        print(f"\n[OK] /v1/realtime audio pipeline: {types} | transcript='{transcript}'")
+
+    def test_realtime_error_handling(self, api_server):
+        async def _test():
+            uri = f"{api_server.replace('http://', 'ws://')}/v1/realtime"
+            async with websockets.connect(uri, open_timeout=10) as ws:
+                await asyncio.wait_for(ws.recv(), timeout=5.0)
+                await ws.send(json.dumps({"type": "totally.unknown.event.xyz"}))
+                msg = await asyncio.wait_for(ws.recv(), timeout=5.0)
+                return json.loads(msg)
+
+        event = _ws_run(_test())
+        assert event["type"] == "error" and event["error"]["code"] == "unknown_event"
+        print(f"\n[OK] /v1/realtime: unknown event -> error({event['error']['code']})")
 
 
 if __name__ == "__main__":

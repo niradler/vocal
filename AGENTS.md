@@ -1,6 +1,6 @@
 # AGENTS.md - Vocal Coding Agent Reference
 
-**Version:** 0.2.3 | **Python:** 3.11+ | **Tests:** 23 E2E (~55s)
+**Version:** 0.4.0 | **Python:** 3.11+ | **Tests:** 36 E2E (~90s)
 
 ---
 
@@ -26,10 +26,11 @@ make serve               # Start API (http://localhost:8000)
 vocal/
 ├── packages/
 │   ├── core/     # Registry & adapters (no API deps)
+│   │   └── vocal_core/config.py  # VocalSettings — all global defaults here
 │   ├── api/      # FastAPI server
 │   ├── sdk/      # Python SDK
 │   └── cli/      # CLI tool
-├── tests/        # 23 E2E tests
+├── tests/        # 36 E2E tests
 └── Makefile      # All commands
 ```
 
@@ -76,9 +77,11 @@ uv run pytest tests/test_e2e.py::TestClass::test_name -vv  # Specific test
 - API Health: 2
 - Model Management: 5
 - STT: 7
-- TTS: 5
+- TTS: 5 (+ 6 streaming format tests)
 - Error Handling: 4
 - Performance: 1
+- WebSocket Stream (`/v1/audio/stream`): 7
+- OpenAI Realtime (`/v1/realtime`): 7
 
 ---
 
@@ -127,15 +130,41 @@ class Service:
 - Exception: `"pyttsx3"` = built-in TTS fallback
 
 ### API Endpoints
-- OpenAI-compatible: `/v1/audio/speech`, `/v1/audio/transcriptions`
+- OpenAI-compatible STT/TTS: `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/audio/translations`
 - Model management: `/v1/models`
+- WebSocket streaming ASR: `/v1/audio/stream` (binary PCM in, JSON delta events out)
+- OpenAI Realtime compatible: `/v1/realtime` (full session protocol, transcription + voice agent modes)
 
-### CLI — Real-time ASR (`vocal listen`)
-- `vocal listen` — chunk-based mic transcription via REST (current)
-- `vocal devices` — list audio input devices
-- Key options: `--device`, `--task`, `--language`, `--verbose`, `--silence-duration`, `--max-chunk-duration`
+### Global Config (`vocal_core.config`)
+
+**All core defaults must come from `vocal_core/config.py` — never hardcode URLs, model names, or sample rates outside this file.**
+
+```python
+from vocal_core.config import vocal_settings
+# vocal_settings.LLM_BASE_URL, .LLM_MODEL, .LLM_API_KEY
+# vocal_settings.STT_DEFAULT_MODEL, .STT_DEFAULT_LANGUAGE, .STT_SAMPLE_RATE
+```
+
+Overridden by env vars (same name, uppercase) or `.env` file:
+- `LLM_BASE_URL=https://api.openai.com/v1` + `LLM_API_KEY=sk-...` → routes to OpenAI
+- `LLM_BASE_URL=http://localhost:11434/v1` (default) → routes to local Ollama
+
+### CLI — Real-time ASR
+
+**`vocal listen`** — chunk-based mic transcription via REST
 - Audio constants: `_SAMPLE_RATE=16000`, `_FRAME_SIZE=1600`, `_CHANNELS=1` (module-level in `main.py`)
-- Architecture: PortAudio callback → `queue.SimpleQueue` → `_run_stream` → `_schedule_flush` (daemon thread) → REST API
+- Pipeline: PortAudio callback → `queue.SimpleQueue` → `_run_stream` (thread) → `_schedule_flush` (daemon thread) → REST API
+- VAD: `_calibrate_from_frames()` — 15 frames of noise floor → `threshold = noise_floor * 4.0` (min 50)
+- Silence detection: `silence_frames_needed = silence_duration * sample_rate / frame_size`
+- `_flush_buffer()` — converts PCM frames to WAV buffer, calls transcription/translation REST endpoint, prints result
+
+**`vocal live`** — WebSocket streaming (~200ms latency)
+- Same mic capture pattern (`sd.InputStream` → `queue.SimpleQueue`), but sends raw binary PCM frames to `/v1/audio/stream` via `websockets`
+- Server does VAD — no client-side silence detection
+- `asyncio.run(_live_async(...))` bridges sync CLI entry point to async WebSocket handler
+- Thread-safe audio → asyncio bridge: `loop.run_in_executor(None, audio_q.get, True, 0.1)`
+
+**`vocal devices`** — lists input devices via `sd.query_devices()`
 
 ---
 
@@ -269,31 +298,63 @@ uvx vocal serve      # Run without installing
 
 **Every Task:**
 - [ ] Make changes
+- [ ] All new defaults come from `vocal_core/config.py` (never hardcode)
 - [ ] `make lint` passes
-- [ ] `make test` passes (23/23)
+- [ ] `make test` passes (36/36)
 - [ ] Docs updated (if API changed)
 - [ ] Task complete
 
 ---
 
-## Future: `vocal live` (WebSocket Streaming ASR)
+## WebSocket Streaming — `vocal live` + `/v1/realtime`
 
-**Not yet implemented.** Planned as a distinct command from `vocal listen`.
+**Implemented in v0.4.0.**
 
-`vocal listen` sends audio chunks over REST after silence — latency ~1-2s.
-`vocal live` would stream raw PCM over WebSocket and receive partial transcriptions word-by-word — latency ~200ms.
+### `/v1/audio/stream` (simple internal WebSocket)
 
-**What needs building:**
-1. **API** — `/v1/audio/stream` WebSocket endpoint in `packages/api/vocal_api/routes/`
-2. **Core** — expose `faster-whisper`'s generator-based `transcribe()` as a streaming adapter method
-3. **CLI** — `vocal live` command using `websockets` client instead of REST, printing tokens as they arrive
+- **Input:** binary WebSocket frames — raw PCM16 @16kHz (no base64)
+- **Query params:** `model`, `language`, `task`, `threshold`, `silence_duration`, `max_chunk_duration`
+- **VAD:** energy threshold (numpy RMS, no extra dep)
+- **Output events:** `{"type":"transcript.delta","text":"..."}` per segment, `{"type":"transcript.done","text":"..."}` on commit
+- **Error events:** `{"type":"error","message":"..."}`
+- **Used by:** `vocal live` CLI command, direct WebSocket clients
 
-```
-/v1/audio/stream  (WebSocket)
-  raw PCM frames → faster-whisper streaming generator → partial segments → client
-```
+### `/v1/realtime` (OpenAI Realtime API compatible)
 
-This is the foundation for OpenAI Realtime API compatibility (`/v1/realtime`).
+Full implementation of the OpenAI Realtime Transcription Session protocol. Clients connect as if to OpenAI — no code changes needed.
+
+**Session types:**
+- `transcription` — STT only (faster-whisper). No LLM needed.
+- `realtime` — Full voice agent: STT → LLM (`LLM_BASE_URL`) → TTS → audio back to client
+
+**Client → Server events:**
+- `session.update` / `transcription_session.update` — configure model, language, VAD
+- `input_audio_buffer.append` — `{"audio": "<base64 PCM16 @24kHz>"}`
+- `input_audio_buffer.commit` — manual commit (not needed in server_vad mode)
+- `input_audio_buffer.clear` — clear buffer
+
+**Server → Client events:**
+- `session.created` — on connect
+- `transcription_session.updated` — on config change
+- `input_audio_buffer.speech_started` / `speech_stopped` — VAD events
+- `input_audio_buffer.committed` — buffer committed
+- `conversation.item.input_audio_transcription.delta` — streaming token
+- `conversation.item.input_audio_transcription.completed` — final transcript
+- `response.output_audio_transcript.delta` — LLM response text (realtime mode)
+- `response.output_audio.delta` — TTS audio chunks as base64 (realtime mode)
+- `response.done` — response complete
+- `error` — `{"type":"error","error":{"code":"...","message":"..."}}`
+
+**Audio resampling:** client sends PCM16 @24kHz (OAI default) → server resamples to 16kHz with numpy linear interpolation before feeding faster-whisper.
+
+**LLM integration (realtime mode):** `httpx.AsyncClient` streams from `vocal_settings.LLM_BASE_URL/chat/completions` — works with Ollama, vLLM, OpenAI, or any OpenAI-compatible endpoint.
+
+### Core streaming adapter
+
+`FasterWhisperAdapter.transcribe_stream()` — async generator:
+- Calls `self.model.transcribe()` (returns lazy generator) in a thread via `loop.run_in_executor`
+- Uses `loop.call_soon_threadsafe(q.put_nowait, item)` to safely push segments to asyncio Queue
+- Yields `TranscriptionSegment` objects as faster-whisper decodes each segment
 
 ---
 

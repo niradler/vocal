@@ -6,6 +6,7 @@ from .adapters import (
     TranscriptionSegment,
     TranscriptionWord,
 )
+from .config import VocalSettings, vocal_settings
 from .registry import (
     ModelBackend,
     ModelInfo,
@@ -32,4 +33,6 @@ __all__ = [
     "TranscriptionSegment",
     "TranscriptionWord",
     "FasterWhisperAdapter",
+    "VocalSettings",
+    "vocal_settings",
 ]

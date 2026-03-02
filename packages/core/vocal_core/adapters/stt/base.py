@@ -1,4 +1,5 @@
 from abc import abstractmethod
+from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import BinaryIO
 
@@ -68,3 +69,13 @@ class STTAdapter(BaseAdapter):
             TranscriptionResult with text and metadata
         """
         pass
+
+    async def transcribe_stream(
+        self,
+        audio: str | Path | BinaryIO,
+        language: str | None = None,
+        task: str = "transcribe",
+        **kwargs,
+    ) -> AsyncGenerator["TranscriptionSegment", None]:
+        raise NotImplementedError("transcribe_stream not supported by this adapter")
+        yield

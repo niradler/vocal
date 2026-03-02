@@ -1,12 +1,14 @@
 import asyncio
 import tempfile
 import time
+from collections.abc import AsyncGenerator
 from pathlib import Path
 
 import aiofiles
 from fastapi import UploadFile
 
 from vocal_core import FasterWhisperAdapter, ModelRegistry, TranscriptionResult
+from vocal_core.adapters.stt.base import TranscriptionSegment as CoreTranscriptionSegment
 
 from ..models.transcription import (
     TranscriptionRequest,
@@ -146,6 +148,27 @@ class TranscriptionService:
         finally:
             if temp_path and Path(temp_path).exists():
                 Path(temp_path).unlink()
+
+    async def transcribe_stream_path(
+        self,
+        audio_path: str,
+        model_id: str,
+        language: str | None = None,
+        task: str = "transcribe",
+    ) -> AsyncGenerator[CoreTranscriptionSegment, None]:
+        model_info = await self.registry.get_model(model_id)
+        if not model_info:
+            raise ValueError(f"Model {model_id} not found in registry")
+
+        model_path = self.registry.get_model_path(model_id)
+        if not model_path:
+            raise ValueError(f"Model {model_id} not downloaded. Download it first: POST /v1/models/{model_id}/download")
+
+        adapter = await self._get_or_create_adapter(model_id, model_path)
+        self.last_used[model_id] = time.time()
+
+        async for seg in adapter.transcribe_stream(audio_path, language=language, task=task):
+            yield seg
 
     async def _get_or_create_adapter(self, model_id: str, model_path: Path) -> FasterWhisperAdapter:
         """Get or create adapter for model"""

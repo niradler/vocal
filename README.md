@@ -542,6 +542,15 @@ vocal models delete Systran/faster-whisper-tiny --force
 
 ### Real-time Transcription (ASR Streaming)
 
+Vocal has two real-time modes with different latency/complexity trade-offs:
+
+| Command | Transport | Latency | How it works |
+|---------|-----------|---------|--------------|
+| `vocal listen` | REST (chunk-based) | ~1-2s | Sends audio after silence detected |
+| `vocal live` | WebSocket streaming | ~200ms | Streams raw PCM, server returns partial tokens |
+
+#### `vocal listen` — Chunk-based (REST)
+
 ```bash
 # Listen to default microphone and transcribe speech live
 vocal listen
@@ -550,14 +559,11 @@ vocal listen
 vocal listen --device "Razer"
 vocal listen --device 3
 
-# List available audio input devices
-vocal devices
-
 # Translate speech to English (any source language)
 vocal listen --task translate
 
 # Tuning options
-vocal listen --model Systran/faster-whisper-tiny  # STT model
+vocal listen --model Systran/faster-whisper-tiny  # STT model to use
 vocal listen --language en                         # force language (skips auto-detect)
 vocal listen --silence-duration 2.0               # seconds of silence before sending chunk
 vocal listen --max-chunk-duration 15.0            # max chunk length before forced send
@@ -568,8 +574,33 @@ vocal listen --verbose                            # show API latency per chunk
 **How it works:**
 1. Calibrates mic noise floor for ~1.5s on startup (stay quiet)
 2. Shows a live energy bar while listening
-3. Sends audio chunks to the STT API when silence is detected
-4. Prints transcribed text in real-time
+3. Sends audio chunks to the STT REST API when silence is detected
+4. Prints transcribed text after each utterance
+
+#### `vocal live` — WebSocket streaming (~200ms latency)
+
+```bash
+# Stream mic directly over WebSocket, get tokens as they arrive
+vocal live
+
+# All the same device/model/language options as vocal listen
+vocal live --device "Razer" --model Systran/faster-whisper-tiny --language en
+vocal live --task translate --verbose
+```
+
+**How it works:**
+1. Connects to `ws://localhost:8000/v1/audio/stream` via WebSocket
+2. Streams raw PCM16 frames continuously — no client-side VAD
+3. Server does energy-based VAD, triggers faster-whisper's streaming transcription
+4. Partial tokens arrive word-by-word as faster-whisper decodes each segment
+
+#### `vocal devices` — List audio input devices
+
+```bash
+vocal devices
+```
+
+Shows all available microphone devices with index, name, channel count, and default sample rate. Use the index or a name substring with `--device` to select.
 
 ### Server Management
 
@@ -775,28 +806,40 @@ git checkout -b feature/your-feature
 - **Why:** Typing full paths is tedious (`Systran/faster-whisper-tiny`)
 - **How:** Use short names: `vocal run audio.mp3 -m whisper-tiny`
 
+### ✅ Completed (v0.4.0)
+
+**`vocal live` + `/v1/audio/stream` — WebSocket Streaming ASR**
+
+- `vocal live` streams raw PCM16 frames over WebSocket, server does VAD + faster-whisper streaming, client receives partial tokens at ~200ms latency
+- `/v1/audio/stream` — binary WebSocket: PCM16 @16kHz in, `transcript.delta` / `transcript.done` JSON events out
+
+**OpenAI Realtime API Drop-in (`/v1/realtime`)**
+
+- Full WebSocket implementation of the OpenAI Realtime Transcription Session protocol
+- Session types: `transcription` (STT only) and `realtime` (STT → LLM → TTS full loop)
+- Implements: `session.created`, `input_audio_buffer.*`, `conversation.item.input_audio_transcription.*`, `response.*` events
+- LLM is pluggable via `LLM_BASE_URL` env var (defaults to local Ollama at `http://localhost:11434/v1`)
+- Any OpenAI-compatible client SDK can point at `ws://localhost:8000/v1/realtime` — no API key needed locally
+
+```
+/v1/realtime  (WebSocket, OpenAI Realtime protocol)
+  transcription: mic PCM → faster-whisper → transcript delta events
+  realtime:      mic PCM → faster-whisper → Ollama LLM → TTS → audio delta events
+```
+
+**Global Config (`vocal_core.config.VocalSettings`)**
+
+All defaults live in `vocal_core/config.py` and are overridable via env vars or `.env`:
+
+| Env var | Default | Purpose |
+|---------|---------|---------|
+| `LLM_BASE_URL` | `http://localhost:11434/v1` | OpenAI-compatible LLM endpoint (Ollama default) |
+| `LLM_MODEL` | `gemma3n:latest` | LLM model to use for voice agent mode |
+| `LLM_API_KEY` | `ollama` | API key (`ollama` = no auth; set `sk-...` for OpenAI) |
+| `STT_DEFAULT_MODEL` | `Systran/faster-whisper-tiny` | Default STT model |
+| `STT_SAMPLE_RATE` | `16000` | Internal STT sample rate |
+
 ### 🚀 Future (v0.5.0+)
-
-**4. `vocal live` — True WebSocket Streaming ASR**
-
-- **Why:** `vocal listen` today is chunk-based (sends audio after silence). A real-time WebSocket endpoint would return partial transcriptions word-by-word as you speak, dropping latency from ~1-2s to ~200ms.
-- **How:** New `/v1/audio/stream` WebSocket endpoint on the API. `faster-whisper`'s `transcribe()` already yields segments as a generator — the server pipes raw PCM frames into it and pushes partial results downstream. The CLI connects via WebSocket instead of REST, printing words as they arrive.
-- **CLI:** `vocal live` command (distinct from `vocal listen`) — same mic/device options but true streaming output.
-
-```
-/v1/audio/stream  (WebSocket)
-  mic PCM frames → faster-whisper streaming → partial text segments → client
-```
-
-**5. OpenAI Realtime API Compatible Endpoint (`/v1/realtime`)**
-
-- **Why:** The OpenAI Realtime API is becoming the standard protocol for low-latency voice agents. A self-hosted, local-first drop-in would make Vocal the go-to backend for any voice agent that currently points at OpenAI.
-- **How:** WebSocket endpoint implementing the OpenAI Realtime event protocol (session lifecycle, `input_audio_buffer.append`, `response.audio.delta`). Audio input is piped through Vocal's STT adapters, text response comes from a configurable external LLM URL (Ollama, vLLM, or any OpenAI-compatible chat endpoint), and audio output streams back via Vocal's TTS adapters. Vocal stays focused on voice; the LLM is pluggable.
-
-```
-/v1/realtime  (WebSocket)
-  mic audio → Vocal STT → text → [your LLM] → text → Vocal TTS → audio chunks
-```
 
 **5. Voice Registry System**
 
