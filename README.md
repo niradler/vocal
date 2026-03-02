@@ -42,7 +42,7 @@ uvx --from vocal-ai vocal run your_audio.mp3
 - 🎙️ **Voice Agent**: `vocal chat` — full STT → LLM → TTS loop, OpenAI Realtime API compatible
 - 🎨 **CLI Tool**: Typer-based CLI with rich console output
 - 💻 **Cross-Platform**: Full support for Windows, macOS, and Linux
-- ✅ **Production Ready**: 41/41 tests passing with real audio assets
+- ✅ **Production Ready**: Full E2E test suite with real audio assets
 
 ## Prerequisites
 
@@ -709,7 +709,6 @@ make test-verbose
 uv run python -m pytest tests/test_e2e.py -v
 ```
 
-**Current Status: 41/41 tests passing ✅**
 
 Test coverage includes:
 
