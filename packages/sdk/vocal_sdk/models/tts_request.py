@@ -20,14 +20,13 @@ class TTSRequest:
     """Text-to-Speech request (OpenAI-compatible)
 
     Attributes:
-        model (str): TTS model to use (e.g., 'hexgrad/Kokoro-82M')
+        model (str): TTS model to use (e.g., 'hexgrad/Kokoro-82M', 'pyttsx3')
         input_ (str): The text to synthesize
-        voice (None | str | Unset): Voice ID to use
+        voice (None | str | Unset): Voice ID to use (model-specific, see /v1/audio/voices)
         speed (float | Unset): Speech speed multiplier Default: 1.0.
         response_format (TTSRequestResponseFormat | Unset): Audio format: mp3, opus, aac, flac, wav, pcm Default:
             TTSRequestResponseFormat.MP3.
-        stream (bool | Unset): Stream audio chunks as they are generated (wav/pcm yield true chunks; other formats send
-            one chunk after full generation) Default: False.
+        stream (bool | Unset): Stream audio chunks as they are generated Default: False.
     """
 
     model: str

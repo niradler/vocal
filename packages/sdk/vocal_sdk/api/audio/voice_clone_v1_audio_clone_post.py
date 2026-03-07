@@ -7,24 +7,24 @@ from ...client import AuthenticatedClient, Client
 from ...types import Response
 from ... import errors
 
+from ...models.body_voice_clone_v1_audio_clone_post import (
+    BodyVoiceCloneV1AudioClonePost,
+)
 from ...models.http_validation_error import HTTPValidationError
-from ...models.tts_request import TTSRequest
 
 
 def _get_kwargs(
     *,
-    body: TTSRequest,
+    body: BodyVoiceCloneV1AudioClonePost,
 ) -> dict[str, Any]:
     headers: dict[str, Any] = {}
 
     _kwargs: dict[str, Any] = {
         "method": "post",
-        "url": "/v1/audio/speech",
+        "url": "/v1/audio/clone",
     }
 
-    _kwargs["json"] = body.to_dict()
-
-    headers["Content-Type"] = "application/json"
+    _kwargs["files"] = body.to_multipart()
 
     _kwargs["headers"] = headers
     return _kwargs
@@ -62,21 +62,26 @@ def _build_response(
 def sync_detailed(
     *,
     client: AuthenticatedClient | Client,
-    body: TTSRequest,
+    body: BodyVoiceCloneV1AudioClonePost,
 ) -> Response[Any | HTTPValidationError]:
-    """Text To Speech
+    """Voice cloning synthesis
 
-     Generate speech from text (OpenAI-compatible endpoint).
+     Clone a voice from a reference recording and synthesize text with it.
 
-    - **model**: TTS model (e.g., 'hexgrad/Kokoro-82M', 'pyttsx3')
-    - **input**: Text to convert to speech
-    - **voice**: Optional voice ID (use /v1/audio/voices to list available voices)
-    - **speed**: Speech speed multiplier (0.25 to 4.0, default: 1.0)
-    - **response_format**: Audio format (mp3, opus, aac, flac, wav, pcm)
-    - **stream**: Stream audio chunks as they are generated
+    Upload a short audio recording of the speaker (3–30 seconds) and the text you want
+    synthesized. The model generates speech that matches the voice characteristics of the
+    provided reference.
+
+    **Supported models:** Qwen3-TTS base variants (require CUDA). Use `/v1/models` to see
+    available cloning-capable models.
+
+    **Reference audio:** wav, mp3, m4a recommended. 3–30 seconds of clean speech.
+
+    **Note:** Voice cloning is hardware-intensive. Ensure the model is downloaded first
+    via `POST /v1/models/{model_id}/download`.
 
     Args:
-        body (TTSRequest): Text-to-Speech request (OpenAI-compatible)
+        body (BodyVoiceCloneV1AudioClonePost):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -100,21 +105,26 @@ def sync_detailed(
 def sync(
     *,
     client: AuthenticatedClient | Client,
-    body: TTSRequest,
+    body: BodyVoiceCloneV1AudioClonePost,
 ) -> Any | HTTPValidationError | None:
-    """Text To Speech
+    """Voice cloning synthesis
 
-     Generate speech from text (OpenAI-compatible endpoint).
+     Clone a voice from a reference recording and synthesize text with it.
 
-    - **model**: TTS model (e.g., 'hexgrad/Kokoro-82M', 'pyttsx3')
-    - **input**: Text to convert to speech
-    - **voice**: Optional voice ID (use /v1/audio/voices to list available voices)
-    - **speed**: Speech speed multiplier (0.25 to 4.0, default: 1.0)
-    - **response_format**: Audio format (mp3, opus, aac, flac, wav, pcm)
-    - **stream**: Stream audio chunks as they are generated
+    Upload a short audio recording of the speaker (3–30 seconds) and the text you want
+    synthesized. The model generates speech that matches the voice characteristics of the
+    provided reference.
+
+    **Supported models:** Qwen3-TTS base variants (require CUDA). Use `/v1/models` to see
+    available cloning-capable models.
+
+    **Reference audio:** wav, mp3, m4a recommended. 3–30 seconds of clean speech.
+
+    **Note:** Voice cloning is hardware-intensive. Ensure the model is downloaded first
+    via `POST /v1/models/{model_id}/download`.
 
     Args:
-        body (TTSRequest): Text-to-Speech request (OpenAI-compatible)
+        body (BodyVoiceCloneV1AudioClonePost):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -133,21 +143,26 @@ def sync(
 async def asyncio_detailed(
     *,
     client: AuthenticatedClient | Client,
-    body: TTSRequest,
+    body: BodyVoiceCloneV1AudioClonePost,
 ) -> Response[Any | HTTPValidationError]:
-    """Text To Speech
+    """Voice cloning synthesis
 
-     Generate speech from text (OpenAI-compatible endpoint).
+     Clone a voice from a reference recording and synthesize text with it.
 
-    - **model**: TTS model (e.g., 'hexgrad/Kokoro-82M', 'pyttsx3')
-    - **input**: Text to convert to speech
-    - **voice**: Optional voice ID (use /v1/audio/voices to list available voices)
-    - **speed**: Speech speed multiplier (0.25 to 4.0, default: 1.0)
-    - **response_format**: Audio format (mp3, opus, aac, flac, wav, pcm)
-    - **stream**: Stream audio chunks as they are generated
+    Upload a short audio recording of the speaker (3–30 seconds) and the text you want
+    synthesized. The model generates speech that matches the voice characteristics of the
+    provided reference.
+
+    **Supported models:** Qwen3-TTS base variants (require CUDA). Use `/v1/models` to see
+    available cloning-capable models.
+
+    **Reference audio:** wav, mp3, m4a recommended. 3–30 seconds of clean speech.
+
+    **Note:** Voice cloning is hardware-intensive. Ensure the model is downloaded first
+    via `POST /v1/models/{model_id}/download`.
 
     Args:
-        body (TTSRequest): Text-to-Speech request (OpenAI-compatible)
+        body (BodyVoiceCloneV1AudioClonePost):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -169,21 +184,26 @@ async def asyncio_detailed(
 async def asyncio(
     *,
     client: AuthenticatedClient | Client,
-    body: TTSRequest,
+    body: BodyVoiceCloneV1AudioClonePost,
 ) -> Any | HTTPValidationError | None:
-    """Text To Speech
+    """Voice cloning synthesis
 
-     Generate speech from text (OpenAI-compatible endpoint).
+     Clone a voice from a reference recording and synthesize text with it.
 
-    - **model**: TTS model (e.g., 'hexgrad/Kokoro-82M', 'pyttsx3')
-    - **input**: Text to convert to speech
-    - **voice**: Optional voice ID (use /v1/audio/voices to list available voices)
-    - **speed**: Speech speed multiplier (0.25 to 4.0, default: 1.0)
-    - **response_format**: Audio format (mp3, opus, aac, flac, wav, pcm)
-    - **stream**: Stream audio chunks as they are generated
+    Upload a short audio recording of the speaker (3–30 seconds) and the text you want
+    synthesized. The model generates speech that matches the voice characteristics of the
+    provided reference.
+
+    **Supported models:** Qwen3-TTS base variants (require CUDA). Use `/v1/models` to see
+    available cloning-capable models.
+
+    **Reference audio:** wav, mp3, m4a recommended. 3–30 seconds of clean speech.
+
+    **Note:** Voice cloning is hardware-intensive. Ensure the model is downloaded first
+    via `POST /v1/models/{model_id}/download`.
 
     Args:
-        body (TTSRequest): Text-to-Speech request (OpenAI-compatible)
+        body (BodyVoiceCloneV1AudioClonePost):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.

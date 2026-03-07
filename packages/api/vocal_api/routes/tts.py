@@ -1,17 +1,21 @@
-from typing import Literal
+import logging
+import tempfile
+from pathlib import Path
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from ..dependencies import get_tts_service
 from ..services.tts_service import TTSService
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/v1/audio", tags=["audio"])
 
 AudioFormat = Literal["mp3", "opus", "aac", "flac", "wav", "pcm"]
 
-# Content-Type for each supported format
 _MEDIA_TYPES: dict[str, str] = {
     "mp3": "audio/mpeg",
     "opus": "audio/opus",
@@ -25,12 +29,12 @@ _MEDIA_TYPES: dict[str, str] = {
 class TTSRequest(BaseModel):
     """Text-to-Speech request (OpenAI-compatible)"""
 
-    model: str = Field(..., description="TTS model to use (e.g., 'hexgrad/Kokoro-82M')")
-    input: str = Field(..., description="The text to synthesize")
-    voice: str | None = Field(None, description="Voice ID to use")
+    model: str = Field(..., description="TTS model to use (e.g., 'hexgrad/Kokoro-82M', 'pyttsx3')")
+    input: str = Field(..., min_length=1, description="The text to synthesize")
+    voice: str | None = Field(None, description="Voice ID to use (model-specific, see /v1/audio/voices)")
     speed: float = Field(1.0, ge=0.25, le=4.0, description="Speech speed multiplier")
     response_format: AudioFormat = Field("mp3", description="Audio format: mp3, opus, aac, flac, wav, pcm")
-    stream: bool = Field(False, description="Stream audio chunks as they are generated (wav/pcm yield true chunks; other formats send one chunk after full generation)")
+    stream: bool = Field(False, description="Stream audio chunks as they are generated")
 
 
 class VoiceInfo(BaseModel):
@@ -49,6 +53,15 @@ class VoicesResponse(BaseModel):
     total: int
 
 
+class CloneResponse(BaseModel):
+    """Voice clone synthesis response metadata"""
+
+    model: str
+    duration: float
+    sample_rate: int
+    format: str
+
+
 @router.post(
     "/speech",
     response_class=Response,
@@ -56,15 +69,14 @@ class VoicesResponse(BaseModel):
 )
 async def text_to_speech(request: TTSRequest, service: TTSService = Depends(get_tts_service)):
     """
-    Generate speech from text (OpenAI-compatible endpoint)
+    Generate speech from text (OpenAI-compatible endpoint).
 
-    This endpoint synthesizes audio from text using the specified TTS model.
-
-    - **model**: TTS model to use (e.g., 'hexgrad/Kokoro-82M', 'coqui/XTTS-v2')
-    - **input**: The text to convert to speech
+    - **model**: TTS model (e.g., 'hexgrad/Kokoro-82M', 'pyttsx3')
+    - **input**: Text to convert to speech
     - **voice**: Optional voice ID (use /v1/audio/voices to list available voices)
     - **speed**: Speech speed multiplier (0.25 to 4.0, default: 1.0)
     - **response_format**: Audio format (mp3, opus, aac, flac, wav, pcm)
+    - **stream**: Stream audio chunks as they are generated
     """
     fmt = request.response_format
     media_type = _MEDIA_TYPES.get(fmt, f"audio/{fmt}")
@@ -105,28 +117,99 @@ async def text_to_speech(request: TTSRequest, service: TTSService = Depends(get_
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except ImportError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
+        logger.exception("TTS synthesis failed")
         raise HTTPException(status_code=500, detail=f"TTS error: {str(e)}")
 
 
 @router.get("/voices", response_model=VoicesResponse)
 async def list_voices(model: str | None = None, service: TTSService = Depends(get_tts_service)):
     """
-    List available TTS voices
-
-    Returns a list of all available voices that can be used for speech synthesis.
+    List available TTS voices.
 
     - **model**: Optional model ID to list voices for a specific model
     """
     try:
         voices = await service.get_voices(model_id=model)
-
         voice_infos = [VoiceInfo(id=v.id, name=v.name, language=v.language, gender=v.gender) for v in voices]
-
         return VoicesResponse(voices=voice_infos, total=len(voice_infos))
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list voices: {str(e)}")
+
+
+@router.post(
+    "/clone",
+    response_class=Response,
+    responses={200: {"content": {"audio/wav": {}}, "description": "Synthesized audio using cloned voice"}},
+    summary="Voice cloning synthesis",
+)
+async def voice_clone(
+    reference_audio: Annotated[UploadFile, File(description="Reference audio recording for voice cloning (wav/mp3/m4a, 3-30s recommended)")],
+    text: Annotated[str, Form(description="Text to synthesize in the cloned voice")],
+    model: Annotated[str, Form(description="TTS model to use for voice cloning (must support cloning, e.g. Qwen3-TTS base variants)")] = "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+    reference_text: Annotated[str | None, Form(description="Optional transcript of the reference audio")] = None,
+    language: Annotated[str, Form(description="Target language code (e.g. 'en', 'zh')")] = "en",
+    response_format: Annotated[AudioFormat, Form(description="Output format")] = "wav",
+    service: TTSService = Depends(get_tts_service),
+):
+    """
+    Clone a voice from a reference recording and synthesize text with it.
+
+    Upload a short audio recording of the speaker (3–30 seconds) and the text you want
+    synthesized. The model generates speech that matches the voice characteristics of the
+    provided reference.
+
+    **Supported models:** Qwen3-TTS base variants (require CUDA). Use `/v1/models` to see
+    available cloning-capable models.
+
+    **Reference audio:** wav, mp3, m4a recommended. 3–30 seconds of clean speech.
+
+    **Note:** Voice cloning is hardware-intensive. Ensure the model is downloaded first
+    via `POST /v1/models/{model_id}/download`.
+    """
+    fmt = response_format
+    media_type = _MEDIA_TYPES.get(fmt, f"audio/{fmt}")
+    ext = fmt if fmt != "pcm" else "raw"
+
+    ref_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(reference_audio.filename or "ref.wav").suffix or ".wav") as tmp:
+            ref_path = tmp.name
+        content = await reference_audio.read()
+        Path(ref_path).write_bytes(content)
+
+        result = await service.synthesize(
+            model_id=model,
+            text=text,
+            voice=ref_path,
+            output_format=fmt,
+            language=language,
+        )
+
+        return Response(
+            content=result.audio_data,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f"attachment; filename=clone.{ext}",
+                "X-Duration": str(result.duration),
+                "X-Sample-Rate": str(result.sample_rate),
+            },
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except ImportError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.exception("Voice clone synthesis failed")
+        raise HTTPException(status_code=500, detail=f"Voice clone error: {str(e)}")
+    finally:
+        if ref_path:
+            Path(ref_path).unlink(missing_ok=True)
 
 
 tts_router = router

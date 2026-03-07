@@ -10,6 +10,9 @@ class VocalSettings(BaseSettings):
     STT_DEFAULT_LANGUAGE: str | None = None
     STT_SAMPLE_RATE: int = 16000
 
+    TTS_DEFAULT_MODEL: str = "pyttsx3"
+    TTS_DEFAULT_VOICE: str | None = None
+
     VAD_THRESHOLD: float = 400.0
     VAD_SILENCE_FRAMES: int = 15
     VAD_MAX_BUFFER_FRAMES: int = 150
@@ -24,6 +27,9 @@ class VocalSettings(BaseSettings):
     PLAYBACK_COOLDOWN: float = 0.5
 
     CHAT_SYSTEM_PROMPT: str = "You are a helpful voice assistant. Keep answers short and conversational, 1 sentence max, no symbols or punctuation."
+
+    LOG_LEVEL: str = "INFO"
+    LOG_FORMAT: str = "%(asctime)s %(name)-30s %(levelname)-8s %(message)s"
 
     model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}
 

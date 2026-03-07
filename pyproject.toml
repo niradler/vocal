@@ -10,7 +10,7 @@ authors = [
 ]
 keywords = ["speech-to-text", "transcription", "whisper", "ollama", "tts", "stt", "openai-compatible", "self-hosted"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: Other/Proprietary License",
     "Programming Language :: Python :: 3.11",

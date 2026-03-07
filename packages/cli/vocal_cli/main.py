@@ -19,6 +19,7 @@ from rich.table import Table
 
 from vocal_core.config import vocal_settings
 from vocal_sdk import VocalClient
+from vocal_sdk.api.audio import voice_clone_v1_audio_clone_post
 from vocal_sdk.api.models import (
     delete_model_v1_models_model_id_delete,
     download_model_v1_models_model_id_download_post,
@@ -31,6 +32,7 @@ from vocal_sdk.api.transcription import (
 from vocal_sdk.models import (
     BodyCreateTranscriptionV1AudioTranscriptionsPost,
     BodyCreateTranslationV1AudioTranslationsPost,
+    BodyVoiceCloneV1AudioClonePost,
     TranscriptionFormat,
 )
 from vocal_sdk.types import UNSET, File, Unset
@@ -196,6 +198,59 @@ def models_delete(
         console.print(f"[green]Successfully deleted:[/green] {model_id}")
     except Exception as e:
         console.print(f"[red]Error:[/red] {str(e)}")
+        raise typer.Exit(1)
+
+
+@app.command()
+def clone(
+    text: str = typer.Argument(..., help="Text to synthesize in the cloned voice"),
+    reference: Path = typer.Option(..., "--reference", "-r", help="Reference audio file (wav/mp3/m4a, 3-30s recommended)"),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output file path (default: stdout binary)"),
+    model: str = typer.Option(
+        "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+        "--model",
+        "-m",
+        help="TTS model to use for voice cloning (must support cloning)",
+    ),
+    reference_text: str | None = typer.Option(None, "--reference-text", help="Optional transcript of the reference audio"),
+    language: str = typer.Option("en", "--language", "-l", help="Target language code (e.g. 'en', 'zh')"),
+    response_format: str = typer.Option("wav", "--format", "-f", help="Output audio format: wav, mp3, flac, pcm"),
+    api_url: str = typer.Option("http://localhost:8000", "--api-url", help="Vocal API URL"),
+) -> None:
+    """Clone a voice from a reference recording and synthesize text with it"""
+    if not reference.exists():
+        console.print(f"[red]Error:[/red] Reference file not found: {reference}")
+        raise typer.Exit(1)
+
+    try:
+        vc = _make_client(api_url)
+        console.print(f"[dim]Cloning voice from [cyan]{reference.name}[/cyan]...[/dim]")
+
+        with open(reference, "rb") as fobj:
+            body = BodyVoiceCloneV1AudioClonePost(
+                reference_audio=File(payload=fobj, file_name=reference.name),
+                text=text,
+                model=model,
+                reference_text=reference_text if reference_text is not None else UNSET,
+                language=language,
+            )
+            resp = voice_clone_v1_audio_clone_post.sync_detailed(client=vc, body=body)
+
+        if resp.status_code != 200:
+            console.print(f"[red]Error:[/red] Server returned {resp.status_code}")
+            raise typer.Exit(1)
+
+        audio_bytes = resp.content
+        if output:
+            output.write_bytes(audio_bytes)
+            console.print(f"[green]Saved[/green] {len(audio_bytes):,} bytes → [cyan]{output}[/cyan]")
+        else:
+            sys.stdout.buffer.write(audio_bytes)
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
 
 

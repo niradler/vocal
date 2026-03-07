@@ -2,6 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
+from vocal_core.config import vocal_settings
+from vocal_core.logging import setup_logging
+
 from .config import settings
 from .dependencies import get_transcription_service, get_tts_service
 from .routes import models_router, realtime_router, stream_router, system_router, transcription_router, tts_router
@@ -33,6 +36,8 @@ app.include_router(realtime_router)
 @app.on_event("startup")
 async def startup_event():
     """Initialize services and start background tasks"""
+    setup_logging(level=vocal_settings.LOG_LEVEL, fmt=vocal_settings.LOG_FORMAT)
+
     transcription_service = get_transcription_service()
     await transcription_service.start_cleanup_task()
 

@@ -9,12 +9,20 @@ from vocal_core.adapters.tts import (
     KOKORO_AVAILABLE,
     FasterQwen3TTSAdapter,
     KokoroTTSAdapter,
+    PiperTTSAdapter,
     SimpleTTSAdapter,
     TTSAdapter,
     TTSResult,
     Voice,
 )
 from vocal_core.config import optional_dependency_install_hint
+
+try:
+    from piper import PiperVoice as _piper_check  # noqa: F401
+
+    PIPER_AVAILABLE = True
+except ImportError:
+    PIPER_AVAILABLE = False
 
 
 class TTSService:
@@ -62,6 +70,8 @@ class TTSService:
         voice: str | None = None,
         speed: float = 1.0,
         output_format: str = "mp3",
+        language: str | None = None,
+        **kwargs,
     ) -> TTSResult:
         """
         Synthesize text to speech using specified model
@@ -76,10 +86,12 @@ class TTSService:
         Returns:
             TTSResult with audio data
         """
+        extra = {k: v for k, v in ({"language": language} | kwargs).items() if v is not None}
+
         if model_id == "pyttsx3":
             adapter = await self._get_or_create_simple_adapter()
             self.last_used[model_id] = time.time()
-            return await adapter.synthesize(text=text, voice=voice, speed=speed, output_format=output_format)
+            return await adapter.synthesize(text=text, voice=voice, speed=speed, output_format=output_format, **extra)
 
         model_info = await self.registry.get_model(model_id)
         if not model_info:
@@ -96,7 +108,7 @@ class TTSService:
         adapter = await self._get_or_create_adapter(model_id, model_path, model_info.backend.value)
         self.last_used[model_id] = time.time()
 
-        return await adapter.synthesize(text=text, voice=voice, speed=speed, output_format=output_format)
+        return await adapter.synthesize(text=text, voice=voice, speed=speed, output_format=output_format, **extra)
 
     async def synthesize_stream(
         self,
@@ -196,4 +208,8 @@ class TTSService:
             if not FASTER_QWEN3_TTS_AVAILABLE:
                 raise ImportError(optional_dependency_install_hint("qwen3-tts", "faster-qwen3-tts"))
             return FasterQwen3TTSAdapter()
-        raise ValueError(f"Unsupported TTS backend: '{backend}'. Supported backends: kokoro, faster_qwen3_tts")
+        if backend == "piper":
+            if not PIPER_AVAILABLE:
+                raise ImportError(optional_dependency_install_hint("piper", "piper-tts"))
+            return PiperTTSAdapter()
+        raise ValueError(f"Unsupported TTS backend: '{backend}'. Supported backends: kokoro, faster_qwen3_tts, piper")

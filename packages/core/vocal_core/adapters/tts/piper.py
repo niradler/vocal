@@ -318,17 +318,11 @@ class SimpleTTSAdapter(TTSAdapter):
 
     def __init__(self):
         self._loaded = False
-        self._engine = None  # pyttsx3 engine, used on Windows and for voice listing
 
     async def load_model(self, model_path: Path, device: str = "auto", **kwargs) -> None:
-        if PYTTSX3_AVAILABLE:
-            self._engine = pyttsx3.init()
         self._loaded = True
 
     async def unload_model(self) -> None:
-        if self._engine:
-            self._engine.stop()
-            self._engine = None
         self._loaded = False
 
     def is_loaded(self) -> bool:
@@ -421,54 +415,77 @@ class SimpleTTSAdapter(TTSAdapter):
         self._say_pyttsx3(text, path, voice=voice, speed=speed)
 
     def _say_pyttsx3(self, text: str, path: str, voice: str | None = None, speed: float = 1.0) -> None:
-        """Use pyttsx3 (Windows SAPI5 or fallback)."""
-        if not self._engine:
+        """Use pyttsx3 (Windows SAPI5 or fallback).
+
+        Creates a fresh engine instance per call to avoid SAPI5 deadlocks on Windows.
+        """
+        if not PYTTSX3_AVAILABLE:
             raise RuntimeError("No TTS engine available. Install pyttsx3 or espeak.")
 
-        if voice:
-            for v in self._engine.getProperty("voices"):
-                if v.id == voice or v.name == voice:
-                    self._engine.setProperty("voice", v.id)
-                    break
+        error_container: list[Exception] = []
 
-        rate = self._engine.getProperty("rate")
-        self._engine.setProperty("rate", int(rate * speed))
-
-        self._engine.save_to_file(text, path)
-
-        # Run with timeout to prevent hanging (Windows SAPI5 can hang)
         def run_engine():
             try:
-                self._engine.runAndWait()
+                self._pyttsx3_synthesize(text, path, voice, speed)
             except Exception as e:
-                logger.warning(f"pyttsx3: Engine error: {e}")
+                error_container.append(e)
+                logger.warning("pyttsx3: Engine error: %s", e)
 
         thread = threading.Thread(target=run_engine, daemon=True)
         thread.start()
-        thread.join(timeout=10.0)
+        thread.join(timeout=15.0)
 
-        # Give it a moment to finalize file writes
         if thread.is_alive():
-            logger.warning("pyttsx3: Engine timeout after 10s, continuing with partial output")
+            logger.warning("pyttsx3: Engine timeout after 15s, continuing with partial output")
             time.sleep(0.5)
+
+        if error_container:
+            raise RuntimeError(f"pyttsx3 synthesis failed: {error_container[0]}")
 
         if not os.path.exists(path) or os.path.getsize(path) == 0:
             raise RuntimeError(f"pyttsx3 failed to create audio file at {path}")
 
+    def _pyttsx3_synthesize(self, text: str, path: str, voice: str | None, speed: float) -> None:
+        engine = pyttsx3.init()
+        try:
+            if voice:
+                for v in engine.getProperty("voices"):
+                    if v.id == voice or v.name == voice:
+                        engine.setProperty("voice", v.id)
+                        break
+            rate = engine.getProperty("rate")
+            engine.setProperty("rate", int(rate * speed))
+            engine.save_to_file(text, path)
+            engine.runAndWait()
+        finally:
+            try:
+                engine.stop()
+            except Exception:
+                pass
+
     async def get_voices(self) -> list[Voice]:
-        if not self._engine:
+        if not PYTTSX3_AVAILABLE:
             return []
-        voices = []
-        for v in self._engine.getProperty("voices"):
-            voices.append(
+        try:
+            engine = pyttsx3.init()
+            raw = engine.getProperty("voices")
+            voices = [
                 Voice(
                     id=v.id,
                     name=v.name,
-                    language=v.languages[0] if v.languages else "en",
+                    language=v.languages[0].decode("utf-8") if v.languages and isinstance(v.languages[0], bytes) else (v.languages[0] if v.languages else "en"),
                     gender=None,
                 )
-            )
-        return voices
+                for v in raw
+            ]
+            try:
+                engine.stop()
+            except Exception:
+                pass
+            return voices
+        except Exception as e:
+            logger.warning("pyttsx3: failed to list voices: %s", e)
+            return []
 
 
 __all__ = ["PiperTTSAdapter", "SimpleTTSAdapter"]

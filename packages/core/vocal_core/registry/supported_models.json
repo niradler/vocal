@@ -1603,82 +1603,6 @@
       "sha": "f3ff3571791e39611d31c381e3a41a3af07b4987"
     },
     {
-      "id": "onnx-community/Kokoro-82M-ONNX",
-      "name": "Kokoro 82M Onnx",
-      "alias": "kokoro-onnx",
-      "provider": "huggingface",
-      "task": "tts",
-      "backend": "onnx",
-      "parameters": "82M",
-      "size": 1423597123,
-      "size_readable": "1.3 GB",
-      "languages": [
-        "en"
-      ],
-      "recommended_vram": "6GB+",
-      "source_url": "https://huggingface.co/onnx-community/Kokoro-82M-ONNX",
-      "description": "Based on ['hexgrad/Kokoro-82M']",
-      "license": "apache-2.0",
-      "modified_at": "2025-02-07 16:53:13+00:00",
-      "files": [
-        {
-          "filename": ".gitattributes",
-          "size": 1519
-        },
-        {
-          "filename": "README.md",
-          "size": 7591
-        },
-        {
-          "filename": "config.json",
-          "size": 44
-        },
-        {
-          "filename": "onnx/model.onnx",
-          "size": 325525037
-        },
-        {
-          "filename": "onnx/model_fp16.onnx",
-          "size": 163227585
-        },
-        {
-          "filename": "onnx/model_q4.onnx",
-          "size": 304670991
-        },
-        {
-          "filename": "onnx/model_q4f16.onnx",
-          "size": 154323767
-        },
-        {
-          "filename": "onnx/model_q8f16.onnx",
-          "size": 86033068
-        },
-        {
-          "filename": "onnx/model_quantized.onnx",
-          "size": 92360543
-        },
-        {
-          "filename": "onnx/model_uint8.onnx",
-          "size": 177465212
-        }
-      ],
-      "author": "onnx-community",
-      "tags": [
-        "transformers.js",
-        "onnx",
-        "style_text_to_speech_2",
-        "text-to-speech",
-        "en",
-        "base_model:hexgrad/Kokoro-82M",
-        "base_model:quantized:hexgrad/Kokoro-82M",
-        "license:apache-2.0",
-        "region:us"
-      ],
-      "downloads": 25618,
-      "likes": 162,
-      "sha": "f46687f7e41512228ae953af24a11b2640ea0f22"
-    },
-    {
       "id": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
       "name": "Qwen3 Tts 12Hz 0.6B Base",
       "alias": "qwen3-tts-0.6b",
@@ -2029,225 +1953,112 @@
       "sha": "0c0e3051f131929182e2c023b9537f8b1c68adfe"
     },
     {
-      "id": "fishaudio/fish-speech-1.5",
-      "name": "Fish Speech 1.5",
-      "alias": "fish-speech",
+      "id": "Qwen/Qwen3-ASR-0.6B",
+      "name": "Qwen3 ASR 0.6B",
+      "alias": "qwen3-asr-0.6b",
       "provider": "huggingface",
-      "task": "tts",
-      "backend": "custom",
-      "parameters": "Unknown",
-      "size": 1466160277,
-      "size_readable": "1.4 GB",
+      "task": "stt",
+      "backend": "transformers",
+      "parameters": "0.6B",
+      "size": 1200000000,
+      "size_readable": "1.1 GB",
       "languages": [
         "zh",
         "en",
-        "de",
-        "ja",
-        "fr",
-        "es",
-        "ko",
+        "yue",
         "ar",
-        "nl",
-        "ru",
-        "it",
-        "pl",
-        "pt"
-      ],
-      "recommended_vram": "6GB+",
-      "source_url": "https://huggingface.co/fishaudio/fish-speech-1.5",
-      "description": "Text To Speech model",
-      "license": "cc-by-nc-sa-4.0",
-      "modified_at": "2025-03-25 10:07:44+00:00",
-      "files": [
-        {
-          "filename": ".gitattributes",
-          "size": 1519
-        },
-        {
-          "filename": "README.md",
-          "size": 1678
-        },
-        {
-          "filename": "config.json",
-          "size": 697
-        },
-        {
-          "filename": "firefly-gan-vq-fsq-8x1024-21hz-generator.pth",
-          "size": 188518579
-        },
-        {
-          "filename": "model.pth",
-          "size": 1275908030
-        },
-        {
-          "filename": "special_tokens.json",
-          "size": 30964
-        },
-        {
-          "filename": "tokenizer.tiktoken",
-          "size": 1698810
-        }
-      ],
-      "author": "fishaudio",
-      "tags": [
-        "dual_ar",
-        "text-to-speech",
-        "zh",
-        "en",
         "de",
-        "ja",
         "fr",
         "es",
+        "pt",
+        "id",
+        "it",
         "ko",
-        "ar",
-        "nl",
         "ru",
-        "it",
-        "pl",
-        "pt",
-        "arxiv:2411.01156",
-        "license:cc-by-nc-sa-4.0",
-        "region:us"
-      ],
-      "downloads": 3405,
-      "likes": 705,
-      "sha": "275a984d33c33659e39eed41ff5bcd6e67517f4c"
-    },
-    {
-      "id": "coqui/XTTS-v2",
-      "name": "Xtts V2",
-      "alias": "xtts-v2",
-      "provider": "huggingface",
-      "task": "tts",
-      "backend": "custom",
-      "parameters": "Unknown",
-      "size": 2089347238,
-      "size_readable": "1.9 GB",
-      "languages": [
-        "en",
-        "es",
-        "fr",
-        "de",
-        "it",
-        "pt",
-        "pl",
+        "th",
+        "vi",
+        "ja",
         "tr",
-        "ru",
+        "hi",
+        "ms",
         "nl",
+        "sv",
+        "da",
+        "fi",
+        "pl",
         "cs",
-        "ar",
-        "zh",
-        "ja",
+        "fil",
+        "fa",
+        "el",
+        "ro",
         "hu",
-        "ko",
-        "hi"
+        "mk"
       ],
-      "recommended_vram": "6GB+",
-      "source_url": "https://huggingface.co/coqui/XTTS-v2",
-      "description": "Text To Speech model",
-      "license": "other",
-      "modified_at": "2023-12-11 17:50:00+00:00",
-      "files": [
-        {
-          "filename": ".gitattributes",
-          "size": 1519
-        },
-        {
-          "filename": "LICENSE.txt",
-          "size": 4014
-        },
-        {
-          "filename": "README.md",
-          "size": 4263
-        },
-        {
-          "filename": "config.json",
-          "size": 4368
-        },
-        {
-          "filename": "dvae.pth",
-          "size": 210514388
-        },
-        {
-          "filename": "hash.md5",
-          "size": 32
-        },
-        {
-          "filename": "mel_stats.pth",
-          "size": 1067
-        },
-        {
-          "filename": "model.pth",
-          "size": 1867929118
-        },
-        {
-          "filename": "samples/de_sample.wav",
-          "size": 299066
-        },
-        {
-          "filename": "samples/en_sample.wav",
-          "size": 299066
-        }
-      ],
-      "author": "coqui",
+      "recommended_vram": "4GB+",
+      "source_url": "https://huggingface.co/Qwen/Qwen3-ASR-0.6B",
+      "description": "Qwen3-ASR 0.6B multilingual automatic speech recognition model",
+      "license": "apache-2.0",
+      "author": "Qwen",
       "tags": [
-        "coqui",
-        "text-to-speech",
-        "license:other",
-        "region:us"
-      ],
-      "downloads": 6504033,
-      "likes": 3391,
-      "sha": "6c2b0d75eae4b7047358e3b6bd9325f857d43f77"
+        "automatic-speech-recognition",
+        "audio",
+        "multilingual",
+        "qwen3"
+      ]
     },
     {
-      "id": "myshell-ai/MeloTTS-English",
-      "name": "Melotts English",
-      "alias": "melotts-en",
+      "id": "Qwen/Qwen3-ASR-1.7B",
+      "name": "Qwen3 ASR 1.7B",
+      "alias": "qwen3-asr-1.7b",
       "provider": "huggingface",
-      "task": "tts",
-      "backend": "custom",
-      "parameters": "Unknown",
-      "size": 207871510,
-      "size_readable": "198.2 MB",
+      "task": "stt",
+      "backend": "transformers",
+      "parameters": "1.7B",
+      "size": 3400000000,
+      "size_readable": "3.1 GB",
       "languages": [
-        "en"
-      ],
-      "recommended_vram": "2GB+",
-      "source_url": "https://huggingface.co/myshell-ai/MeloTTS-English",
-      "description": "Text To Speech model",
-      "license": "mit",
-      "modified_at": "2024-12-24 19:18:31+00:00",
-      "files": [
-        {
-          "filename": ".gitattributes",
-          "size": 1519
-        },
-        {
-          "filename": "README.md",
-          "size": 5755
-        },
-        {
-          "filename": "checkpoint.pth",
-          "size": 207860748
-        },
-        {
-          "filename": "config.json",
-          "size": 3488
-        }
-      ],
-      "author": "myshell-ai",
-      "tags": [
-        "transformers",
-        "text-to-speech",
+        "zh",
+        "en",
+        "yue",
+        "ar",
+        "de",
+        "fr",
+        "es",
+        "pt",
+        "id",
+        "it",
         "ko",
-        "license:mit",
-        "endpoints_compatible",
-        "region:us"
+        "ru",
+        "th",
+        "vi",
+        "ja",
+        "tr",
+        "hi",
+        "ms",
+        "nl",
+        "sv",
+        "da",
+        "fi",
+        "pl",
+        "cs",
+        "fil",
+        "fa",
+        "el",
+        "ro",
+        "hu",
+        "mk"
       ],
-      "downloads": 238162,
-      "likes": 303,
-      "sha": "bb4fb7346d566d277ba8c8c7dbfdf6786139b8ef"
+      "recommended_vram": "8GB+",
+      "source_url": "https://huggingface.co/Qwen/Qwen3-ASR-1.7B",
+      "description": "Qwen3-ASR 1.7B multilingual automatic speech recognition model",
+      "license": "apache-2.0",
+      "author": "Qwen",
+      "tags": [
+        "automatic-speech-recognition",
+        "audio",
+        "multilingual",
+        "qwen3"
+      ]
     }
   ]
 }

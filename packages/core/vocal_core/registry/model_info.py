@@ -22,6 +22,7 @@ class ModelBackend(str, Enum):
     ONNX = "onnx"
     KOKORO = "kokoro"
     FASTER_QWEN3_TTS = "faster_qwen3_tts"
+    PIPER = "piper"
     CUSTOM = "custom"
 
 

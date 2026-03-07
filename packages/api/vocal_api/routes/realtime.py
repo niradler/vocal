@@ -178,7 +178,7 @@ async def _run_voice_agent(ws: WebSocket, session: _Session, user_text: str, tts
         session.conversation_history.append({"role": "assistant", "content": full_response})
 
     try:
-        tts_result = await tts_service.synthesize("pyttsx3", full_response or "...", output_format="pcm")
+        tts_result = await tts_service.synthesize(vocal_settings.TTS_DEFAULT_MODEL, full_response or "...", voice=vocal_settings.TTS_DEFAULT_VOICE, output_format="pcm")
         pcm_bytes = tts_result.audio_data
         output_sample_rate = tts_result.sample_rate or 22050
         audio_24k = _resample_pcm16(pcm_bytes, output_sample_rate, 24000)

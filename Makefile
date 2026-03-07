@@ -1,4 +1,4 @@
-.PHONY: help install test test-quick test-verbose lint format clean serve cli docs gpu-check bump-patch bump-minor bump-major generate-supported-models generate-sdk
+.PHONY: help install test test-unit test-contract test-ci test-quick test-verbose lint format clean serve cli docs gpu-check bump-patch bump-minor bump-major generate-supported-models generate-sdk
 
 # Default target
 help:
@@ -10,7 +10,10 @@ help:
 	@echo "  make sync          - Sync dependencies with uv"
 	@echo ""
 	@echo "Testing:"
-	@echo "  make test          - Run full E2E test suite (~55 sec)"
+	@echo "  make test          - Run full E2E test suite (~55 sec) [local primary gate]"
+	@echo "  make test-unit     - Run unit tests only (~5 sec, no server needed)"
+	@echo "  make test-contract - Run contract tests (starts API, uses pyttsx3)"
+	@echo "  make test-ci       - Run CI gate: unit + contract tests (no heavy models)"
 	@echo "  make test-quick    - Quick validation checks (~5 sec)"
 	@echo "  make test-verbose  - Run tests with verbose output"
 	@echo "  make gpu-check     - Check GPU detection and optimization"
@@ -52,9 +55,24 @@ sync:
 
 # Testing
 test:
-	@echo "Running full E2E test suite..."
+	@echo "Running full E2E test suite (local primary gate)..."
 	@echo ""
-	uv run python -m pytest tests/test_e2e.py -v --tb=short
+	uv run python -m pytest tests/test_e2e.py tests/test_tts_formats.py -v --tb=short
+
+test-unit:
+	@echo "Running unit tests (no server or models needed)..."
+	@echo ""
+	uv run python -m pytest tests/unit/ -v --tb=short
+
+test-contract:
+	@echo "Running contract tests (starts API, uses pyttsx3 only)..."
+	@echo ""
+	uv run python -m pytest tests/contract/ -v --tb=short
+
+test-ci:
+	@echo "Running CI gate: unit + contract tests..."
+	@echo ""
+	uv run python -m pytest tests/unit/ tests/contract/ -v --tb=short
 
 test-quick:
 	@echo "Running quick validation checks..."
@@ -156,6 +174,9 @@ bump-major:
 
 # Quick aliases
 t: test
+tu: test-unit
+tc: test-contract
+tci: test-ci
 tq: test-quick
 tv: test-verbose
 s: serve
