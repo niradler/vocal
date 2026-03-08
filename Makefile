@@ -1,4 +1,4 @@
-.PHONY: help install test test-unit test-contract test-ci test-quick test-verbose lint format clean serve cli docs gpu-check bump-patch bump-minor bump-major generate-supported-models generate-sdk
+.PHONY: help install test test-unit test-contract test-ci test-quick test-verbose lint format clean serve serve-wsl cli docs gpu-check bump-patch bump-minor bump-major generate-supported-models generate-sdk
 
 # Default target
 help:
@@ -25,8 +25,10 @@ help:
 	@echo ""
 	@echo "Development:"
 	@echo "  make serve         - Start API server (port 8000)"
+	@echo "  make serve-wsl     - Start API server inside WSL (port 8001)"
+	@echo "  make cli           - Run CLI — ARGS=\"<cmd>\" [URL=http://...] (default: localhost:8000)"
+	@echo "                       e.g. make cli ARGS=\"models list\" URL=http://127.0.0.1:8001"
 	@echo "  make serve-dev     - Start API server with auto-reload"
-	@echo "  make cli           - Show CLI help"
 	@echo "  make docs          - Open API documentation in browser"
 	@echo "  make generate-sdk              - Regenerate SDK from OpenAPI spec (needs API running)"
 	@echo "  make generate-supported-models - Regenerate supported models metadata"
@@ -109,17 +111,22 @@ serve:
 	@echo ""
 	uv run uvicorn vocal_api.main:app --host 0.0.0.0 --port 8000
 
+serve-wsl:
+	@echo "Starting API server inside WSL on http://127.0.0.1:8001"
+	@echo "Documentation: http://127.0.0.1:8001/docs"
+	@echo ""
+	wsl bash -ic "cd /mnt/c/Projects/vocal && UV_PROJECT_ENVIRONMENT=/tmp/vocal_venv uv run uvicorn vocal_api.main:app --host 127.0.0.1 --port 8001"
+
+cli:
+	@echo "Running vocal CLI — Usage: make cli ARGS=\"models list\" [URL=http://localhost:8000]"
+	@echo ""
+	VOCAL_API_URL=$(or $(URL),http://localhost:8000) uv run vocal $(ARGS)
+
 serve-dev:
 	@echo "Starting API server with auto-reload..."
 	@echo "Documentation: http://localhost:8000/docs"
 	@echo ""
 	uv run uvicorn vocal_api.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir packages
-
-cli:
-	@echo "Vocal CLI Help"
-	@echo "=============="
-	@echo ""
-	uv run vocal --help
 
 docs:
 	@echo "Opening API documentation..."
@@ -180,6 +187,7 @@ tci: test-ci
 tq: test-quick
 tv: test-verbose
 s: serve
+sw: serve-wsl
 sd: serve-dev
 l: lint
 f: format

@@ -29,128 +29,173 @@ class ModelRegistry:
         """Add a custom model provider"""
         self.providers[name] = provider
 
+    def _resolve_model_id(self, model_id: str) -> str:
+        """Resolve alias to canonical model ID using any registered provider."""
+        hf = self.providers.get("huggingface")
+        if hf and hasattr(hf, "resolve_alias"):
+            return hf.resolve_alias(model_id)
+        return model_id
+
+    def _enrich_from_cache(self, model: ModelInfo, canonical_id: str, dir_model_id: str) -> None:
+        cached = self.metadata_cache.get(canonical_id) or self.metadata_cache.get(dir_model_id)
+        if not cached:
+            return
+        try:
+            record = model_record_from_mapping(
+                cached,
+                default_id=canonical_id,
+                default_name=model.name,
+                default_provider=model.provider.value,
+                default_task=model.task.value,
+                default_backend=model.backend.value,
+            )
+            if record.size:
+                model.size = record.size
+                model.size_readable = record.size_readable
+            if record.parameters and record.parameters != "Unknown":
+                model.parameters = record.parameters
+            if record.languages:
+                model.languages = record.languages
+            if record.description:
+                model.description = record.description
+            if record.author:
+                model.author = record.author
+            if record.license:
+                model.license = record.license
+            if record.tags:
+                model.tags = record.tags
+            model.downloaded_at = record.downloaded_at or model.downloaded_at
+            model.modified_at = record.modified_at or model.modified_at
+        except (ValueError, ValidationError):
+            pass
+
+    def _fill_local_size(self, model: ModelInfo, model_dir: Path) -> None:
+        if not model.size:
+            model.size = sum(f.stat().st_size for f in model_dir.rglob("*") if f.is_file())
+            model.size_readable = format_bytes(model.size)
+
+    def _model_from_dir(self, model_dir: Path, canonical_id: str, dir_model_id: str) -> ModelInfo:
+        total_size = sum(f.stat().st_size for f in model_dir.rglob("*") if f.is_file())
+        cached = self.metadata_cache.get(canonical_id) or self.metadata_cache.get(dir_model_id)
+        if cached:
+            try:
+                record = model_record_from_mapping(
+                    cached,
+                    default_id=canonical_id,
+                    default_name=canonical_id.split("/")[-1],
+                    default_provider="huggingface",
+                    default_task="stt",
+                    default_backend="transformers",
+                )
+                caps = infer_model_capabilities(task=record.task, backend=record.backend, model_id=record.id, tags=record.tags, overrides=record)
+                return ModelInfo(
+                    id=record.id,
+                    name=record.name,
+                    provider=ModelProvider(record.provider),
+                    description=record.description,
+                    size=record.size or total_size,
+                    size_readable=record.size_readable or format_bytes(total_size),
+                    parameters=record.parameters,
+                    languages=record.languages,
+                    backend=ModelBackend(record.backend),
+                    status=ModelStatus.AVAILABLE,
+                    source_url=record.source_url,
+                    license=record.license,
+                    recommended_vram=record.recommended_vram,
+                    task=ModelTask(record.task),
+                    local_path=str(model_dir),
+                    modified_at=record.modified_at,
+                    downloaded_at=record.downloaded_at,
+                    author=record.author,
+                    tags=record.tags,
+                    downloads=record.downloads,
+                    likes=record.likes,
+                    sha=record.sha,
+                    files=[f.model_dump() for f in record.files] if record.files else None,
+                    **caps,
+                )
+            except (ValueError, ValidationError):
+                pass
+        caps = infer_model_capabilities(task="stt", backend="transformers", model_id=canonical_id)
+        return ModelInfo(
+            id=canonical_id,
+            name=canonical_id.split("/")[-1],
+            provider=ModelProvider.HUGGINGFACE,
+            size=total_size,
+            size_readable=format_bytes(total_size),
+            parameters="Unknown",
+            languages=[],
+            backend=ModelBackend.TRANSFORMERS,
+            status=ModelStatus.AVAILABLE,
+            task=ModelTask.STT,
+            local_path=str(model_dir),
+            **caps,
+        )
+
     async def list_models(
         self,
         provider: str | None = None,
         task: str | None = None,
         status_filter: str | None = None,
     ) -> list[ModelInfo]:
-        all_models = []
+        if status_filter and status_filter != "available":
+            return []
 
-        for model_dir in self.storage_path.iterdir():
-            if not model_dir.is_dir() or model_dir.name == "hf":
+        hf_provider = self.providers.get("huggingface")
+        all_models: list[ModelInfo] = []
+        seen_canonical_ids: set[str] = set()
+
+        local_dirs = [d for d in self.storage_path.iterdir() if d.is_dir() and d.name != "hf"]
+
+        for model_dir in local_dirs:
+            dir_model_id = model_dir.name.replace("--", "/")
+            canonical_id = self._resolve_model_id(dir_model_id)
+
+            if canonical_id in seen_canonical_ids:
                 continue
 
-            model_id = model_dir.name.replace("--", "/")
+            if canonical_id != dir_model_id:
+                canonical_dir = self.storage_path / canonical_id.replace("/", "--")
+                if canonical_dir.exists():
+                    continue
 
-            cached_metadata = self.metadata_cache.get(model_id)
-            if cached_metadata:
+            seen_canonical_ids.add(canonical_id)
+
+            model: ModelInfo | None = None
+            if hf_provider:
                 try:
-                    record = model_record_from_mapping(
-                        cached_metadata,
-                        default_id=model_id,
-                        default_name=model_id.split("/")[-1],
-                        default_provider="huggingface",
-                        default_task="stt",
-                        default_backend="transformers",
-                    )
-                    capabilities = infer_model_capabilities(
-                        task=record.task,
-                        backend=record.backend,
-                        model_id=record.id,
-                        tags=record.tags,
-                        overrides=record,
-                    )
-                    model = ModelInfo(
-                        id=record.id,
-                        name=record.name,
-                        provider=ModelProvider(record.provider),
-                        description=record.description,
-                        size=record.size,
-                        size_readable=record.size_readable,
-                        parameters=record.parameters,
-                        languages=record.languages,
-                        backend=ModelBackend(record.backend),
-                        status=ModelStatus.AVAILABLE,
-                        source_url=record.source_url,
-                        license=record.license,
-                        recommended_vram=record.recommended_vram,
-                        task=ModelTask(record.task),
-                        local_path=str(model_dir),
-                        modified_at=record.modified_at,
-                        downloaded_at=record.downloaded_at,
-                        author=record.author,
-                        tags=record.tags,
-                        downloads=record.downloads,
-                        likes=record.likes,
-                        sha=record.sha,
-                        files=[file.model_dump() for file in record.files] if record.files else None,
-                        **capabilities,
-                    )
-                except (ValueError, ValidationError):
-                    total_size = sum(f.stat().st_size for f in model_dir.rglob("*") if f.is_file())
-                    capabilities = infer_model_capabilities(
-                        task="stt",
-                        backend="transformers",
-                        model_id=model_id,
-                    )
-                    model = ModelInfo(
-                        id=model_id,
-                        name=model_id.split("/")[-1],
-                        provider=ModelProvider.HUGGINGFACE,
-                        size=total_size,
-                        size_readable=format_bytes(total_size),
-                        parameters="Unknown",
-                        languages=[],
-                        backend=ModelBackend.TRANSFORMERS,
-                        status=ModelStatus.AVAILABLE,
-                        task=ModelTask.STT,
-                        local_path=str(model_dir),
-                        **capabilities,
-                    )
+                    model = await hf_provider.get_model_info(canonical_id)
+                except Exception:
+                    model = None
+
+            if model:
+                model.status = ModelStatus.AVAILABLE
+                model.local_path = str(model_dir)
+                self._enrich_from_cache(model, canonical_id, dir_model_id)
+                self._fill_local_size(model, model_dir)
             else:
-                total_size = sum(f.stat().st_size for f in model_dir.rglob("*") if f.is_file())
-                capabilities = infer_model_capabilities(
-                    task="stt",
-                    backend="transformers",
-                    model_id=model_id,
-                )
-                model = ModelInfo(
-                    id=model_id,
-                    name=model_id.split("/")[-1],
-                    provider=ModelProvider.HUGGINGFACE,
-                    size=total_size,
-                    size_readable=format_bytes(total_size),
-                    parameters="Unknown",
-                    languages=[],
-                    backend=ModelBackend.TRANSFORMERS,
-                    status=ModelStatus.AVAILABLE,
-                    task=ModelTask.STT,
-                    local_path=str(model_dir),
-                    **capabilities,
-                )
+                model = self._model_from_dir(model_dir, canonical_id, dir_model_id)
 
             if task and model.task.value != task:
                 continue
 
             all_models.append(model)
 
-        if status_filter and status_filter != "available":
-            all_models = []
-
         return all_models
 
     async def get_model(self, model_id: str) -> ModelInfo | None:
+        canonical_id = self._resolve_model_id(model_id)
+
         for provider in self.providers.values():
             try:
-                model = await provider.get_model_info(model_id)
+                model = await provider.get_model_info(canonical_id)
                 if model:
-                    model_path = self._get_model_path(model_id)
+                    model_path = self._get_model_path(model.id)
                     if model_path.exists():
                         model.status = ModelStatus.AVAILABLE
                         model.local_path = str(model_path)
 
-                        cached_metadata = self.metadata_cache.get(model_id)
+                        cached_metadata = self.metadata_cache.get(model.id)
                         if cached_metadata:
                             try:
                                 record = model_record_from_mapping(
@@ -188,6 +233,10 @@ class ModelRegistry:
             except Exception as e:
                 logger.error("Error getting model %s from %s: %s", model_id, provider.get_provider_name(), e)
 
+        model_path = self._get_model_path(canonical_id)
+        if model_path.exists():
+            return self._model_from_dir(model_path, canonical_id, model_id)
+
         return None
 
     async def download_model(
@@ -200,11 +249,10 @@ class ModelRegistry:
             raise ValueError(f"Unknown provider: {provider_name}")
 
         provider = self.providers[provider_name]
-        destination = self._get_model_path(model_id)
+        canonical_id = self._resolve_model_id(model_id)
+        destination = self._get_model_path(canonical_id)
 
         try:
-            yield (0, 0, ModelStatus.DOWNLOADING)
-
             async for downloaded, total in provider.download_model(model_id, destination, quantization):
                 yield (downloaded, total, ModelStatus.DOWNLOADING)
 
@@ -212,12 +260,13 @@ class ModelRegistry:
 
             if is_valid:
                 if hasattr(provider, "fetch_metadata_from_hf"):
-                    metadata = await provider.fetch_metadata_from_hf(model_id)
+                    metadata = await provider.fetch_metadata_from_hf(canonical_id)
                     if metadata:
                         metadata["local_path"] = str(destination)
-                        self.metadata_cache.set(model_id, metadata)
+                        self.metadata_cache.set(canonical_id, metadata)
 
-                yield (total, total, ModelStatus.AVAILABLE)
+                total_size = sum(f.stat().st_size for f in destination.rglob("*") if f.is_file())
+                yield (total_size, total_size, ModelStatus.AVAILABLE)
             else:
                 yield (0, 0, ModelStatus.ERROR)
 
@@ -226,7 +275,8 @@ class ModelRegistry:
             yield (0, 0, ModelStatus.ERROR)
 
     async def delete_model(self, model_id: str) -> bool:
-        model_path = self._get_model_path(model_id)
+        canonical_id = self._resolve_model_id(model_id)
+        model_path = self._get_model_path(canonical_id)
 
         if not model_path.exists():
             return False
@@ -235,18 +285,18 @@ class ModelRegistry:
             import shutil
 
             shutil.rmtree(model_path)
-            self.metadata_cache.delete(model_id)
+            self.metadata_cache.delete(canonical_id)
             return True
         except Exception as e:
             logger.error("Error deleting model %s: %s", model_id, e)
             return False
 
     def _get_model_path(self, model_id: str) -> Path:
-        """Get local storage path for a model"""
         safe_id = model_id.replace("/", "--")
         return self.storage_path / safe_id
 
     def get_model_path(self, model_id: str) -> Path | None:
         """Get path to downloaded model, or None if not downloaded"""
-        path = self._get_model_path(model_id)
+        canonical_id = self._resolve_model_id(model_id)
+        path = self._get_model_path(canonical_id)
         return path if path.exists() else None

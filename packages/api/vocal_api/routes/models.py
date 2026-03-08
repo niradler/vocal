@@ -1,4 +1,7 @@
+import json
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 
 from ..dependencies import get_model_service
 from ..models.model import (
@@ -29,16 +32,17 @@ async def list_models(
 
 
 @router.get(
-    "/supported",
+    "/catalog",
     response_model=ModelListResponse,
     response_model_exclude_none=True,
-    summary="List supported models",
-    description="List all curated supported models with accurate metadata",
+    summary="List catalog models",
+    description="List all curated models with metadata (downloaded or not)",
 )
-async def list_supported_models(
+async def list_catalog(
+    task: str | None = None,
     service: ModelService = Depends(get_model_service),
 ) -> ModelListResponse:
-    models = await service.list_supported_models()
+    models = await service.list_catalog(task=task)
     return ModelListResponse(models=models, total=len(models))
 
 
@@ -74,10 +78,6 @@ async def download_model(
     Returns immediately with initial status.
     Check progress with GET /models/{model_id}/download/status
     """
-    model = await service.get_model(model_id)
-    if not model:
-        raise HTTPException(404, f"Model {model_id} not found")
-
     async def download_task():
         async for progress in service.download_model(model_id):
             pass
@@ -107,13 +107,17 @@ async def get_download_status(model_id: str, service: ModelService = Depends(get
         if not model:
             raise HTTPException(404, f"Model {model_id} not found")
 
-        if model.status == "available":
+        if str(model.status).lower() == "available":
+            size = model.size or 0
+            if size == 0 and model.local_path:
+                from pathlib import Path
+                size = sum(f.stat().st_size for f in Path(model.local_path).rglob("*") if f.is_file())
             return ModelDownloadProgress(
                 model_id=model_id,
                 status="available",
                 progress=1.0,
-                downloaded_bytes=model.size,
-                total_bytes=model.size,
+                downloaded_bytes=size,
+                total_bytes=size,
                 message="Model already downloaded",
             )
 
@@ -151,30 +155,15 @@ async def show_model(
 
 @router.post(
     "/pull",
-    response_model=ModelDownloadProgress,
     summary="Pull model",
-    description="Download a model (Ollama-style)",
+    description="Stream download progress as newline-delimited JSON",
 )
 async def pull_model(
     request: ModelPullRequest,
-    background_tasks: BackgroundTasks,
     service: ModelService = Depends(get_model_service),
-) -> ModelDownloadProgress:
-    model = await service.get_model(request.model)
-    if not model:
-        raise HTTPException(404, f"Model {request.model} not found")
-
-    async def download_task():
+) -> StreamingResponse:
+    async def _stream():
         async for progress in service.download_model(request.model):
-            pass
+            yield json.dumps(progress.model_dump()) + "\n"
 
-    background_tasks.add_task(download_task)
-
-    return ModelDownloadProgress(
-        model_id=request.model,
-        status="downloading",
-        progress=0.0,
-        downloaded_bytes=0,
-        total_bytes=0,
-        message="Starting download...",
-    )
+    return StreamingResponse(_stream(), media_type="application/x-ndjson")

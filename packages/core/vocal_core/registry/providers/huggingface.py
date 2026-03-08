@@ -97,6 +97,9 @@ class HuggingFaceProvider(BaseProvider):
             return self._alias_to_id[model_or_alias]
         return model_or_alias
 
+    def resolve_alias(self, model_or_alias: str) -> str:
+        return self._resolve_alias(model_or_alias)
+
     def _model_dict_to_info(
         self,
         model_dict: StoredModelRecord,
@@ -155,13 +158,38 @@ class HuggingFaceProvider(BaseProvider):
         if model_id in supported:
             return self._model_dict_to_info(supported[model_id])
 
-        return None
+        if "/" not in model_id:
+            return None
+
+        try:
+            loop = asyncio.get_running_loop()
+            info: HFModelInfo = await loop.run_in_executor(None, lambda: hf_model_info(model_id))
+            tags = info.tags or []
+            task = "tts" if any(t in tags for t in ("text-to-speech", "tts")) else "stt"
+            backend = "transformers"
+            caps = infer_model_capabilities(task=task, backend=backend, model_id=model_id, tags=tags)
+            return ModelInfo(
+                id=model_id,
+                name=model_id.split("/")[-1],
+                provider=ModelProvider.HUGGINGFACE,
+                size=0,
+                size_readable="Unknown",
+                parameters="Unknown",
+                languages=[t.replace("language:", "") for t in tags if t.startswith("language:")],
+                backend=ModelBackend(backend),
+                status=ModelStatus.NOT_DOWNLOADED,
+                task=ModelTask(task),
+                source_url=f"https://huggingface.co/{model_id}",
+                **caps,
+            )
+        except Exception:
+            return None
 
     async def fetch_metadata_from_hf(self, model_id: str) -> dict | None:  # noqa: C901
         try:
             supported = self._load_supported_models()
             supported_entry = supported.get(model_id)
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             info: HFModelInfo = await loop.run_in_executor(None, lambda: hf_model_info(model_id))
             snapshot: HuggingFaceSnapshot = huggingface_snapshot_from_info(info)
 
@@ -220,21 +248,25 @@ class HuggingFaceProvider(BaseProvider):
         model_id = self._resolve_alias(model_id)
         destination.mkdir(parents=True, exist_ok=True)
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         try:
-            model_path = await loop.run_in_executor(
+            if await self.verify_model(model_id, destination):
+                final_size = sum(f.stat().st_size for f in destination.rglob("*") if f.is_file())
+                yield (final_size, final_size)
+                return
+
+            await loop.run_in_executor(
                 None,
                 lambda: snapshot_download(
                     model_id,
                     local_dir=str(destination),
                     cache_dir=str(self.cache_dir) if self.cache_dir else None,
-                    local_dir_use_symlinks=False,
                 ),
             )
 
-            total_size = sum(f.stat().st_size for f in Path(model_path).rglob("*") if f.is_file())
-            yield (total_size, total_size)
+            final_size = sum(f.stat().st_size for f in destination.rglob("*") if f.is_file())
+            yield (final_size, final_size)
 
         except Exception as e:
             raise RuntimeError(f"Failed to download model {model_id}: {e}")
@@ -243,9 +275,14 @@ class HuggingFaceProvider(BaseProvider):
         if not local_path.exists():
             return False
 
-        required_files = ["config.json"]
-        for file in required_files:
-            if not (local_path / file).exists():
-                return False
+        if not (local_path / "config.json").exists():
+            return False
 
-        return True
+        all_files = [f for f in local_path.rglob("*") if f.is_file()]
+
+        if any(".incomplete" in f.name or f.suffix == ".lock" for f in all_files):
+            return False
+
+        weight_names = {"model.safetensors", "pytorch_model.bin", "model.bin", "model.gguf", "model.pt"}
+        has_weights = any(f.name in weight_names or (f.name.startswith("model-") and f.suffix == ".safetensors") for f in all_files)
+        return has_weights

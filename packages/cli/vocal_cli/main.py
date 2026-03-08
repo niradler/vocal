@@ -22,7 +22,6 @@ from vocal_sdk import VocalClient
 from vocal_sdk.api.audio import voice_clone_v1_audio_clone_post
 from vocal_sdk.api.models import (
     delete_model_v1_models_model_id_delete,
-    download_model_v1_models_model_id_download_post,
     list_models_v1_models_get,
 )
 from vocal_sdk.api.transcription import (
@@ -57,24 +56,40 @@ _CALIB_FRAMES = 15
 _print_lock = threading.Lock()
 
 
+def _get_device_rate(device_idx: int | None) -> int:
+    dev = sd.query_devices(device_idx if device_idx is not None else sd.default.device[0])
+    return int(dev["default_samplerate"])
+
+
+def _resample_frame(frame: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
+    if from_rate == to_rate:
+        return frame
+    col = frame[:, 0] if frame.ndim > 1 else frame
+    n_out = int(len(col) * to_rate / from_rate)
+    if n_out == 0:
+        return np.zeros((0, 1), dtype=frame.dtype) if frame.ndim > 1 else np.zeros(0, dtype=frame.dtype)
+    resampled = np.interp(np.linspace(0, len(col) - 1, n_out), np.arange(len(col)), col.astype(np.float32)).astype(np.int16)
+    return resampled.reshape(-1, 1) if frame.ndim > 1 else resampled
+
+
 def _make_client(api_url: str) -> VocalClient:
     return VocalClient(base_url=api_url, timeout=httpx.Timeout(300.0), raise_on_unexpected_status=True)
 
 
-@app.command()
-def run(
+@app.command("transcribe")
+def transcribe(
     audio_file: Path = typer.Argument(..., help="Path to audio file to transcribe"),
     model: str = typer.Option(
-        "Systran/faster-whisper-tiny",
+        vocal_settings.STT_DEFAULT_MODEL,
         "--model",
         "-m",
-        help="Model to use for transcription",
+        help="STT model to use",
     ),
     language: str | None = typer.Option(None, "--language", "-l", help="Language code (e.g., 'en', 'es')"),
     output_format: str = typer.Option("text", "--format", "-f", help="Output format: text, json, srt, vtt"),
-    api_url: str = typer.Option("http://localhost:8000", "--api-url", help="Vocal API URL"),
+    api_url: str = typer.Option("http://localhost:8000", "--api-url", envvar="VOCAL_API_URL", help="Vocal API URL"),
 ):
-    """Transcribe audio file to text"""
+    """Transcribe an audio file to text"""
     if not audio_file.exists():
         console.print(f"[red]Error:[/red] File not found: {audio_file}")
         raise typer.Exit(1)
@@ -121,7 +136,7 @@ def run(
 @models_app.command("list")
 def models_list(
     task: str | None = typer.Option(None, "--task", "-t", help="Filter by task: stt, tts"),
-    api_url: str = typer.Option("http://localhost:8000", "--api-url", help="Vocal API URL"),
+    api_url: str = typer.Option("http://localhost:8000", "--api-url", envvar="VOCAL_API_URL", help="Vocal API URL"),
 ):
     """List all available models"""
     try:
@@ -161,19 +176,50 @@ def models_list(
         raise typer.Exit(1)
 
 
+def _pull_stream(pull_url: str, model_id: str) -> queue.SimpleQueue:
+    q: queue.SimpleQueue = queue.SimpleQueue()
+
+    def _reader():
+        try:
+            with httpx.stream("POST", pull_url, json={"model": model_id}, timeout=None) as resp:
+                resp.raise_for_status()
+                for line in resp.iter_lines():
+                    if line:
+                        q.put(json.loads(line))
+        except Exception as e:
+            q.put({"status": "error", "message": str(e)})
+        finally:
+            q.put(None)
+
+    threading.Thread(target=_reader, daemon=True).start()
+    return q
+
+
 @models_app.command("pull")
 def models_pull(
     model_id: str = typer.Argument(..., help="Model ID to download"),
-    api_url: str = typer.Option("http://localhost:8000", "--api-url", help="Vocal API URL"),
+    api_url: str = typer.Option("http://localhost:8000", "--api-url", envvar="VOCAL_API_URL", help="Vocal API URL"),
 ):
     """Download a model (Ollama-style pull)"""
     try:
-        vc = _make_client(api_url)
-        console.print(f"Downloading {model_id}...")
-        result = download_model_v1_models_model_id_download_post.sync(model_id=model_id, client=vc)
-        console.print(f"[green]Successfully downloaded:[/green] {model_id}")
-        if result is not None:
-            console.print(f"Status: {result.status.value}")
+        q = _pull_stream(f"{api_url}/v1/models/pull", model_id)
+        with console.status(f"[cyan]Pulling {model_id}...[/cyan]"):
+            while True:
+                try:
+                    data = q.get(timeout=0.2)
+                except queue.Empty:
+                    continue
+                if data is None:
+                    break
+                s = data.get("status", "")
+                if s == "available":
+                    break
+                if s == "error":
+                    console.print(f"[red]Error:[/red] {data.get('message')}")
+                    raise typer.Exit(1)
+        console.print(f"[green]Successfully pulled:[/green] {model_id}")
+    except typer.Exit:
+        raise
     except Exception as e:
         console.print(f"[red]Error:[/red] {str(e)}")
         raise typer.Exit(1)
@@ -182,7 +228,7 @@ def models_pull(
 @models_app.command("delete")
 def models_delete(
     model_id: str = typer.Argument(..., help="Model ID to delete"),
-    api_url: str = typer.Option("http://localhost:8000", "--api-url", help="Vocal API URL"),
+    api_url: str = typer.Option("http://localhost:8000", "--api-url", envvar="VOCAL_API_URL", help="Vocal API URL"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
 ):
     """Delete a downloaded model"""
@@ -215,7 +261,7 @@ def clone(
     reference_text: str | None = typer.Option(None, "--reference-text", help="Optional transcript of the reference audio"),
     language: str = typer.Option("en", "--language", "-l", help="Target language code (e.g. 'en', 'zh')"),
     response_format: str = typer.Option("wav", "--format", "-f", help="Output audio format: wav, mp3, flac, pcm"),
-    api_url: str = typer.Option("http://localhost:8000", "--api-url", help="Vocal API URL"),
+    api_url: str = typer.Option("http://localhost:8000", "--api-url", envvar="VOCAL_API_URL", help="Vocal API URL"),
 ) -> None:
     """Clone a voice from a reference recording and synthesize text with it"""
     if not reference.exists():
@@ -277,17 +323,20 @@ def serve(
 
 
 def _input_devices() -> list[dict]:
-    """Return all input-capable audio devices with their index, name, channels, and default flag."""
+    """Return all input-capable audio devices with their index, name, channels, host API, and default flag."""
     default_idx = sd.default.device[0]
+    host_apis = sd.query_hostapis()
     devices = []
     for idx, dev in enumerate(sd.query_devices()):
         if dev["max_input_channels"] > 0:
+            api_name = host_apis[dev["hostapi"]]["name"]
             devices.append(
                 {
                     "index": idx,
                     "name": dev["name"],
                     "channels": dev["max_input_channels"],
                     "sample_rate": int(dev["default_samplerate"]),
+                    "api": api_name,
                     "is_default": idx == default_idx,
                 }
             )
@@ -314,25 +363,33 @@ def _print_devices_table() -> None:
     table = Table(title="Available Input Devices")
     table.add_column("#", style="cyan", justify="right")
     table.add_column("Name", style="white")
+    table.add_column("API", style="dim")
     table.add_column("Ch", justify="right")
-    table.add_column("Default Rate", justify="right", style="yellow")
+    table.add_column("Rate", justify="right", style="yellow")
     table.add_column("", style="green")
     for dev in devs:
         table.add_row(
             str(dev["index"]),
             dev["name"],
+            dev["api"],
             str(dev["channels"]),
             f"{dev['sample_rate']} Hz",
             "* default" if dev["is_default"] else "",
         )
     console.print(table)
-    console.print('\nUse [cyan]--device <#>[/cyan] or [cyan]--device "name"[/cyan] to select.')
+    console.print('\nOn Windows, prefer [cyan]WASAPI[/cyan] entries for best quality.')
+    console.print('Use [cyan]--device <#>[/cyan] or [cyan]--device "name"[/cyan] to select.')
 
 
 @app.command()
-def devices() -> None:
-    """List available audio input devices"""
-    _print_devices_table()
+def devices(
+    output: bool = typer.Option(False, "--output", help="List output devices instead of input devices"),
+) -> None:
+    """List available audio input devices (use --output for playback devices)"""
+    if output:
+        _print_output_devices_table()
+    else:
+        _print_devices_table()
 
 
 def _pcm_to_wav(frames: list) -> io.BytesIO:
@@ -487,7 +544,9 @@ def _flush_buffer(
         with _print_lock:
             sys.stdout.write("\r" + " " * 60 + "\r")
             sys.stdout.flush()
-            if result and result.text.strip():
+            if result is None:
+                console.print(f"[red]error[/red] after {elapsed:.1f}s: server returned an error (run with --verbose or check server logs)")
+            elif result.text.strip():
                 suffix = f"  [dim]({elapsed:.1f}s)[/dim]" if verbose else ""
                 console.print(f"[cyan]>[/cyan] {result.text.strip()}{suffix}")
     except Exception as e:
@@ -498,39 +557,94 @@ def _flush_buffer(
             console.print(f"[red]error[/red] after {elapsed:.1f}s: {e}")
 
 
-@app.command()
-def listen(
-    model: str = typer.Option(
-        "Systran/faster-whisper-tiny",
-        "--model",
-        "-m",
-        help="STT model to use",
-    ),
-    language: str | None = typer.Option(None, "--language", "-l", help="Language code (e.g. 'en'). Auto-detect if omitted."),
-    task: str = typer.Option("transcribe", "--task", help="'transcribe' or 'translate' (translate any language to English)"),
-    device: str | None = typer.Option(None, "--device", "-d", help="Input device index or name substring. Run `vocal devices` to list."),
-    list_devices: bool = typer.Option(False, "--list-devices", help="List available input devices and exit"),
-    silence_threshold: float | None = typer.Option(None, "--silence-threshold", help="RMS energy threshold. Auto-calibrated from mic noise floor if omitted."),
-    silence_duration: float = typer.Option(1.5, "--silence-duration", help="Seconds of silence that triggers chunk send"),
-    max_chunk_duration: float = typer.Option(10.0, "--max-chunk-duration", help="Max seconds of audio before forced send"),
-    api_url: str = typer.Option("http://localhost:8000", "--api-url", help="Vocal API URL"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show chunk send timing and API latency"),
-):
-    """Listen to the microphone and transcribe speech in real-time (ASR streaming mode)"""
-    if list_devices:
-        _print_devices_table()
-        raise typer.Exit(0)
+def _device_wizard() -> str | None:
+    devs = _input_devices()
+    if not devs:
+        console.print("[red]No input devices found.[/red]")
+        return None
+    console.print("\n[bold]Select input device:[/bold]")
+    console.print("[dim]Same device may appear multiple times for different audio APIs — WASAPI is recommended on Windows.[/dim]\n")
+    default_pos = next((i for i, d in enumerate(devs) if d["is_default"]), 0)
+    for i, dev in enumerate(devs):
+        markers = []
+        if dev["is_default"]:
+            markers.append("[green]default[/green]")
+        if "wasapi" in dev["api"].lower():
+            markers.append("[cyan]recommended[/cyan]")
+        suffix = f"  [{', '.join(markers)}]" if markers else ""
+        console.print(f"  [cyan]{i}[/cyan]  {dev['name']}  [dim]{dev['api']} · {dev['sample_rate']} Hz[/dim]{suffix}")
+    raw = typer.prompt("\nDevice", default=str(default_pos))
+    if raw.isdigit():
+        pos = int(raw)
+        if 0 <= pos < len(devs):
+            return str(devs[pos]["index"])
+    for dev in devs:
+        if raw.lower() in dev["name"].lower():
+            return str(dev["index"])
+    console.print("[red]Invalid selection.[/red]")
+    return None
 
+
+def _model_wizard(api_url: str) -> str | None:
     try:
-        device_idx = _resolve_device(device)
-    except ValueError as e:
+        probe = VocalClient(base_url=api_url, timeout=httpx.Timeout(5.0), raise_on_unexpected_status=False)
+        result = list_models_v1_models_get.sync(client=probe, task="stt")
+    except Exception as e:
+        console.print(f"[red]Could not reach API:[/red] {e}")
+        return None
+
+    if result is None:
+        console.print("[red]No response from API.[/red]")
+        return None
+
+    models = [m for m in result.models if str(m.status).lower().endswith("available")]
+    if not models:
+        console.print("[yellow]No downloaded STT models found.[/yellow] Run [cyan]vocal models pull <id>[/cyan] first.")
+        return None
+
+    default_model = vocal_settings.STT_DEFAULT_MODEL
+    default_pos = next((i for i, m in enumerate(models) if m.id == default_model), 0)
+
+    console.print("\n[bold]Select STT model:[/bold]")
+    console.print("[dim]Only downloaded (available) models are shown.[/dim]\n")
+    for i, m in enumerate(models):
+        size = f"  [dim]{m.size_readable}[/dim]" if not isinstance(m.size_readable, Unset) else ""
+        backend = f"  [dim]{m.backend.value}[/dim]" if not isinstance(m.backend, Unset) else ""
+        is_default = m.id == default_model
+        marker = "  [green]default[/green]" if is_default else ""
+        console.print(f"  [cyan]{i}[/cyan]  {m.id}{size}{backend}{marker}")
+
+    raw = typer.prompt("\nModel", default=str(default_pos))
+    if raw.isdigit():
+        pos = int(raw)
+        if 0 <= pos < len(models):
+            return models[pos].id
+    for m in models:
+        if raw.lower() in m.id.lower():
+            return m.id
+    console.print("[red]Invalid selection.[/red]")
+    return None
+
+
+def _listen_stream(device_idx: int | None, model: str, task: str, language: str | None, api_url: str, verbose: bool) -> None:
+    ws_url = api_url.replace("http://", "ws://").replace("https://", "wss://")
+    params = f"model={model}&task={task}"
+    if language:
+        params += f"&language={language}"
+    endpoint = f"{ws_url}/v1/audio/stream?{params}"
+    active_device = sd.query_devices(device_idx if device_idx is not None else sd.default.device[0])
+    device_label = f"[dim]{active_device['name']}[/dim]"
+    console.print(f"[green]Streaming...[/green] model=[cyan]{model}[/cyan] task=[cyan]{task}[/cyan] device={device_label}  Ctrl+C to stop\n")
+    try:
+        asyncio.run(_live_async(endpoint, device_idx, verbose))
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Stopped.[/yellow]")
+    except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
 
-    active_device = sd.query_devices(device_idx if device_idx is not None else sd.default.device[0])
-    device_label = f"[dim]{active_device['name']}[/dim]"
-    silence_frames_needed = int(silence_duration * _SAMPLE_RATE / _FRAME_SIZE)
 
+def _check_model_ready(api_url: str, model: str) -> None:
     probe = VocalClient(base_url=api_url, timeout=httpx.Timeout(5.0), raise_on_unexpected_status=False)
     console.print("[dim]Checking model status...[/dim]", end=" ")
     try:
@@ -551,21 +665,38 @@ def listen(
         console.print("API server is not running. Start it with: [cyan]vocal serve[/cyan]")
         raise typer.Exit(1)
 
-    vc = VocalClient(base_url=api_url, timeout=httpx.Timeout(60.0), raise_on_unexpected_status=False)
+
+def _listen_vad(
+    device_idx: int | None,
+    model: str,
+    task: str,
+    language: str | None,
+    api_url: str,
+    silence_threshold: float | None,
+    silence_duration: float,
+    max_chunk_duration: float,
+    verbose: bool,
+) -> None:
+    active_device = sd.query_devices(device_idx if device_idx is not None else sd.default.device[0])
+    device_label = f"[dim]{active_device['name']}[/dim]"
+    silence_frames_needed = int(silence_duration * _SAMPLE_RATE / _FRAME_SIZE)
+    _check_model_ready(api_url, model)
+    vc = VocalClient(base_url=api_url, timeout=httpx.Timeout(60.0), raise_on_unexpected_status=True)
     threshold_hint = f"threshold=[cyan]{silence_threshold:.0f}[/cyan]" if silence_threshold is not None else "threshold=[cyan]auto[/cyan]"
     console.print(f"[green]Listening...[/green] model=[cyan]{model}[/cyan] task=[cyan]{task}[/cyan] device={device_label}  {threshold_hint}  Ctrl+C to stop\n")
-
     audio_queue: queue.SimpleQueue = queue.SimpleQueue()
+    native_rate = _get_device_rate(device_idx)
+    native_blocksize = int(_FRAME_SIZE * native_rate / _SAMPLE_RATE)
 
     def _audio_callback(indata, _frames, _ts, _status):
-        audio_queue.put(indata.copy())
+        audio_queue.put(_resample_frame(indata, native_rate, _SAMPLE_RATE).copy())
 
     try:
         with sd.InputStream(
-            samplerate=_SAMPLE_RATE,
+            samplerate=native_rate,
             channels=_CHANNELS,
             dtype="int16",
-            blocksize=_FRAME_SIZE,
+            blocksize=native_blocksize,
             device=device_idx,
             callback=_audio_callback,
         ):
@@ -575,6 +706,47 @@ def listen(
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
+
+
+@app.command()
+def listen(
+    model: str = typer.Option(vocal_settings.STT_DEFAULT_MODEL, "--model", "-m", help="STT model to use"),
+    language: str | None = typer.Option(None, "--language", "-l", help="Language code (e.g. 'en'). Auto-detects if omitted."),
+    task: str = typer.Option("transcribe", "--task", help="'transcribe' (default) or 'translate' to English"),
+    device: str | None = typer.Option(None, "--device", "-d", help="Input device index or name. Use --devices to pick interactively."),
+    devices: bool = typer.Option(False, "--devices", help="Show a device picker and select your input source before starting"),
+    models: bool = typer.Option(False, "--models", help="Show a model picker from downloaded STT models before starting"),
+    stream: bool = typer.Option(False, "--stream", help="Low-latency mode (~200ms) that streams audio over WebSocket. Default mode waits for a pause in speech before sending."),
+    silence_threshold: float | None = typer.Option(None, "--silence-threshold", help="Mic sensitivity level. Auto-set from ambient noise at startup. Ignored with --stream."),
+    silence_duration: float = typer.Option(1.5, "--silence-duration", help="Seconds of quiet that trigger a transcription. Ignored with --stream."),
+    max_chunk_duration: float = typer.Option(10.0, "--max-chunk-duration", help="Max recording length (seconds) before forcing a send. Ignored with --stream."),
+    api_url: str = typer.Option("http://localhost:8000", "--api-url", envvar="VOCAL_API_URL", help="Vocal API URL"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show latency and timing info on each transcription"),
+):
+    """Transcribe microphone audio in real-time.
+
+    By default, audio is sent after each pause in speech (good accuracy, ~1-2s delay).
+    Use --stream for continuous low-latency output (~200ms) over WebSocket.
+    """
+    if devices:
+        selected = _device_wizard()
+        if selected is None:
+            raise typer.Exit(1)
+        device = selected
+    if models:
+        selected_model = _model_wizard(api_url)
+        if selected_model is None:
+            raise typer.Exit(1)
+        model = selected_model
+    try:
+        device_idx = _resolve_device(device)
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+    if stream:
+        _listen_stream(device_idx, model, task, language, api_url, verbose)
+    else:
+        _listen_vad(device_idx, model, task, language, api_url, silence_threshold, silence_duration, max_chunk_duration, verbose)
 
 
 _DEFAULT_SYSTEM_PROMPT = vocal_settings.CHAT_SYSTEM_PROMPT
@@ -607,12 +779,10 @@ def _resolve_output_device(device: str | None) -> int | None:
     for dev in _output_devices():
         if device.lower() in dev["name"].lower():
             return dev["index"]
-    raise ValueError(f"No output device matching '{device}'. Run `vocal output-devices` to list available outputs.")
+    raise ValueError(f"No output device matching '{device}'. Run `vocal devices --output` to list available outputs.")
 
 
-@app.command("output-devices")
-def output_devices() -> None:
-    """List available audio output devices"""
+def _print_output_devices_table() -> None:
     devs = _output_devices()
     if not devs:
         console.print("[red]No output devices found.[/red]")
@@ -641,7 +811,7 @@ def chat(
     output_device: str | None = typer.Option(None, "--output-device", "-o", help="Output device index or name. Run `vocal output-devices` to list."),
     language: str | None = typer.Option(None, "--language", "-l", help="Language code (e.g. 'en'). Auto-detect if omitted."),
     system_prompt: str = typer.Option(_DEFAULT_SYSTEM_PROMPT, "--system-prompt", "-s", help="System prompt sent to the LLM."),
-    api_url: str = typer.Option("http://localhost:8000", "--api-url", help="Vocal API URL"),
+    api_url: str = typer.Option("http://localhost:8000", "--api-url", envvar="VOCAL_API_URL", help="Vocal API URL"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show transcription and LLM response text"),
 ) -> None:
     """Voice chat: speak to the AI and hear it respond (STT -> LLM -> TTS loop via /v1/realtime)"""
@@ -765,9 +935,11 @@ async def _chat_async(ws_url: str, device_idx: int | None, output_device_idx: in
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
     playing = asyncio.Event()
+    native_rate = _get_device_rate(device_idx)
+    native_blocksize = int(_FRAME_SIZE * native_rate / _SAMPLE_RATE)
 
     def _audio_callback(indata, _frames, _ts, _status) -> None:
-        audio_q.put_nowait(indata.copy().tobytes())
+        audio_q.put_nowait(_resample_frame(indata, native_rate, _SAMPLE_RATE).copy().tobytes())
 
     async def _sender(ws) -> None:
         while not stop_event.is_set():
@@ -799,7 +971,7 @@ async def _chat_async(ws_url: str, device_idx: int | None, output_device_idx: in
         sys.stdout.write("[listening...]  \r")
         sys.stdout.flush()
 
-        with sd.InputStream(samplerate=_SAMPLE_RATE, channels=_CHANNELS, dtype="int16", blocksize=_FRAME_SIZE, device=device_idx, callback=_audio_callback):
+        with sd.InputStream(samplerate=native_rate, channels=_CHANNELS, dtype="int16", blocksize=native_blocksize, device=device_idx, callback=_audio_callback):
             sender_task = asyncio.create_task(_sender(ws))
             receiver_task = asyncio.create_task(_chat_receiver(ws, output_device_idx, verbose, loop, stop_event, playing))
             try:
@@ -810,45 +982,6 @@ async def _chat_async(ws_url: str, device_idx: int | None, output_device_idx: in
                 receiver_task.cancel()
                 raise KeyboardInterrupt
 
-
-@app.command()
-def live(
-    model: str = typer.Option(
-        "Systran/faster-whisper-tiny",
-        "--model",
-        "-m",
-        help="STT model to use",
-    ),
-    language: str | None = typer.Option(None, "--language", "-l", help="Language code (e.g. 'en'). Auto-detect if omitted."),
-    task: str = typer.Option("transcribe", "--task", help="'transcribe' or 'translate'"),
-    device: str | None = typer.Option(None, "--device", "-d", help="Input device index or name substring. Run `vocal devices` to list."),
-    api_url: str = typer.Option("http://localhost:8000", "--api-url", help="Vocal API URL"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show timing info on each utterance"),
-) -> None:
-    """Stream microphone audio over WebSocket and print transcriptions as they arrive (~200ms latency)"""
-    try:
-        device_idx = _resolve_device(device)
-    except ValueError as e:
-        console.print(f"[red]Error:[/red] {e}")
-        raise typer.Exit(1)
-
-    ws_url = api_url.replace("http://", "ws://").replace("https://", "wss://")
-    params = f"model={model}&task={task}"
-    if language:
-        params += f"&language={language}"
-    endpoint = f"{ws_url}/v1/audio/stream?{params}"
-
-    active_device = sd.query_devices(device_idx if device_idx is not None else sd.default.device[0])
-    device_label = f"[dim]{active_device['name']}[/dim]"
-    console.print(f"[green]Live streaming...[/green] model=[cyan]{model}[/cyan] task=[cyan]{task}[/cyan] device={device_label}  Ctrl+C to stop\n")
-
-    try:
-        asyncio.run(_live_async(endpoint, device_idx, verbose))
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Stopped.[/yellow]")
-    except Exception as e:
-        console.print(f"[red]Error:[/red] {e}")
-        raise typer.Exit(1)
 
 
 async def _ws_sender(ws, audio_q: queue.SimpleQueue, stop_event: asyncio.Event, loop: asyncio.AbstractEventLoop) -> None:
@@ -890,12 +1023,14 @@ async def _live_async(endpoint: str, device_idx: int | None, verbose: bool) -> N
     audio_q: queue.SimpleQueue = queue.SimpleQueue()
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
+    native_rate = _get_device_rate(device_idx)
+    native_blocksize = int(_FRAME_SIZE * native_rate / _SAMPLE_RATE)
 
     def _audio_callback(indata, _frames, _ts, _status) -> None:
-        audio_q.put_nowait(indata.copy().tobytes())
+        audio_q.put_nowait(_resample_frame(indata, native_rate, _SAMPLE_RATE).copy().tobytes())
 
     async with websockets.connect(endpoint) as ws:
-        with sd.InputStream(samplerate=_SAMPLE_RATE, channels=_CHANNELS, dtype="int16", blocksize=_FRAME_SIZE, device=device_idx, callback=_audio_callback):
+        with sd.InputStream(samplerate=native_rate, channels=_CHANNELS, dtype="int16", blocksize=native_blocksize, device=device_idx, callback=_audio_callback):
             sender_task = asyncio.create_task(_ws_sender(ws, audio_q, stop_event, loop))
             receiver_task = asyncio.create_task(_ws_receiver(ws, verbose))
             try:

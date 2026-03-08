@@ -1,12 +1,6 @@
-import json
 from collections.abc import AsyncIterator
-from pathlib import Path
 
 from vocal_core import ModelRegistry
-from vocal_core.registry.capabilities import (
-    infer_model_capabilities,
-    supported_model_records_from_mapping,
-)
 
 from ..models.model import (
     ModelDownloadProgress,
@@ -18,61 +12,14 @@ class ModelService:
     def __init__(self, registry: ModelRegistry):
         self.registry = registry
         self._download_status: dict[str, ModelDownloadProgress] = {}
-        self._supported_models: list[ModelInfo] | None = None
 
-    def _load_supported_models_json(self) -> list:
-        supported_path = Path(__file__).parent.parent.parent.parent / "core" / "vocal_core" / "registry" / "supported_models.json"
-
-        if not supported_path.exists():
+    async def list_catalog(self, task: str | None = None) -> list[ModelInfo]:
+        """List all curated models from the catalog (downloaded or not)."""
+        hf_provider = self.registry.providers.get("huggingface")
+        if not hf_provider:
             return []
-
-        try:
-            with open(supported_path, encoding="utf-8") as f:
-                return supported_model_records_from_mapping(json.load(f))
-        except Exception as e:
-            print(f"Error loading supported models: {e}")
-            return []
-
-    async def list_supported_models(self) -> list[ModelInfo]:
-        models_data = self._load_supported_models_json()
-        models = []
-
-        for record in models_data:
-            capabilities = infer_model_capabilities(
-                task=record.task,
-                backend=record.backend,
-                model_id=record.id,
-                tags=record.tags,
-                overrides=record,
-            )
-            models.append(
-                ModelInfo(
-                    id=record.id,
-                    name=record.name,
-                    provider=record.provider,
-                    description=record.description,
-                    size=record.size,
-                    size_readable=record.size_readable,
-                    parameters=record.parameters,
-                    languages=record.languages,
-                    backend=record.backend,
-                    status="not_downloaded",
-                    source_url=record.source_url,
-                    license=record.license,
-                    recommended_vram=record.recommended_vram,
-                    task=record.task,
-                    modified_at=record.modified_at,
-                    author=record.author,
-                    tags=record.tags,
-                    downloads=record.downloads,
-                    likes=record.likes,
-                    sha=record.sha,
-                    files=[file.model_dump() for file in record.files] if record.files else None,
-                    **capabilities,
-                )
-            )
-
-        return models
+        models = await hf_provider.list_models(task=task)
+        return [self._convert_model_info(m) for m in models]
 
     async def show_model(self, model_or_alias: str) -> ModelInfo | None:
         model = await self.registry.get_model(model_or_alias)
@@ -106,7 +53,7 @@ class ModelService:
 
         try:
             async for downloaded, total, status in self.registry.download_model(model_id, quantization=quantization):
-                progress = (downloaded / total) if total > 0 else 0.0
+                progress = min(downloaded / total, 1.0) if total > 0 else 0.0
 
                 self._download_status[model_id] = ModelDownloadProgress(
                     model_id=model_id,
@@ -114,7 +61,7 @@ class ModelService:
                     progress=progress,
                     downloaded_bytes=downloaded,
                     total_bytes=total,
-                    message=f"Downloaded {downloaded}/{total} bytes",
+                    message=f"Downloading... {downloaded} bytes",
                 )
 
                 yield self._download_status[model_id]

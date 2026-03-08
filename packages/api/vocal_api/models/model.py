@@ -100,7 +100,7 @@ class ModelDownloadProgress(BaseModel):
 
     model_id: str
     status: str
-    progress: float = Field(ge=0.0, le=1.0, default=0.0)
+    progress: float = Field(ge=0.0, default=0.0)
     downloaded_bytes: int = 0
     total_bytes: int = 0
     message: str | None = None

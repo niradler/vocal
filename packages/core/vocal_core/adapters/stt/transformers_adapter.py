@@ -54,6 +54,7 @@ class TransformersSTTAdapter(STTAdapter):
             feature_extractor=processor.feature_extractor,
             torch_dtype=dtype,
             device=resolved,
+            chunk_length_s=30,
         )
         self.model_path = model_path
         self.device = resolved
