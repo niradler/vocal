@@ -121,6 +121,9 @@ class _ModelsAPI:
     def get(self, model_id: str) -> dict[str, Any]:
         return self._sdk._request("GET", f"/v1/models/{model_id}")
 
+    def list_supported(self) -> dict[str, Any]:
+        return self._sdk._request("GET", "/v1/models/supported")
+
     def download(self, model_id: str) -> dict[str, Any]:
         return self._sdk._request("POST", f"/v1/models/{model_id}/download")
 
@@ -191,6 +194,45 @@ class _AudioAPI:
     def list_voices(self, model: str | None = None) -> dict[str, Any]:
         params = {"model": model} if model else {}
         return self._sdk._request("GET", "/v1/audio/voices", params=params)
+
+    def clone_voice(
+        self,
+        text: str,
+        reference_audio: str | Path | BinaryIO,
+        model: str = "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+        reference_text: str | None = None,
+        language: str = "en",
+        response_format: str = "wav",
+        output_file: str | Path | None = None,
+    ) -> bytes:
+        data: dict[str, Any] = {
+            "text": text,
+            "model": model,
+            "language": language,
+            "response_format": response_format,
+        }
+        if reference_text:
+            data["reference_text"] = reference_text
+
+        if isinstance(reference_audio, (str, Path)):
+            with open(reference_audio, "rb") as f:
+                audio = self._sdk._request_raw(
+                    "POST",
+                    "/v1/audio/clone",
+                    files={"reference_audio": f},
+                    data=data,
+                )
+        else:
+            audio = self._sdk._request_raw(
+                "POST",
+                "/v1/audio/clone",
+                files={"reference_audio": reference_audio},
+                data=data,
+            )
+
+        if output_file:
+            Path(output_file).write_bytes(audio)
+        return audio
 '''
 
 

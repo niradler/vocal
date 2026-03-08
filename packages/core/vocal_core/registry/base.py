@@ -1,6 +1,9 @@
 from collections.abc import AsyncIterator
 from pathlib import Path
 
+from pydantic import ValidationError
+
+from .capabilities import infer_model_capabilities, model_record_from_mapping
 from .metadata_cache import ModelMetadataCache
 from .model_info import ModelBackend, ModelInfo, ModelProvider, ModelStatus, ModelTask, format_bytes
 from .providers.base import ModelProvider as BaseModelProvider
@@ -41,27 +44,76 @@ class ModelRegistry:
 
             cached_metadata = self.metadata_cache.get(model_id)
             if cached_metadata:
-                model = ModelInfo(
-                    id=model_id,
-                    name=cached_metadata.get("name", model_id.split("/")[-1]),
-                    provider=ModelProvider(cached_metadata.get("provider", "huggingface")),
-                    description=cached_metadata.get("description"),
-                    size=cached_metadata.get("size", 0),
-                    size_readable=cached_metadata.get("size_readable", "Unknown"),
-                    parameters=cached_metadata.get("parameters", "Unknown"),
-                    languages=cached_metadata.get("languages", []),
-                    backend=ModelBackend(cached_metadata.get("backend", "transformers")),
-                    status=ModelStatus.AVAILABLE,
-                    source_url=cached_metadata.get("source_url"),
-                    license=cached_metadata.get("license"),
-                    recommended_vram=cached_metadata.get("recommended_vram"),
-                    task=ModelTask(cached_metadata.get("task", "stt")),
-                    local_path=str(model_dir),
-                    modified_at=cached_metadata.get("modified_at"),
-                    downloaded_at=cached_metadata.get("downloaded_at"),
-                )
+                try:
+                    record = model_record_from_mapping(
+                        cached_metadata,
+                        default_id=model_id,
+                        default_name=model_id.split("/")[-1],
+                        default_provider="huggingface",
+                        default_task="stt",
+                        default_backend="transformers",
+                    )
+                    capabilities = infer_model_capabilities(
+                        task=record.task,
+                        backend=record.backend,
+                        model_id=record.id,
+                        tags=record.tags,
+                        overrides=record,
+                    )
+                    model = ModelInfo(
+                        id=record.id,
+                        name=record.name,
+                        provider=ModelProvider(record.provider),
+                        description=record.description,
+                        size=record.size,
+                        size_readable=record.size_readable,
+                        parameters=record.parameters,
+                        languages=record.languages,
+                        backend=ModelBackend(record.backend),
+                        status=ModelStatus.AVAILABLE,
+                        source_url=record.source_url,
+                        license=record.license,
+                        recommended_vram=record.recommended_vram,
+                        task=ModelTask(record.task),
+                        local_path=str(model_dir),
+                        modified_at=record.modified_at,
+                        downloaded_at=record.downloaded_at,
+                        author=record.author,
+                        tags=record.tags,
+                        downloads=record.downloads,
+                        likes=record.likes,
+                        sha=record.sha,
+                        files=[file.model_dump() for file in record.files] if record.files else None,
+                        **capabilities,
+                    )
+                except (ValueError, ValidationError):
+                    total_size = sum(f.stat().st_size for f in model_dir.rglob("*") if f.is_file())
+                    capabilities = infer_model_capabilities(
+                        task="stt",
+                        backend="transformers",
+                        model_id=model_id,
+                    )
+                    model = ModelInfo(
+                        id=model_id,
+                        name=model_id.split("/")[-1],
+                        provider=ModelProvider.HUGGINGFACE,
+                        size=total_size,
+                        size_readable=format_bytes(total_size),
+                        parameters="Unknown",
+                        languages=[],
+                        backend=ModelBackend.TRANSFORMERS,
+                        status=ModelStatus.AVAILABLE,
+                        task=ModelTask.STT,
+                        local_path=str(model_dir),
+                        **capabilities,
+                    )
             else:
                 total_size = sum(f.stat().st_size for f in model_dir.rglob("*") if f.is_file())
+                capabilities = infer_model_capabilities(
+                    task="stt",
+                    backend="transformers",
+                    model_id=model_id,
+                )
                 model = ModelInfo(
                     id=model_id,
                     name=model_id.split("/")[-1],
@@ -74,6 +126,7 @@ class ModelRegistry:
                     status=ModelStatus.AVAILABLE,
                     task=ModelTask.STT,
                     local_path=str(model_dir),
+                    **capabilities,
                 )
 
             if task and model.task.value != task:
@@ -98,10 +151,37 @@ class ModelRegistry:
 
                         cached_metadata = self.metadata_cache.get(model_id)
                         if cached_metadata:
-                            model.size = cached_metadata.get("size", model.size)
-                            model.size_readable = cached_metadata.get("size_readable", model.size_readable)
-                            if actual_params := cached_metadata.get("actual_parameter_count"):
-                                model.parameters = f"{actual_params:,}"
+                            try:
+                                record = model_record_from_mapping(
+                                    cached_metadata,
+                                    default_id=model.id,
+                                    default_name=model.name,
+                                    default_provider=model.provider.value,
+                                    default_task=model.task.value,
+                                    default_backend=model.backend.value,
+                                )
+                                model.size = record.size
+                                model.size_readable = record.size_readable
+                                model.parameters = record.parameters
+                                model.modified_at = record.modified_at
+                                model.downloaded_at = record.downloaded_at
+                                model.author = record.author
+                                model.tags = record.tags
+                                model.downloads = record.downloads
+                                model.likes = record.likes
+                                model.sha = record.sha
+                                model.files = [file.model_dump() for file in record.files] if record.files else None
+                                model.supports_streaming = record.supports_streaming or model.supports_streaming
+                                model.supports_voice_list = record.supports_voice_list or model.supports_voice_list
+                                model.supports_voice_clone = record.supports_voice_clone or model.supports_voice_clone
+                                model.supports_voice_design = record.supports_voice_design or model.supports_voice_design
+                                model.requires_gpu = record.requires_gpu or model.requires_gpu
+                                model.voice_mode = record.voice_mode or model.voice_mode
+                                model.clone_mode = record.clone_mode or model.clone_mode
+                                model.reference_audio_min_seconds = record.reference_audio_min_seconds or model.reference_audio_min_seconds
+                                model.reference_audio_max_seconds = record.reference_audio_max_seconds or model.reference_audio_max_seconds
+                            except (ValueError, ValidationError):
+                                pass
 
                     return model
             except Exception as e:

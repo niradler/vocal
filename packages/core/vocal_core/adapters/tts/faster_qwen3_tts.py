@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 
 from ...config import optional_dependency_install_hint
-from .base import TTSAdapter, TTSResult, Voice
+from .base import TTSAdapter, TTSCapabilities, TTSResult, Voice, VoiceCloneRequest
 from .piper import SUPPORTED_FORMATS, _convert_audio
 
 logger = logging.getLogger(__name__)
@@ -117,6 +117,27 @@ class FasterQwen3TTSAdapter(TTSAdapter):
             pass
         return info
 
+    def get_capabilities(self) -> TTSCapabilities:
+        if self._variant == "custom_voice":
+            return TTSCapabilities(
+                supports_voice_list=True,
+                requires_gpu=True,
+                voice_mode="voice_id",
+            )
+        if self._variant == "voice_design":
+            return TTSCapabilities(
+                supports_voice_design=True,
+                requires_gpu=True,
+                voice_mode="instruction",
+            )
+        return TTSCapabilities(
+            supports_voice_clone=True,
+            requires_gpu=True,
+            clone_mode="reference_audio",
+            reference_audio_min_seconds=3.0,
+            reference_audio_max_seconds=30.0,
+        )
+
     async def synthesize(
         self,
         text: str,
@@ -161,16 +182,49 @@ class FasterQwen3TTSAdapter(TTSAdapter):
             instruct = voice or "Warm, clear narrator with neutral accent"
             audio_list, sr = self._model.generate_voice_design(text=text, instruct=instruct, language=language)
         else:
-            if not voice or not Path(voice).is_file():
-                raise ValueError("Base Qwen3-TTS models require a reference audio file path as the 'voice' parameter. Use a CustomVoice variant (e.g. 'qwen3-tts-1.7b-custom') for predefined speakers.")
-            audio_list, sr = self._model.generate_voice_clone(
-                text=text,
-                language=language,
-                ref_audio=voice,
-                ref_text="",
-                xvec_only=True,
-            )
+            raise ValueError("Base Qwen3-TTS models do not support /v1/audio/speech voice selection. Use /v1/audio/clone with reference_audio.")
 
+        return _concat_audio_arrays(audio_list), sr
+
+    async def clone_synthesize(self, request: VoiceCloneRequest) -> TTSResult:
+        if not self.is_loaded():
+            raise RuntimeError("Model not loaded. Call load_model() first.")
+        if self._variant != "base":
+            raise ValueError("This Qwen3-TTS variant does not support reference-audio voice cloning.")
+        if request.output_format not in SUPPORTED_FORMATS:
+            raise ValueError(f"Unsupported format '{request.output_format}'. Supported: {', '.join(sorted(SUPPORTED_FORMATS))}")
+
+        language = _to_full_language(request.language or "en")
+        loop = asyncio.get_event_loop()
+        audio_array, sr = await loop.run_in_executor(self._executor, self._clone_sync, request, language)
+        self._sample_rate = sr
+
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            temp_path = f.name
+
+        try:
+            _write_wav(temp_path, audio_array, sr)
+            with ThreadPoolExecutor(max_workers=1) as ex:
+                audio_bytes, out_sr, duration = await loop.run_in_executor(ex, _convert_audio, temp_path, request.output_format)
+        finally:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+
+        return TTSResult(audio_data=audio_bytes, sample_rate=out_sr, duration=duration, format=request.output_format)
+
+    def _clone_sync(self, request: VoiceCloneRequest, language: str) -> tuple[np.ndarray, int]:
+        assert self._model is not None
+        if not Path(request.reference_audio_path).is_file():
+            raise ValueError("reference_audio must be a readable audio file.")
+
+        reference_text = (request.reference_text or "").strip()
+        audio_list, sr = self._model.generate_voice_clone(
+            text=request.text,
+            language=language,
+            ref_audio=request.reference_audio_path,
+            ref_text=reference_text,
+            xvec_only=not bool(reference_text),
+        )
         return _concat_audio_arrays(audio_list), sr
 
     def _default_speaker(self) -> str:

@@ -1,3 +1,6 @@
+import os
+from pathlib import Path
+
 from vocal_core import ModelRegistry
 
 from .services import ModelService, TranscriptionService, TTSService
@@ -12,7 +15,8 @@ def get_registry() -> ModelRegistry:
     """Get or create ModelRegistry singleton"""
     global _registry
     if _registry is None:
-        _registry = ModelRegistry()
+        storage_path = os.getenv("VOCAL_MODEL_STORAGE_PATH")
+        _registry = ModelRegistry(storage_path=Path(storage_path) if storage_path else None)
     return _registry
 
 

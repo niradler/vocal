@@ -1,6 +1,12 @@
 """Unit tests for ModelInfo, ModelBackend, ModelTask, and format_bytes."""
 
 from vocal_core.registry import ModelBackend, ModelInfo, ModelProvider, ModelStatus, ModelTask, format_bytes
+from vocal_core.registry.capabilities import (
+    capability_overrides_from_mapping,
+    infer_model_capabilities,
+    model_record_from_mapping,
+    supported_model_records_from_mapping,
+)
 
 
 def test_model_backend_values():
@@ -52,7 +58,98 @@ def test_model_info_serialization():
         provider=ModelProvider.HUGGINGFACE,
         backend=ModelBackend.KOKORO,
         task=ModelTask.TTS,
+        supports_voice_list=True,
+        voice_mode="voice_id",
     )
     d = m.model_dump()
     assert d["backend"] == "kokoro"
     assert d["task"] == "tts"
+    assert d["supports_voice_list"] is True
+    assert d["voice_mode"] == "voice_id"
+
+
+def test_infer_kokoro_capabilities():
+    capabilities = infer_model_capabilities(
+        task="tts",
+        backend="kokoro",
+        model_id="hexgrad/Kokoro-82M",
+    )
+    assert capabilities["supports_streaming"] is True
+    assert capabilities["supports_voice_list"] is True
+    assert capabilities["supports_voice_clone"] is False
+    assert capabilities["voice_mode"] == "voice_id"
+
+
+def test_infer_qwen_clone_capabilities():
+    capabilities = infer_model_capabilities(
+        task="tts",
+        backend="faster_qwen3_tts",
+        model_id="Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+    )
+    assert capabilities["supports_voice_clone"] is True
+    assert capabilities["clone_mode"] == "reference_audio"
+    assert capabilities["requires_gpu"] is True
+    assert capabilities["reference_audio_min_seconds"] == 3.0
+    assert capabilities["reference_audio_max_seconds"] == 30.0
+
+
+def test_infer_qwen_custom_voice_capabilities():
+    capabilities = infer_model_capabilities(
+        task="tts",
+        backend="faster_qwen3_tts",
+        model_id="Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+    )
+    assert capabilities["supports_voice_list"] is True
+    assert capabilities["supports_voice_clone"] is False
+    assert capabilities["voice_mode"] == "voice_id"
+
+
+def test_capability_overrides_are_allowlisted_and_validated():
+    overrides = capability_overrides_from_mapping(
+        {
+            "supports_voice_clone": True,
+            "reference_audio_min_seconds": 4.0,
+            "unknown_field": "ignored",
+        }
+    )
+    assert overrides.supports_voice_clone is True
+    assert overrides.reference_audio_min_seconds == 4.0
+
+
+def test_model_record_from_mapping_requires_core_fields():
+    record = model_record_from_mapping(
+        {
+            "id": "hexgrad/Kokoro-82M",
+            "name": "Kokoro 82M",
+            "provider": "huggingface",
+            "task": "tts",
+            "backend": "kokoro",
+            "tags": ["text-to-speech"],
+        }
+    )
+    assert record.id == "hexgrad/Kokoro-82M"
+    assert record.backend == "kokoro"
+    assert record.tags == ["text-to-speech"]
+
+
+def test_supported_model_records_are_validated():
+    records = supported_model_records_from_mapping(
+        {
+            "version": "1.0",
+            "generated_at": "2026-03-08T00:00:00Z",
+            "models": [
+                {
+                    "id": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+                    "name": "Qwen3 TTS 0.6B Base",
+                    "alias": "qwen3-tts-0.6b",
+                    "provider": "huggingface",
+                    "task": "tts",
+                    "backend": "faster_qwen3_tts",
+                    "parameters": "915M",
+                    "actual_parameter_count": 914643008,
+                }
+            ],
+        }
+    )
+    assert records[0].alias == "qwen3-tts-0.6b"
+    assert records[0].actual_parameter_count == 914643008

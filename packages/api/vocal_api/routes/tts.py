@@ -1,5 +1,7 @@
 import logging
+import subprocess
 import tempfile
+import wave
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -24,6 +26,81 @@ _MEDIA_TYPES: dict[str, str] = {
     "wav": "audio/wav",
     "pcm": "audio/pcm",
 }
+_CLONE_AUDIO_EXTENSIONS = {".wav", ".mp3", ".m4a", ".aac", ".flac", ".opus", ".ogg"}
+_CLONE_MIN_SECONDS = 3.0
+_CLONE_MAX_SECONDS = 30.0
+
+
+def _probe_reference_audio_duration(path: Path) -> float:
+    if path.suffix.lower() == ".wav":
+        try:
+            with wave.open(str(path), "rb") as wav_file:
+                frames = wav_file.getnframes()
+                sample_rate = wav_file.getframerate()
+        except wave.Error as exc:
+            raise ValueError("reference_audio must be a valid WAV/MP3/M4A recording.") from exc
+        if sample_rate <= 0:
+            raise ValueError("Reference audio has an invalid sample rate.")
+        return frames / float(sample_rate)
+
+    try:
+        probe = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except FileNotFoundError as exc:
+        raise ValueError("ffprobe is required to validate non-WAV reference audio.") from exc
+    except subprocess.CalledProcessError as exc:
+        raise ValueError("Unable to inspect reference audio. Provide a valid WAV/MP3/M4A recording.") from exc
+
+    try:
+        return float(probe.stdout.strip())
+    except ValueError as exc:
+        raise ValueError("Unable to determine reference audio duration.") from exc
+
+
+async def _prepare_reference_audio_for_clone(reference_audio: UploadFile, model: str, service: TTSService) -> Path:
+    suffix = Path(reference_audio.filename or "ref.wav").suffix.lower() or ".wav"
+    if suffix not in _CLONE_AUDIO_EXTENSIONS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported reference audio format '{suffix}'. Supported formats: {', '.join(sorted(_CLONE_AUDIO_EXTENSIONS))}",
+        )
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        ref_path = Path(tmp.name)
+
+    content = await reference_audio.read()
+    if not content:
+        ref_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=422, detail="reference_audio must not be empty.")
+
+    ref_path.write_bytes(content)
+
+    try:
+        duration = _probe_reference_audio_duration(ref_path)
+        if duration < _CLONE_MIN_SECONDS or duration > _CLONE_MAX_SECONDS:
+            raise HTTPException(
+                status_code=422,
+                detail=f"reference_audio must be between {_CLONE_MIN_SECONDS:g} and {_CLONE_MAX_SECONDS:g} seconds.",
+            )
+
+        return ref_path
+    except Exception:
+        ref_path.unlink(missing_ok=True)
+        raise
 
 
 class TTSRequest(BaseModel):
@@ -173,19 +250,20 @@ async def voice_clone(
     media_type = _MEDIA_TYPES.get(fmt, f"audio/{fmt}")
     ext = fmt if fmt != "pcm" else "raw"
 
-    ref_path: str | None = None
+    ref_path: Path | None = None
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(reference_audio.filename or "ref.wav").suffix or ".wav") as tmp:
-            ref_path = tmp.name
-        content = await reference_audio.read()
-        Path(ref_path).write_bytes(content)
+        ref_path = await _prepare_reference_audio_for_clone(reference_audio, model, service)
+        capabilities = await service.get_capabilities(model_id=model)
+        if not capabilities.supports_voice_clone:
+            raise HTTPException(status_code=400, detail=f"Model {model} does not support reference-audio voice cloning.")
 
-        result = await service.synthesize(
+        result = await service.clone_synthesize(
             model_id=model,
             text=text,
-            voice=ref_path,
             output_format=fmt,
             language=language,
+            reference_audio_path=str(ref_path),
+            reference_text=reference_text,
         )
 
         return Response(
@@ -198,6 +276,8 @@ async def voice_clone(
             },
         )
 
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except ImportError as e:
@@ -209,7 +289,7 @@ async def voice_clone(
         raise HTTPException(status_code=500, detail=f"Voice clone error: {str(e)}")
     finally:
         if ref_path:
-            Path(ref_path).unlink(missing_ok=True)
+            ref_path.unlink(missing_ok=True)
 
 
 tts_router = router

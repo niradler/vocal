@@ -3,6 +3,10 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 from vocal_core import ModelRegistry
+from vocal_core.registry.capabilities import (
+    infer_model_capabilities,
+    supported_model_records_from_mapping,
+)
 
 from ..models.model import (
     ModelDownloadProgress,
@@ -16,16 +20,15 @@ class ModelService:
         self._download_status: dict[str, ModelDownloadProgress] = {}
         self._supported_models: list[ModelInfo] | None = None
 
-    def _load_supported_models_json(self) -> list[dict]:
+    def _load_supported_models_json(self) -> list:
         supported_path = Path(__file__).parent.parent.parent.parent / "core" / "vocal_core" / "registry" / "supported_models.json"
 
         if not supported_path.exists():
             return []
 
         try:
-            with open(supported_path) as f:
-                data = json.load(f)
-            return data.get("models", [])
+            with open(supported_path, encoding="utf-8") as f:
+                return supported_model_records_from_mapping(json.load(f))
         except Exception as e:
             print(f"Error loading supported models: {e}")
             return []
@@ -34,30 +37,38 @@ class ModelService:
         models_data = self._load_supported_models_json()
         models = []
 
-        for model_dict in models_data:
+        for record in models_data:
+            capabilities = infer_model_capabilities(
+                task=record.task,
+                backend=record.backend,
+                model_id=record.id,
+                tags=record.tags,
+                overrides=record,
+            )
             models.append(
                 ModelInfo(
-                    id=model_dict["id"],
-                    name=model_dict["name"],
-                    provider=model_dict.get("provider", "huggingface"),
-                    description=model_dict.get("description"),
-                    size=model_dict.get("size", 0),
-                    size_readable=model_dict.get("size_readable", "Unknown"),
-                    parameters=model_dict.get("parameters", "Unknown"),
-                    languages=model_dict.get("languages", []),
-                    backend=model_dict.get("backend", "transformers"),
+                    id=record.id,
+                    name=record.name,
+                    provider=record.provider,
+                    description=record.description,
+                    size=record.size,
+                    size_readable=record.size_readable,
+                    parameters=record.parameters,
+                    languages=record.languages,
+                    backend=record.backend,
                     status="not_downloaded",
-                    source_url=model_dict.get("source_url"),
-                    license=model_dict.get("license"),
-                    recommended_vram=model_dict.get("recommended_vram"),
-                    task=model_dict.get("task", "stt"),
-                    modified_at=model_dict.get("modified_at"),
-                    author=model_dict.get("author"),
-                    tags=model_dict.get("tags", []),
-                    downloads=model_dict.get("downloads"),
-                    likes=model_dict.get("likes"),
-                    sha=model_dict.get("sha"),
-                    files=model_dict.get("files"),
+                    source_url=record.source_url,
+                    license=record.license,
+                    recommended_vram=record.recommended_vram,
+                    task=record.task,
+                    modified_at=record.modified_at,
+                    author=record.author,
+                    tags=record.tags,
+                    downloads=record.downloads,
+                    likes=record.likes,
+                    sha=record.sha,
+                    files=[file.model_dump() for file in record.files] if record.files else None,
+                    **capabilities,
                 )
             )
 
@@ -153,4 +164,13 @@ class ModelService:
             likes=model.likes,
             sha=model.sha,
             files=model.files,
+            supports_streaming=model.supports_streaming,
+            supports_voice_list=model.supports_voice_list,
+            supports_voice_clone=model.supports_voice_clone,
+            supports_voice_design=model.supports_voice_design,
+            requires_gpu=model.requires_gpu,
+            voice_mode=model.voice_mode,
+            clone_mode=model.clone_mode,
+            reference_audio_min_seconds=model.reference_audio_min_seconds,
+            reference_audio_max_seconds=model.reference_audio_max_seconds,
         )

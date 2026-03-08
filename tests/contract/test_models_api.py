@@ -33,6 +33,20 @@ class TestModelsList:
             assert m.task
             assert m.backend
 
+    def test_supported_models_expose_capabilities(self, client):
+        raw = client.get_httpx_client().get("/v1/models/supported")
+        assert raw.status_code == 200
+        body = raw.json()
+        assert body["total"] >= 1
+        qwen_clone = next(m for m in body["models"] if m["id"] == "Qwen/Qwen3-TTS-12Hz-0.6B-Base")
+        assert qwen_clone["supports_voice_clone"] is True
+        assert qwen_clone["clone_mode"] == "reference_audio"
+        assert qwen_clone["requires_gpu"] is True
+
+        kokoro = next(m for m in body["models"] if m["id"] == "hexgrad/Kokoro-82M")
+        assert kokoro["supports_voice_list"] is True
+        assert kokoro["voice_mode"] == "voice_id"
+
 
 class TestModelGet:
     def test_get_known_stt_model(self, client):

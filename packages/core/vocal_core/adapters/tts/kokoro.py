@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 
 from ...config import optional_dependency_install_hint
-from .base import TTSAdapter, TTSResult, Voice
+from .base import TTSAdapter, TTSCapabilities, TTSResult, Voice
 from .piper import SUPPORTED_FORMATS, _convert_audio
 
 logger = logging.getLogger(__name__)
@@ -202,6 +202,13 @@ class KokoroTTSAdapter(TTSAdapter):
             except Exception:
                 pass
         return info
+
+    def get_capabilities(self) -> TTSCapabilities:
+        return TTSCapabilities(
+            supports_streaming=True,
+            supports_voice_list=True,
+            voice_mode="voice_id",
+        )
 
     async def synthesize(
         self,

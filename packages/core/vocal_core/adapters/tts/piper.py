@@ -16,7 +16,7 @@ import numpy as np
 
 from ...config import optional_dependency_install_hint
 from ...utils import detect_device
-from .base import TTSAdapter, TTSResult, Voice
+from .base import TTSAdapter, TTSCapabilities, TTSResult, Voice
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +209,12 @@ class PiperTTSAdapter(TTSAdapter):
 
         return info
 
+    def get_capabilities(self) -> TTSCapabilities:
+        return TTSCapabilities(
+            supports_voice_list=True,
+            voice_mode="voice_id",
+        )
+
     async def synthesize(
         self,
         text: str,
@@ -332,6 +338,12 @@ class SimpleTTSAdapter(TTSAdapter):
         if not self._loaded:
             return {"status": "not_loaded"}
         return {"status": "loaded", "engine": "system", "backend": "native"}
+
+    def get_capabilities(self) -> TTSCapabilities:
+        return TTSCapabilities(
+            supports_voice_list=True,
+            voice_mode="voice_id",
+        )
 
     async def synthesize(
         self,

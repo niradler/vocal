@@ -21,6 +21,8 @@ class ModelBackend(str, Enum):
     NEMO = "nemo"
     ONNX = "onnx"
     KOKORO = "kokoro"
+    FASTER_QWEN3_TTS = "faster_qwen3_tts"
+    PIPER = "piper"
     CUSTOM = "custom"
 
 
@@ -67,6 +69,15 @@ class ModelInfo(BaseModel):
     likes: int | None = Field(default=None, description="Likes on HuggingFace")
     sha: str | None = Field(default=None, description="Git commit SHA")
     files: list[dict] | None = Field(default=None, description="List of model files")
+    supports_streaming: bool = Field(default=False, description="Whether the model supports true streaming output")
+    supports_voice_list: bool = Field(default=False, description="Whether the model exposes selectable voices")
+    supports_voice_clone: bool = Field(default=False, description="Whether the model supports reference-audio voice cloning")
+    supports_voice_design: bool = Field(default=False, description="Whether the model supports prompt/instruction-based voice design")
+    requires_gpu: bool = Field(default=False, description="Whether the model requires GPU acceleration")
+    voice_mode: str | None = Field(default=None, description="How /v1/audio/speech interprets the voice field")
+    clone_mode: str | None = Field(default=None, description="How /v1/audio/clone works for this model")
+    reference_audio_min_seconds: float | None = Field(default=None, description="Recommended minimum reference audio length for cloning")
+    reference_audio_max_seconds: float | None = Field(default=None, description="Recommended maximum reference audio length for cloning")
 
 
 class ModelListResponse(BaseModel):
