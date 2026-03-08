@@ -1,6 +1,5 @@
 """Unit tests for VocalSettings config and env loading."""
 
-
 from vocal_core.config import VocalSettings, optional_dependency_install_hint
 
 

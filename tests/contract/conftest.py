@@ -4,6 +4,7 @@ Contract tests start a real API server but do NOT download heavyweight models.
 All tests use pyttsx3 (built-in, no download) for TTS and only exercise the
 model-management endpoints for listing/info (no actual model loading).
 """
+
 import os
 import socket
 import subprocess

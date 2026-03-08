@@ -1,4 +1,5 @@
 """Unit tests for shared logging setup."""
+
 import logging
 
 from vocal_core.logging import get_logger, setup_logging

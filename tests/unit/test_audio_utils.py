@@ -1,4 +1,5 @@
 """Unit tests for pure audio utility functions shared across routes."""
+
 import struct
 
 import numpy as np

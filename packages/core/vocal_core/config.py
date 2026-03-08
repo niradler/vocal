@@ -39,9 +39,4 @@ vocal_settings = VocalSettings()
 
 def optional_dependency_install_hint(extra_name: str, package_name: str | None = None) -> str:
     pkg = package_name or extra_name
-    return (
-        f"Missing optional dependency '{pkg}'. "
-        f"Install with: uvx --from \"vocal-ai[{extra_name}]\" vocal <command> "
-        f"or pip install \"vocal-ai[{extra_name}]\" "
-        f"(project dev: uv add {pkg})."
-    )
+    return f'Missing optional dependency \'{pkg}\'. Install with: uvx --from "vocal-ai[{extra_name}]" vocal <command> or pip install "vocal-ai[{extra_name}]" (project dev: uv add {pkg}).'
