@@ -1,22 +1,44 @@
-# AGENTS.md - Vocal Coding Agent Reference
+# AGENTS.md — Vocal Maintainer & Contributor Reference
 
-**Version:** 0.4.0 | **Python:** 3.11+ | **Tests:** 36 E2E (~90s)
+**Version:** 0.3.5 | **Python:** 3.11+ | **License:** SSPL-1.0
+
+> This file is the canonical reference for maintainers, contributors, and AI coding agents. Keep it accurate and concise. User documentation lives in [`docs/`](docs/README.md).
 
 ---
 
 ## What is Vocal?
 
-Vocal is an **Ollama-style platform for voice models** - a generic Speech AI API that manages STT (Speech-to-Text) and TTS (Text-to-Speech) models like Ollama manages LLMs. It provides OpenAI-compatible endpoints (`/v1/audio/speech`, `/v1/audio/transcriptions`) with model registry, download management, and automatic SDK generation from OpenAPI spec. Architecture follows API-first design: FastAPI generates OpenAPI schema → SDK auto-generates from schema → CLI uses SDK. The monorepo has 4 packages with strict dependency flow: `core` (registry/adapters) → `api` (FastAPI) → `sdk` (auto-generated) → `cli` (Typer-based).
+Vocal is an **Ollama-style platform for voice models** — a self-hosted Speech AI API that manages STT (Speech-to-Text) and TTS (Text-to-Speech) models the way Ollama manages LLMs. It provides:
+
+- OpenAI-compatible endpoints (`/v1/audio/transcriptions`, `/v1/audio/speech`, `/v1/realtime`)
+- Model registry with download/list/delete (Ollama-style pull)
+- Auto-generated Python SDK from the live OpenAPI spec
+- WebSocket streaming ASR and a full voice-agent loop
+- Voice listing and voice cloning APIs
+
+**Architecture:** FastAPI generates OpenAPI schema → SDK auto-generates from schema → CLI uses SDK.
+
+**Dependency flow (strict, no cycles):**
+```
+core ← api ← sdk ← cli
+```
 
 ---
 
 ## Essential Commands
 
 ```bash
-make lint && make test    # ALWAYS run before completing tasks
-make install              # Setup project
-make serve               # Start API (http://localhost:8000)
+make install              # Setup workspace (uv workspace, all packages editable)
+make lint                 # Must pass before any commit
+make test                 # Full E2E suite (56 tests, ~45s, needs server + models)
+make test-unit            # 33 unit tests, no server (~3s)
+make test-contract        # 31 contract tests, isolated server (~10s)
+make format               # Auto-fix code style
+make serve                # Start API at http://localhost:8000
+make serve-dev            # Start with auto-reload (dev)
 ```
+
+**Before completing any task:** `make lint && make test-unit && make test`
 
 ---
 
@@ -25,346 +47,225 @@ make serve               # Start API (http://localhost:8000)
 ```
 vocal/
 ├── packages/
-│   ├── core/     # Registry & adapters (no API deps)
-│   │   └── vocal_core/config.py  # VocalSettings — all global defaults here
-│   ├── api/      # FastAPI server
-│   ├── sdk/      # Python SDK
-│   └── cli/      # CLI tool
-├── tests/        # 36 E2E tests
-└── Makefile      # All commands
+│   ├── core/                          # No API deps — foundation
+│   │   └── vocal_core/
+│   │       ├── config.py              # VocalSettings — ALL defaults live here
+│   │       ├── logging.py             # setup_logging, get_logger
+│   │       ├── registry/              # ModelRegistry, ModelInfo, capabilities
+│   │       └── adapters/
+│   │           ├── stt/               # FasterWhisperAdapter, TransformersSTTAdapter
+│   │           └── tts/               # SimpleTTSAdapter (pyttsx3), KokoroTTSAdapter, PiperTTSAdapter
+│   ├── api/                           # FastAPI server
+│   │   └── vocal_api/
+│   │       ├── routes/                # tts.py, transcription.py, stream.py, realtime.py
+│   │       ├── services/              # TranscriptionService, TTSService
+│   │       ├── dependencies.py        # FastAPI DI
+│   │       └── config.py             # API-specific settings
+│   ├── sdk/                           # Auto-generated — do not edit api/ or models/ directly
+│   └── cli/                           # Typer CLI — pure SDK consumer
+│       └── vocal_cli/main.py
+├── tests/
+│   ├── unit/                          # No server, no models
+│   ├── contract/                      # Isolated server, pyttsx3 only
+│   │   └── conftest.py               # api_server + client fixtures
+│   ├── test_e2e.py                    # Full journeys (primary local gate)
+│   ├── test_tts_formats.py
+│   └── test_assets/audio/            # Real audio fixtures
+├── docs/
+│   ├── README.md                      # Docs index
+│   ├── user/                          # End-user documentation
+│   └── developer/                     # Contributor + maintainer documentation
+├── .github/workflows/ci.yml           # GitHub Actions: lint + unit + contract
+├── .pre-commit-config.yaml            # Pre-commit hooks
+└── Makefile
 ```
 
-**Dependencies:** `cli → sdk → api → core`
-
 ---
 
-## Development Workflow
+## Architecture Rules
 
-1. Make changes
-2. `make format` - Auto-fix style
-3. `make lint` - Must pass
-4. `make test` - Must pass (23/23)
-5. Update docs if needed
-
----
-
-## Makefile Reference
-
-| Command | Purpose | Time |
-|---------|---------|------|
-| `make test` | Full test suite | 55s |
-| `make test-quick` | Quick validation | 5s |
-| `make lint` | Check code | 10s |
-| `make format` | Fix style | 10s |
-| `make serve` | Start API | - |
-| `make serve-dev` | API + auto-reload | - |
-| `make clean` | Clear cache | 5s |
-
-**Aliases:** `t`, `l`, `f`, `s`, `sd`, `c`
-
----
-
-## Testing
-
-```bash
-make test                      # All tests
-make test-quick                # Fast validation
-make test-verbose              # Debug output
-uv run pytest tests/test_e2e.py::TestClass::test_name -vv  # Specific test
-```
-
-**Coverage:**
-- API Health: 2
-- Model Management: 5
-- STT: 7
-- TTS: 5 (+ 6 streaming format tests)
-- Error Handling: 4
-- Performance: 1
-- WebSocket Stream (`/v1/audio/stream`): 7
-- OpenAI Realtime (`/v1/realtime`): 7
-
----
-
-## Release Process
-
-```bash
-make bump-patch    # Bug fixes (0.2.3 → 0.2.4)
-make bump-minor    # New features (0.2.3 → 0.3.0)
-make bump-major    # Breaking changes (0.2.3 → 1.0.0)
-```
-
-**Release Checklist:**
-1. `make lint && make test` ✅
-2. Update `README.md` if API changed
-3. `make bump-patch` (or minor/major)
-4. `git add . && git commit -m "Release vX.Y.Z"`
-5. `git tag vX.Y.Z && git push --tags`
-
-**Auto-updated files:** All `pyproject.toml` + `__init__.py` in packages
-
----
-
-## Architecture Patterns
-
-### Service Pattern
-```python
-class Service:
-    def __init__(self, registry: ModelRegistry):
-        self.registry = registry
-        self.adapters: dict[str, Adapter] = {}
-    
-    async def operation(self, model_id: str) -> Result:
-        model_info = await self.registry.get_model(model_id)
-        if not model_info:
-            raise ValueError("Model not found")
-        model_path = self.registry.get_model_path(model_id)
-        if not model_path:
-            raise ValueError("Model not downloaded")
-        adapter = await self._get_or_create_adapter(...)
-        return await adapter.operation(...)
-```
-
-### Registry Models
-- Models in `vocal_core/registry/providers/huggingface.py`
-- Must be downloaded before use
-- Exception: `"pyttsx3"` = built-in TTS fallback
-
-### API Endpoints
-- OpenAI-compatible STT/TTS: `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/audio/translations`
-- Model management: `/v1/models`
-- WebSocket streaming ASR: `/v1/audio/stream` (binary PCM in, JSON delta events out)
-- OpenAI Realtime compatible: `/v1/realtime` (full session protocol, transcription + voice agent modes)
-
-### Global Config (`vocal_core.config`)
-
-**All core defaults must come from `vocal_core/config.py` — never hardcode URLs, model names, or sample rates outside this file.**
+### Global Config
+All default values (model names, URLs, sample rates, timeouts) live in **`vocal_core/config.py`** (`VocalSettings`). Never hardcode them in routes, services, or CLI — always use `vocal_settings.*`.
 
 ```python
 from vocal_core.config import vocal_settings
-# vocal_settings.LLM_BASE_URL, .LLM_MODEL, .LLM_API_KEY
-# vocal_settings.STT_DEFAULT_MODEL, .STT_DEFAULT_LANGUAGE, .STT_SAMPLE_RATE
+model = vocal_settings.STT_DEFAULT_MODEL   # ✅
+model = "Systran/faster-whisper-tiny"       # ❌
 ```
 
-Overridden by env vars (same name, uppercase) or `.env` file:
-- `LLM_BASE_URL=https://api.openai.com/v1` + `LLM_API_KEY=sk-...` → routes to OpenAI
-- `LLM_BASE_URL=http://localhost:11434/v1` (default) → routes to local Ollama
+### Logging
+All modules use stdlib `logging` — never `print()`:
+```python
+import logging
+logger = logging.getLogger(__name__)
+logger.info("Loading model from %s", path)
+```
 
-### CLI — Real-time ASR
+`setup_logging()` is called once at API startup from `vocal_core.logging`.
 
-**`vocal listen`** — chunk-based mic transcription via REST
-- Audio constants: `_SAMPLE_RATE=16000`, `_FRAME_SIZE=1600`, `_CHANNELS=1` (module-level in `main.py`)
-- Pipeline: PortAudio callback → `queue.SimpleQueue` → `_run_stream` (thread) → `_schedule_flush` (daemon thread) → REST API
-- VAD: `_calibrate_from_frames()` — 15 frames of noise floor → `threshold = noise_floor * 4.0` (min 50)
-- Silence detection: `silence_frames_needed = silence_duration * sample_rate / frame_size`
-- `_flush_buffer()` — converts PCM frames to WAV buffer, calls transcription/translation REST endpoint, prints result
+### Async / Concurrency
+- Use `asyncio.get_running_loop()` — not `get_event_loop()` (deprecated, inconsistent on Windows vs Linux)
+- CPU-bound model inference: `await loop.run_in_executor(None, self._load_sync, ...)`
+- Never call `pyttsx3` from the event loop directly — run in a thread with a timeout
 
-**`vocal live`** — WebSocket streaming (~200ms latency)
-- Same mic capture pattern (`sd.InputStream` → `queue.SimpleQueue`), but sends raw binary PCM frames to `/v1/audio/stream` via `websockets`
-- Server does VAD — no client-side silence detection
-- `asyncio.run(_live_async(...))` bridges sync CLI entry point to async WebSocket handler
-- Thread-safe audio → asyncio bridge: `loop.run_in_executor(None, audio_q.get, True, 0.1)`
+### File Paths
+Use `pathlib.Path` everywhere — handles Windows/Linux separators automatically.
 
-**`vocal devices`** — lists input devices via `sd.query_devices()`
+### Adapter Pattern
+Every STT/TTS backend implements a base class in `adapters/stt/base.py` or `adapters/tts/base.py`. Services dispatch by `ModelInfo.backend`. New backends = implement base class + add to service dispatch. See [`docs/developer/adding-models.md`](docs/developer/adding-models.md).
 
 ---
 
-## Code Standards
+## Test Tiers
 
-**Ruff:** Line length 120, PEP 8, Python 3.11+
+| Tier | Command | Time | Runs in CI |
+|------|---------|------|------------|
+| Unit | `make test-unit` | ~3s | ✅ |
+| Contract | `make test-contract` | ~10s | ✅ |
+| E2E | `make test` | ~45s | ❌ (needs models) |
+| Format | `make format` | ~5s | ✅ |
+| Lint | `make lint` | ~5s | ✅ |
 
-```python
-from pathlib import Path              # Stdlib
-from fastapi import APIRouter         # Third-party
-from vocal_core import ModelRegistry  # Local
-
-async def func(text: str, model_id: str) -> TTSResult:
-    """Brief description
-    
-    Args:
-        text: Description
-        model_id: Description
-    
-    Returns:
-        Description
-    """
-```
-
-**No comments unless asked**
-
----
-
-## Common Tasks
-
-### Add Model to Registry
-Edit `packages/core/vocal_core/registry/providers/huggingface.py`:
-```python
-KNOWN_TTS_MODELS = {
-    "model/id": {
-        "name": "Name",
-        "parameters": "100M",
-        "backend": ModelBackend.ONNX,
-        "recommended_vram": "2GB+",
-        "languages": ["en"],
-    },
-}
-```
-
-### Fix Failing Test
+Targeted test runs:
 ```bash
-make test-verbose                # See error
+uv run pytest tests/unit/test_config.py -v
+uv run pytest tests/contract/test_tts_contract.py -v
+uv run pytest tests/test_e2e.py::TestSTT -v
 uv run pytest tests/test_e2e.py::TestClass::test_name -vv -s
-# Fix issue
-make lint && make test           # Verify
 ```
 
-### Kill Port 8000
+---
+
+## Cross-Platform Development
+
+### Windows
+```bash
+make install && make lint && make test-unit && make test-contract
+make serve &
+make test
+```
+
+Port conflicts:
 ```bash
 netstat -ano | findstr :8000
 taskkill /F /PID <PID>
 ```
 
----
-
-## Rules
-
-### DO ✅
-- Run `make lint && make test` before completing
-- Follow existing patterns
-- Use type hints
-- Keep package dependencies correct
-- Update docs when changing APIs
-- Test with `test_assets/audio/`
-- **REUSE existing markdown files** (README.md, AGENTS.md)
-
-### DON'T ❌
-- Skip tests/linting
-- Add comments (unless asked)
-- Create circular dependencies
-- Bypass model registry
-- Hardcode paths
-- **Create new markdown files** (unless explicitly asked)
-- Make breaking changes without major version bump
-- **Commit changes without user verification first**
-
----
-
-## Publishing to PyPI
-
-**Package Name:** `vocal-ai` (not `vocal` - already taken on PyPI)
-
-**Published Packages:**
-1. `vocal-core` - Core registry/adapters
-2. `vocal-sdk` - Python SDK
-3. `vocal-api` - FastAPI server
-4. `vocal-cli` - CLI tool
-5. `vocal-ai` - Meta-package (installs all above)
-
-**Publishing Order (Critical):**
+### WSL / Linux
 ```bash
-# Build all packages
-make build  # if available, or manually:
-cd packages/core && uv run python -m build
-cd packages/sdk && uv run python -m build
-cd packages/api && uv run python -m build
-cd packages/cli && uv run python -m build
-cd ../.. && uv run python -m build
+# System dependencies (pyttsx3 backend on Linux)
+sudo apt install espeak-ng ffmpeg
 
-# Publish in dependency order
-uv run twine upload packages/core/dist/*
-uv run twine upload packages/sdk/dist/*
-uv run twine upload packages/api/dist/*
-uv run twine upload packages/cli/dist/*
-uv run twine upload dist/*  # main package last
+# Use Linux-native venv (avoids Windows venv I/O errors)
+UV_PROJECT_ENVIRONMENT=/tmp/vocal_venv uv run pytest tests/unit/ -q
+
+# Share Windows model cache (avoid re-downloading)
+mkdir -p ~/.cache/vocal
+ln -sfn /mnt/c/Users/<username>/.cache/vocal/models ~/.cache/vocal/models
+
+# Start server and run E2E
+UV_PROJECT_ENVIRONMENT=/tmp/vocal_venv uv run uvicorn vocal_api.main:app --port 8001 &
+sleep 8
+API_BASE_URL=http://127.0.0.1:8001 UV_PROJECT_ENVIRONMENT=/tmp/vocal_venv \
+  uv run pytest tests/test_e2e.py tests/test_tts_formats.py -q
 ```
 
-**PyPI Authentication:**
-- Username: `__token__`
-- Password: Your PyPI API token from https://pypi.org/manage/account/token/
+### macOS
+Same as Linux but `espeak-ng` is not needed (uses NSSpeechSynthesizer). `brew install ffmpeg` for format conversion.
 
-**Version Bumping:**
-- `make bump-patch` - Updates all packages (core, sdk, api, cli, main)
-- Auto-updates: `pyproject.toml` files + `vocal/__init__.py`
+---
 
-**Installation:**
+## Adding a New Model or Backend
+
+**Catalog-only (new model, existing backend):** Edit `packages/core/vocal_core/registry/supported_models.json`.
+
+**New backend:** See [`docs/developer/adding-models.md`](docs/developer/adding-models.md) for the full step-by-step including checklist.
+
+Quick summary for new TTS backend:
+1. Implement `TTSAdapter` in `packages/core/vocal_core/adapters/tts/<name>.py`
+2. Add `ModelBackend.<NAME>` to `vocal_core/registry/model_info.py`
+3. Add dispatch case to `packages/api/vocal_api/services/tts_service.py`
+4. Declare capabilities in `vocal_core/registry/capabilities.py`
+5. Add model entry to `supported_models.json`
+6. Add contract test in `tests/contract/`
+
+---
+
+## SDK Regeneration
+
+The SDK is auto-generated — never manually edit `vocal_sdk/api/` or `vocal_sdk/models/`:
+
 ```bash
-pip install vocal-ai  # Installs everything
-# or
-uvx vocal serve      # Run without installing
+make serve &                  # start API
+sleep 5
+make generate-sdk             # regenerate from /openapi.json
+make lint                     # ensure generated code is clean
 ```
 
----
-
-## Quick Checklist
-
-**Every Task:**
-- [ ] Make changes
-- [ ] All new defaults come from `vocal_core/config.py` (never hardcode)
-- [ ] `make lint` passes
-- [ ] `make test` passes (36/36)
-- [ ] Docs updated (if API changed)
-- [ ] Task complete
+Regenerate after any API route change, new endpoint, or model schema change.
 
 ---
 
-## WebSocket Streaming — `vocal live` + `/v1/realtime`
+## Release Process
 
-**Implemented in v0.4.0.**
+See [`docs/developer/release.md`](docs/developer/release.md) for the full checklist.
 
-### `/v1/audio/stream` (simple internal WebSocket)
+Quick version bump:
+```bash
+make bump-patch    # 0.3.5 → 0.3.6
+make bump-minor    # 0.3.5 → 0.4.0
+make bump-major    # 0.3.5 → 1.0.0
+```
 
-- **Input:** binary WebSocket frames — raw PCM16 @16kHz (no base64)
-- **Query params:** `model`, `language`, `task`, `threshold`, `silence_duration`, `max_chunk_duration`
-- **VAD:** energy threshold (numpy RMS, no extra dep)
-- **Output events:** `{"type":"transcript.delta","text":"..."}` per segment, `{"type":"transcript.done","text":"..."}` on commit
-- **Error events:** `{"type":"error","message":"..."}`
-- **Used by:** `vocal live` CLI command, direct WebSocket clients
+Auto-updates: all `pyproject.toml` + `__init__.py` files.
 
-### `/v1/realtime` (OpenAI Realtime API compatible)
+---
 
-Full implementation of the OpenAI Realtime Transcription Session protocol. Clients connect as if to OpenAI — no code changes needed.
+## Common Gotchas
 
-**Session types:**
-- `transcription` — STT only (faster-whisper). No LLM needed.
-- `realtime` — Full voice agent: STT → LLM (`LLM_BASE_URL`) → TTS → audio back to client
+| Problem | Fix |
+|---------|-----|
+| `pyttsx3` deadlock on Windows | `SimpleTTSAdapter` creates a fresh engine per call in a thread — do not share engine across calls |
+| WSL venv I/O error | Use `UV_PROJECT_ENVIRONMENT=/tmp/vocal_venv` to avoid Windows-style `.venv/Scripts/` |
+| Port 8000 in use | `netstat -ano | findstr :8000` then `taskkill /F /PID <pid>` |
+| Model not found | Check `~/.cache/vocal/models/` — download with `vocal models pull <id>` |
+| SDK out of date | Run `make generate-sdk` after any API route change |
+| `asyncio.get_event_loop()` warning | Use `asyncio.get_running_loop()` instead — already fixed in `TransformersSTTAdapter` |
 
-**Client → Server events:**
-- `session.update` / `transcription_session.update` — configure model, language, VAD
-- `input_audio_buffer.append` — `{"audio": "<base64 PCM16 @24kHz>"}`
-- `input_audio_buffer.commit` — manual commit (not needed in server_vad mode)
-- `input_audio_buffer.clear` — clear buffer
+---
 
-**Server → Client events:**
-- `session.created` — on connect
-- `transcription_session.updated` — on config change
-- `input_audio_buffer.speech_started` / `speech_stopped` — VAD events
-- `input_audio_buffer.committed` — buffer committed
-- `conversation.item.input_audio_transcription.delta` — streaming token
-- `conversation.item.input_audio_transcription.completed` — final transcript
-- `response.output_audio_transcript.delta` — LLM response text (realtime mode)
-- `response.output_audio.delta` — TTS audio chunks as base64 (realtime mode)
-- `response.done` — response complete
-- `error` — `{"type":"error","error":{"code":"...","message":"..."}}`
+## DO / DON'T
 
-**Audio resampling:** client sends PCM16 @24kHz (OAI default) → server resamples to 16kHz with numpy linear interpolation before feeding faster-whisper.
+**DO ✅**
+- Run `make lint && make test` before completing any task
+- Use `vocal_settings.*` for all defaults — never hardcode strings
+- Use `logging.getLogger(__name__)` — never `print()`
+- Use `asyncio.get_running_loop()` in async code
+- Use `pathlib.Path` for file paths (cross-platform)
+- Test on both Windows and Linux for anything touching audio or subprocesses
+- Regenerate SDK after API changes
 
-**LLM integration (realtime mode):** `httpx.AsyncClient` streams from `vocal_settings.LLM_BASE_URL/chat/completions` — works with Ollama, vLLM, OpenAI, or any OpenAI-compatible endpoint.
-
-**TTS in realtime mode (current):** `tts_service.synthesize()` — full batch synthesis, then the result is chunked into 4800-byte WebSocket frames. Time-to-first-audio is ~1-2s (full generation before any audio is sent).
-
-> **Future: TTS streaming** — `tts_service.synthesize_stream()` already exists and yields audio bytes incrementally. Wiring it to the WebSocket `response.output_audio.delta` loop would reduce time-to-first-audio from ~1-2s to ~200ms. Implement in `_run_voice_agent()` in `packages/api/vocal_api/routes/realtime.py` by replacing the `synthesize()` call with an `async for chunk in synthesize_stream(...)` loop.
-
-### Core streaming adapter
-
-`FasterWhisperAdapter.transcribe_stream()` — async generator:
-- Calls `self.model.transcribe()` (returns lazy generator) in a thread via `loop.run_in_executor`
-- Uses `loop.call_soon_threadsafe(q.put_nowait, item)` to safely push segments to asyncio Queue
-- Yields `TranscriptionSegment` objects as faster-whisper decodes each segment
+**DON'T ❌**
+- Import from `vocal_api` in `vocal_core` (breaks dependency order)
+- Hardcode model names, URLs, or sample rates outside `config.py`
+- Create circular dependencies between packages
+- Use `get_event_loop()` (deprecated, platform-inconsistent)
+- Edit `vocal_sdk/api/` or `vocal_sdk/models/` by hand
+- Skip lint/tests before completing a task
+- Create new markdown files unless explicitly asked
 
 ---
 
 ## References
 
-- API Docs: http://localhost:8000/docs (when running)
-- Tests: `tests/test_e2e.py`
-- Registry: `packages/core/vocal_core/registry/`
-- Routes: `packages/api/vocal_api/routes/`
+| Resource | Link |
+|----------|------|
+| User docs | [`docs/user/`](docs/user/) |
+| Developer docs | [`docs/developer/`](docs/developer/) |
+| Architecture deep-dive | [`docs/developer/architecture.md`](docs/developer/architecture.md) |
+| Adding backends | [`docs/developer/adding-models.md`](docs/developer/adding-models.md) |
+| Test guide | [`docs/developer/testing.md`](docs/developer/testing.md) |
+| Release process | [`docs/developer/release.md`](docs/developer/release.md) |
+| Manual QA guide | [`docs/manual-testing.md`](docs/manual-testing.md) |
+| Interactive API docs | http://localhost:8000/docs (when server running) |
+| GitHub Issues | https://github.com/niradler/vocal/issues |

@@ -9,7 +9,7 @@ authors = [
 ]
 keywords = ["sdk", "client", "speech-to-text", "tts", "openai-compatible", "api-client"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: Other/Proprietary License",
     "Programming Language :: Python :: 3.11",
@@ -24,7 +24,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/niradler/vocal"
-Documentation = "https://github.com/niradler/vocal#readme"
+Documentation = "https://github.com/niradler/vocal/tree/master/docs"
 Repository = "https://github.com/niradler/vocal"
 Issues = "https://github.com/niradler/vocal/issues"
 
