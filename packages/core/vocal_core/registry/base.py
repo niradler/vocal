@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -8,6 +9,8 @@ from .metadata_cache import ModelMetadataCache
 from .model_info import ModelBackend, ModelInfo, ModelProvider, ModelStatus, ModelTask, format_bytes
 from .providers.base import ModelProvider as BaseModelProvider
 from .providers.huggingface import HuggingFaceProvider
+
+logger = logging.getLogger(__name__)
 
 
 class ModelRegistry:
@@ -21,8 +24,6 @@ class ModelRegistry:
         self.providers: dict[str, BaseModelProvider] = {
             "huggingface": HuggingFaceProvider(cache_dir=self.storage_path / "hf"),
         }
-
-        self._local_models: dict[str, ModelInfo] = {}
 
     def add_provider(self, name: str, provider: BaseModelProvider) -> None:
         """Add a custom model provider"""
@@ -185,7 +186,7 @@ class ModelRegistry:
 
                     return model
             except Exception as e:
-                print(f"Error getting model {model_id} from {provider.get_provider_name()}: {e}")
+                logger.error("Error getting model %s from %s: %s", model_id, provider.get_provider_name(), e)
 
         return None
 
@@ -221,7 +222,7 @@ class ModelRegistry:
                 yield (0, 0, ModelStatus.ERROR)
 
         except Exception as e:
-            print(f"Download error: {e}")
+            logger.error("Download error for model %s: %s", model_id, e)
             yield (0, 0, ModelStatus.ERROR)
 
     async def delete_model(self, model_id: str) -> bool:
@@ -237,7 +238,7 @@ class ModelRegistry:
             self.metadata_cache.delete(model_id)
             return True
         except Exception as e:
-            print(f"Error deleting model {model_id}: {e}")
+            logger.error("Error deleting model %s: %s", model_id, e)
             return False
 
     def _get_model_path(self, model_id: str) -> Path:

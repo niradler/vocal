@@ -98,14 +98,14 @@ def _convert_audio(path: str, target_format: str = "mp3", target_sample_rate: in
     except FileNotFoundError:
         raise RuntimeError("ffmpeg is required for audio format conversion. Install ffmpeg: brew install ffmpeg (macOS), apt install ffmpeg (Linux), choco install ffmpeg (Windows)")
 
-    with open(out_path, "rb") as f:
-        audio_data = f.read()
-    os.unlink(out_path)
+    try:
+        with open(out_path, "rb") as f:
+            audio_data = f.read()
+    finally:
+        if os.path.exists(out_path):
+            os.unlink(out_path)
 
-    # Recalculate duration based on resampled rate
-    if duration > 0:
-        duration = duration
-    elif target_format == "pcm":
+    if target_format == "pcm" and duration <= 0:
         duration = len(audio_data) / (target_sample_rate * 2)
 
     return audio_data, target_sample_rate, duration

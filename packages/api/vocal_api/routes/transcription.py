@@ -2,6 +2,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
+from vocal_core.config import vocal_settings
+
 from ..config import settings
 from ..dependencies import get_transcription_service
 from ..models.transcription import (
@@ -22,7 +24,7 @@ router = APIRouter(prefix="/v1/audio", tags=["transcription"])
 )
 async def create_transcription(
     file: Annotated[UploadFile, File(description="Audio file to transcribe")],
-    model: Annotated[str, Form(description="Model ID")] = "Systran/faster-whisper-tiny",
+    model: Annotated[str, Form(description="Model ID")] = vocal_settings.STT_DEFAULT_MODEL,
     language: Annotated[str | None, Form(description="Language code")] = None,
     prompt: Annotated[str | None, Form(description="Style prompt")] = None,
     response_format: Annotated[TranscriptionFormat, Form(description="Output format")] = TranscriptionFormat.JSON,
@@ -69,7 +71,7 @@ async def create_transcription(
 )
 async def create_translation(
     file: Annotated[UploadFile, File()],
-    model: Annotated[str, Form()] = "Systran/faster-whisper-tiny",
+    model: Annotated[str, Form()] = vocal_settings.STT_DEFAULT_MODEL,
     service: TranscriptionService = Depends(get_transcription_service),
 ) -> TranscriptionResponse:
     """Translate audio to English."""

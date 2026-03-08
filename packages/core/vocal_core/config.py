@@ -12,6 +12,7 @@ class VocalSettings(BaseSettings):
 
     TTS_DEFAULT_MODEL: str = "pyttsx3"
     TTS_DEFAULT_VOICE: str | None = None
+    TTS_DEFAULT_CLONE_MODEL: str = "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
 
     VAD_THRESHOLD: float = 400.0
     VAD_SILENCE_FRAMES: int = 15

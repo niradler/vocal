@@ -9,6 +9,9 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, Upl
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from vocal_core.config import vocal_settings
+
+from ..config import settings
 from ..dependencies import get_tts_service
 from ..services.tts_service import TTSService
 
@@ -86,6 +89,13 @@ async def _prepare_reference_audio_for_clone(reference_audio: UploadFile, model:
     if not content:
         ref_path.unlink(missing_ok=True)
         raise HTTPException(status_code=422, detail="reference_audio must not be empty.")
+
+    if len(content) > settings.MAX_UPLOAD_SIZE:
+        ref_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=422,
+            detail=f"reference_audio too large. Max {settings.MAX_UPLOAD_SIZE // (1024 * 1024)}MB.",
+        )
 
     ref_path.write_bytes(content)
 
@@ -225,7 +235,7 @@ async def list_voices(model: str | None = None, service: TTSService = Depends(ge
 async def voice_clone(
     reference_audio: Annotated[UploadFile, File(description="Reference audio recording for voice cloning (wav/mp3/m4a, 3-30s recommended)")],
     text: Annotated[str, Form(description="Text to synthesize in the cloned voice")],
-    model: Annotated[str, Form(description="TTS model to use for voice cloning (must support cloning, e.g. Qwen3-TTS base variants)")] = "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+    model: Annotated[str, Form(description="TTS model to use for voice cloning (must support cloning, e.g. Qwen3-TTS base variants)")] = vocal_settings.TTS_DEFAULT_CLONE_MODEL,
     reference_text: Annotated[str | None, Form(description="Optional transcript of the reference audio")] = None,
     language: Annotated[str, Form(description="Target language code (e.g. 'en', 'zh')")] = "en",
     response_format: Annotated[AudioFormat, Form(description="Output format")] = "wav",
@@ -246,6 +256,9 @@ async def voice_clone(
     **Note:** Voice cloning is hardware-intensive. Ensure the model is downloaded first
     via `POST /v1/models/{model_id}/download`.
     """
+    if not text.strip():
+        raise HTTPException(status_code=422, detail="text must not be empty.")
+
     fmt = response_format
     media_type = _MEDIA_TYPES.get(fmt, f"audio/{fmt}")
     ext = fmt if fmt != "pcm" else "raw"

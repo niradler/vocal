@@ -28,7 +28,7 @@ class TransformersSTTAdapter(STTAdapter):
     async def load_model(self, model_path: Path, device: str = "auto", **kwargs) -> None:
         if not TRANSFORMERS_AVAILABLE:
             raise ImportError("transformers and torch are required. Install with: pip install transformers torch")
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._load_sync, model_path, device)
 
     def _load_sync(self, model_path: Path, device: str) -> None:
@@ -109,12 +109,18 @@ class TransformersSTTAdapter(STTAdapter):
             if task == "translate":
                 generate_kwargs["task"] = "translate"
 
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(None, self._run_pipeline, audio_path, generate_kwargs)
 
             text = result.get("text", "").strip()
             chunks = result.get("chunks", [])
-            duration = chunks[-1]["timestamp"][1] if chunks and chunks[-1]["timestamp"][1] else 0.0
+            last_ts: float | None = None
+            if chunks:
+                try:
+                    last_ts = chunks[-1].get("timestamp", (None, None))[1]
+                except (IndexError, TypeError):
+                    last_ts = None
+            duration = float(last_ts) if last_ts else 0.0
 
             segments = None
             if chunks:

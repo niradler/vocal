@@ -207,7 +207,7 @@ def clone(
     reference: Path = typer.Option(..., "--reference", "-r", help="Reference audio file (wav/mp3/m4a, 3-30s recommended)"),
     output: Path | None = typer.Option(None, "--output", "-o", help="Output file path (default: stdout binary)"),
     model: str = typer.Option(
-        "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+        vocal_settings.TTS_DEFAULT_CLONE_MODEL,
         "--model",
         "-m",
         help="TTS model to use for voice cloning (must support cloning)",
