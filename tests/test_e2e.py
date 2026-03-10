@@ -13,9 +13,13 @@ Test assets are located in test_assets/audio/ directory.
 
 import asyncio
 import base64
+import importlib.util
+import io
 import json
+import os
 import subprocess
 import time
+import wave
 from pathlib import Path
 
 import httpx
@@ -24,6 +28,7 @@ import pytest
 import requests
 import websockets
 
+from vocal_core.config import vocal_settings
 from vocal_sdk import VocalClient
 from vocal_sdk.api.audio import list_voices_v1_audio_voices_get, text_to_speech_v1_audio_speech_post
 from vocal_sdk.api.health import health_health_get
@@ -34,9 +39,13 @@ from vocal_sdk.api.models import (
     get_model_v1_models_model_id_get,
     list_models_v1_models_get,
 )
-from vocal_sdk.api.transcription import create_transcription_v1_audio_transcriptions_post
+from vocal_sdk.api.transcription import (
+    create_transcription_v1_audio_transcriptions_post,
+    create_translation_v1_audio_translations_post,
+)
 from vocal_sdk.models import (
     BodyCreateTranscriptionV1AudioTranscriptionsPost,
+    BodyCreateTranslationV1AudioTranslationsPost,
     ModelStatus,
     TranscriptionFormat,
     TranscriptionResponse,
@@ -111,8 +120,8 @@ def api_server():
             "--log-level",
             "error",
         ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
 
     max_retries = 60
@@ -186,7 +195,7 @@ def ensure_stt_model(client, test_model):
             print(f"[setup] Waiting for model... ({elapsed}s)")
         time.sleep(1)
 
-    pytest.skip(f"Model {test_model} not available after {max_wait}s — skipping all tests")
+    pytest.fail(f"Model {test_model} not available after {max_wait}s — is the server running and can it reach the internet?")
 
 
 @pytest.fixture(scope="session")
@@ -196,7 +205,7 @@ def test_assets():
     expected_dir = Path("test_assets/expected")
 
     if not assets_dir.exists():
-        pytest.skip(f"Test assets not found at {assets_dir} (download them to run STT tests)")
+        pytest.fail(f"Test assets not found at {assets_dir} — run: make test-assets or add audio files to test_assets/audio/")
 
     return {
         "audio_dir": assets_dir,
@@ -222,6 +231,25 @@ class TestAPIHealth:
         assert "api_version" in result, "Health response should have 'api_version'"
 
         print(f"\n[OK] Health check passed - API v{result['api_version']}")
+
+    def test_openapi_spec_available(self, api_server):
+        """OpenAPI schema must be reachable — SDK auto-gen depends on it"""
+        import requests as req
+
+        resp = req.get(f"{api_server}/openapi.json", timeout=10)
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
+
+        schema = resp.json()
+        assert "openapi" in schema, "Schema must have 'openapi' version field"
+        assert "paths" in schema, "Schema must have 'paths'"
+        assert "info" in schema, "Schema must have 'info'"
+
+        paths = set(schema["paths"].keys())
+        required = {"/v1/audio/transcriptions", "/v1/audio/speech", "/v1/audio/clone", "/health"}
+        missing = required - paths
+        assert not missing, f"OpenAPI schema missing routes: {missing}"
+
+        print(f"\n[OK] OpenAPI spec valid — {len(paths)} paths, version {schema['info'].get('version', '?')}")
 
     def test_device_information(self, client):
         """Test device information endpoint"""
@@ -260,16 +288,29 @@ class TestModelManagement:
         print(f"\n[OK] Found {result.total} models in registry")
 
     def test_filter_models_by_task(self, client):
-        """Test filtering models by task type"""
+        """Test filtering models by STT task"""
         stt_models = list_models_v1_models_get.sync(client=client, task="stt")
 
         assert stt_models is not None, "Filtered result should not be None"
         assert isinstance(stt_models.models, list), "Models should be a list"
 
         for model in stt_models.models:
-            assert model.task.value == "stt", "All models should be STT"
+            assert model.task.value == "stt", f"All models should be STT, got {model.task.value}"
 
         print(f"\n[OK] Filtered {stt_models.total} STT models")
+
+    def test_filter_models_by_tts_task(self, client):
+        """Test filtering models by TTS task — every returned model must be TTS"""
+        tts_models = list_models_v1_models_get.sync(client=client, task="tts")
+
+        assert tts_models is not None, "Filtered result should not be None"
+        assert isinstance(tts_models.models, list), "Models should be a list"
+        assert tts_models.total > 0, "Should have at least one TTS model (pyttsx3)"
+
+        for model in tts_models.models:
+            assert model.task.value == "tts", f"All models should be TTS, got {model.task.value}"
+
+        print(f"\n[OK] Filtered {tts_models.total} TTS models")
 
     def test_get_model_info(self, client, test_model):
         """Test getting specific model information"""
@@ -378,16 +419,6 @@ class TestAudioTranscription:
 
         print(f"\n[OK] Got JSON format with {len(segs)} segments")
 
-    def test_transcribe_silence(self, client, test_model, test_assets, ensure_stt_model):
-        """Test transcribing second audio file"""
-        audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
-
-        result = _transcribe(client, audio_file, test_model)
-
-        assert result is not None
-        assert isinstance(result.text, str), "Should have text field"
-        print(f"\n[OK] Transcribed second file: '{result.text}'")
-
     def test_transcribe_both_formats(self, client, test_model, test_assets, ensure_stt_model):
         """Test transcribing different audio formats (m4a and mp3)"""
         for filename in test_assets["files"].keys():
@@ -400,6 +431,25 @@ class TestAudioTranscription:
             assert result.duration > 0, "Should have duration"
 
             print(f"\n[OK] Transcribed {filename}")
+
+    def test_translate_audio_to_english(self, client, test_model, test_assets, ensure_stt_model):
+        """Test /v1/audio/translations — non-English audio translated to English text"""
+        audio_file = test_assets["audio_dir"] / "Recording.m4a"
+        assert audio_file.exists(), f"Test asset not found: {audio_file}"
+
+        with open(audio_file, "rb") as fobj:
+            body = BodyCreateTranslationV1AudioTranslationsPost(
+                file=File(payload=fobj, file_name=audio_file.name),
+                model=test_model,
+            )
+            result = create_translation_v1_audio_translations_post.sync(client=client, body=body)
+
+        assert result is not None, "Translation result should not be None"
+        assert isinstance(result.text, str), "Translation should have text"
+        assert len(result.text.strip()) > 0, "Translation should not be empty"
+        assert result.duration > 0, "Translation should have positive duration"
+
+        print(f"\n[OK] Translation → '{result.text.strip()}' ({result.duration:.2f}s)")
 
 
 class TestTextToSpeech:
@@ -422,64 +472,42 @@ class TestTextToSpeech:
         """Test TTS with different speed"""
         text = "This is a speed test."
 
-        try:
-            normal_audio = _tts(client, text, speed=1.0)
-            fast_audio = _tts(client, text, speed=1.5)
+        normal_audio = _tts(client, text, speed=1.0)
+        fast_audio = _tts(client, text, speed=1.5)
 
-            assert isinstance(normal_audio, bytes), "Normal audio should be bytes"
-            assert isinstance(fast_audio, bytes), "Fast audio should be bytes"
-            assert len(normal_audio) > 0, "Normal audio should not be empty"
-            assert len(fast_audio) > 0, "Fast audio should not be empty"
+        assert isinstance(normal_audio, bytes), "Normal audio should be bytes"
+        assert isinstance(fast_audio, bytes), "Fast audio should be bytes"
+        assert len(normal_audio) > 0, "Normal audio should not be empty"
+        assert len(fast_audio) > 0, "Fast audio should not be empty"
 
-            print("\n[OK] Speed variations work")
-            print(f"  Normal: {len(normal_audio)} bytes")
-            print(f"  Fast (1.5x): {len(fast_audio)} bytes")
-
-            if len(fast_audio) < len(normal_audio):
-                print(f"  Speed reduction verified ({len(normal_audio) / len(fast_audio):.2f}x)")
-            else:
-                print("  Note: File sizes similar (system TTS limitation)")
-        except Exception as e:
-            if "timeout" in str(e).lower():
-                pytest.skip("TTS speed test timed out (known issue with system TTS)")
-            raise
+        print("\n[OK] Speed variations work")
+        print(f"  Normal: {len(normal_audio)} bytes")
+        print(f"  Fast (1.5x): {len(fast_audio)} bytes")
 
     def test_synthesize_long_text(self, client):
         """Test synthesizing longer text"""
-        text = "Testing speech synthesis."
+        text = " ".join(["Testing speech synthesis with a longer sentence."] * 5)
 
-        try:
-            audio_data = _tts(client, text)
+        audio_data = _tts(client, text)
 
-            assert isinstance(audio_data, bytes), "Should return bytes"
-            assert len(audio_data) > 1000, "Should produce audio data"
+        assert isinstance(audio_data, bytes), "Should return bytes"
+        assert len(audio_data) > 1000, "Should produce audio data"
 
-            print(f"\n[OK] Synthesized text ({len(text)} chars)")
-            print(f"  Audio size: {len(audio_data)} bytes")
-        except Exception as e:
-            if "timeout" in str(e).lower():
-                pytest.skip("TTS synthesis timed out (known issue with system TTS)")
-            raise
+        print(f"\n[OK] Synthesized long text ({len(text)} chars)")
+        print(f"  Audio size: {len(audio_data)} bytes")
 
     def test_synthesize_to_file(self, client, tmp_path):
-        """Test TTS with file output"""
+        """Test TTS audio can be written to disk"""
         text = "Save to file test."
         output_file = tmp_path / "test_output.mp3"
 
-        try:
-            audio_data = _tts(client, text)
-            output_file.write_bytes(audio_data)
+        audio_data = _tts(client, text)
+        output_file.write_bytes(audio_data)
 
-            assert output_file.exists(), "Output file should exist"
-            assert output_file.stat().st_size > 0, "File should not be empty"
-            assert len(audio_data) > 0, "Should also return audio data"
+        assert output_file.exists(), "Output file should exist"
+        assert output_file.stat().st_size > 0, "File should not be empty"
 
-            print(f"\n[OK] Saved to file: {output_file}")
-            print(f"  Size: {output_file.stat().st_size} bytes")
-        except Exception as e:
-            if "timeout" in str(e).lower():
-                pytest.skip("TTS save to file timed out (known issue with system TTS)")
-            raise
+        print(f"\n[OK] Saved to file: {output_file} ({output_file.stat().st_size} bytes)")
 
     @pytest.mark.parametrize(
         "fmt,check",
@@ -496,18 +524,13 @@ class TestTextToSpeech:
         """Test TTS output in each supported format"""
         text = "Format test."
 
-        try:
-            audio_data = _tts(client, text, response_format=TTSRequestResponseFormat(fmt))
+        audio_data = _tts(client, text, response_format=TTSRequestResponseFormat(fmt))
 
-            assert isinstance(audio_data, bytes), "Audio should be bytes"
-            assert len(audio_data) > 0, f"{fmt} audio should not be empty"
-            assert check(audio_data), f"Invalid {fmt} header"
+        assert isinstance(audio_data, bytes), "Audio should be bytes"
+        assert len(audio_data) > 0, f"{fmt} audio should not be empty"
+        assert check(audio_data), f"Invalid {fmt} header"
 
-            print(f"\n[OK] Format {fmt}: {len(audio_data)} bytes")
-        except Exception as e:
-            if "timeout" in str(e).lower():
-                pytest.skip(f"TTS {fmt} format test timed out")
-            raise
+        print(f"\n[OK] Format {fmt}: {len(audio_data)} bytes")
 
     def test_synthesize_mp3_smaller_than_wav(self, client):
         """Test that MP3 is smaller than WAV (compression works)"""
@@ -548,6 +571,19 @@ class TestTextToSpeech:
         assert response.status_code == 422, "Invalid format should return 422"
 
         print("\n[OK] Invalid format 'wma' correctly rejected with 422")
+
+    def test_synthesize_empty_text_rejected(self, api_server):
+        """Test that blank/whitespace text is rejected"""
+        import requests as req
+
+        for bad_text in ("", "   ", "\t\n"):
+            response = req.post(
+                f"{api_server}/v1/audio/speech",
+                json={"model": "pyttsx3", "input": bad_text},
+            )
+            assert response.status_code == 422, f"Expected 422 for text={repr(bad_text)}, got {response.status_code}"
+
+        print("\n[OK] Empty/whitespace text correctly rejected with 422")
 
     def test_stream_pcm_returns_bytes(self, api_server):
         """Test streaming TTS with pcm format yields raw PCM bytes"""
@@ -618,28 +654,23 @@ class TestTextToSpeech:
 
     def test_list_available_voices(self, client):
         """Test listing TTS voices"""
-        try:
-            result = list_voices_v1_audio_voices_get.sync(client=client)
+        result = list_voices_v1_audio_voices_get.sync(client=client)
 
-            assert result is not None, "Result should not be None"
-            assert isinstance(result.voices, list), "Voices should be a list"
-            assert len(result.voices) == result.total, "Count should match"
-            assert result.total > 0, "Should have at least one voice"
+        assert result is not None, "Result should not be None"
+        assert isinstance(result.voices, list), "Voices should be a list"
+        assert len(result.voices) == result.total, "Count should match"
+        assert result.total > 0, "Should have at least one voice"
 
-            for voice in result.voices:
-                assert voice.id is not None, "Voice should have ID"
-                assert voice.name is not None, "Voice should have name"
-                assert voice.language is not None, "Voice should have language"
+        for voice in result.voices:
+            assert voice.id is not None, "Voice should have ID"
+            assert voice.name is not None, "Voice should have name"
+            assert voice.language is not None, "Voice should have language"
 
-            print(f"\n[OK] Found {result.total} voice(s)")
-            for voice in result.voices[:5]:
-                print(f"  - {voice.name} ({voice.language})")
-            if result.total > 5:
-                print(f"  ... and {result.total - 5} more")
-        except Exception as e:
-            if "timeout" in str(e).lower():
-                pytest.skip("Voice listing timed out (known issue with system TTS)")
-            raise
+        print(f"\n[OK] Found {result.total} voice(s)")
+        for voice in result.voices[:5]:
+            print(f"  - {voice.name} ({voice.language})")
+        if result.total > 5:
+            print(f"  ... and {result.total - 5} more")
 
 
 class TestErrorHandling:
@@ -754,8 +785,8 @@ class TestRealtimeStream:
                             done_event = event
                             break
                     except TimeoutError:
-                        break
-            assert done_event is not None, "transcript.done not received"
+                        continue
+            assert done_event is not None, "transcript.done not received within 30s"
             assert "text" in done_event, "transcript.done must have 'text' field"
 
         _ws_run(_test())
@@ -779,9 +810,9 @@ class TestRealtimeStream:
                         if events[-1].get("type") in ("error", "transcript.done"):
                             break
                     except TimeoutError:
-                        break
+                        continue
             types = {e["type"] for e in events}
-            assert "error" in types or "transcript.done" in types
+            assert "error" in types or "transcript.done" in types, f"Expected error or done within 20s, got: {types}"
 
         _ws_run(_test())
         print("\n[OK] /v1/audio/stream: invalid model returns error or done")
@@ -831,7 +862,7 @@ class TestRealtimeOAI:
                         if event.get("type") == "conversation.item.input_audio_transcription.completed":
                             break
                     except TimeoutError:
-                        break
+                        continue
             types = [e["type"] for e in events]
             assert "input_audio_buffer.committed" in types, f"committed missing: {types}"
             completed = next((e for e in events if e.get("type") == "conversation.item.input_audio_transcription.completed"), None)
@@ -853,6 +884,148 @@ class TestRealtimeOAI:
         event = _ws_run(_test())
         assert event["type"] == "error" and event["error"]["code"] == "unknown_event"
         print(f"\n[OK] /v1/realtime: unknown event -> error({event['error']['code']})")
+
+
+_IN_CI = os.environ.get("CI") == "true" or os.environ.get("GITHUB_ACTIONS") == "true"
+
+_HAS_FASTER_QWEN3 = importlib.util.find_spec("faster_qwen3_tts") is not None
+try:
+    import torch as _torch
+    import torchaudio as _torchaudio
+
+    _HAS_CUDA = _torch.cuda.is_available()
+    _HAS_TORCHAUDIO_CUDA = "+cu" in _torchaudio.__version__
+except ImportError:
+    _HAS_CUDA = False
+    _HAS_TORCHAUDIO_CUDA = False
+
+
+def _make_reference_wav(duration_s: float = 5.0, sample_rate: int = 16000) -> bytes:
+    n_samples = int(sample_rate * duration_s)
+    t = np.linspace(0, duration_s, n_samples, endpoint=False)
+    audio = (
+        0.4 * np.sin(2 * np.pi * 180 * t)
+        + 0.3 * np.sin(2 * np.pi * 360 * t)
+        + 0.2 * np.sin(2 * np.pi * 720 * t)
+        + 0.1 * np.sin(2 * np.pi * 1440 * t)
+    )
+    samples = (audio * 16383).astype(np.int16)
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(samples.tobytes())
+    buf.seek(0)
+    return buf.read()
+
+
+@pytest.fixture(scope="session")
+def clone_model():
+    return vocal_settings.TTS_DEFAULT_CLONE_MODEL
+
+
+@pytest.fixture(scope="session")
+def ensure_clone_model(client, clone_model):
+    if not _HAS_FASTER_QWEN3:
+        pytest.fail("faster-qwen3-tts not installed — run: uv sync --extra qwen3-tts")
+    if not _HAS_CUDA:
+        pytest.fail("CUDA GPU required for voice clone tests — no CUDA device found")
+    if not _HAS_TORCHAUDIO_CUDA:
+        pytest.fail(
+            f"CPU-only torchaudio installed ({_torchaudio.__version__}) — "
+            "run: uv sync --extra qwen3-tts (pulls CUDA build from PyTorch index)"
+        )
+    model_info = get_model_v1_models_model_id_get.sync(model_id=clone_model, client=client)
+    if model_info is not None and model_info.status == ModelStatus.AVAILABLE:
+        return
+    download_model_v1_models_model_id_download_post.sync(model_id=clone_model, client=client)
+    for _ in range(300):
+        model_info = get_model_v1_models_model_id_get.sync(model_id=clone_model, client=client)
+        if model_info and model_info.status == ModelStatus.AVAILABLE:
+            return
+        time.sleep(1)
+    pytest.fail(f"Clone model {clone_model} not available after 300s")
+
+
+class TestVoiceClone:
+    """Test /v1/audio/clone voice cloning endpoint"""
+
+    def test_clone_empty_text(self, api_server):
+        ref_wav = _make_reference_wav(duration_s=5.0)
+        resp = httpx.post(
+            f"{api_server}/v1/audio/clone",
+            files={"reference_audio": ("ref.wav", ref_wav, "audio/wav")},
+            data={"text": "   ", "model": vocal_settings.TTS_DEFAULT_CLONE_MODEL},
+            timeout=30.0,
+        )
+        assert resp.status_code == 422, f"Expected 422 for empty text, got {resp.status_code}"
+        print("\n[OK] clone: empty text → 422")
+
+    def test_clone_invalid_model(self, api_server):
+        ref_wav = _make_reference_wav(duration_s=5.0)
+        resp = httpx.post(
+            f"{api_server}/v1/audio/clone",
+            files={"reference_audio": ("ref.wav", ref_wav, "audio/wav")},
+            data={"text": "Hello", "model": "nonexistent/model-xyz"},
+            timeout=30.0,
+        )
+        assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}"
+        print(f"\n[OK] clone: invalid model → {resp.status_code}")
+
+    def test_clone_reference_too_short(self, api_server):
+        short_wav = _make_reference_wav(duration_s=1.5)
+        resp = httpx.post(
+            f"{api_server}/v1/audio/clone",
+            files={"reference_audio": ("ref.wav", short_wav, "audio/wav")},
+            data={"text": "Hello", "model": vocal_settings.TTS_DEFAULT_CLONE_MODEL},
+            timeout=30.0,
+        )
+        assert resp.status_code in (400, 422), f"Expected 400/422 for too-short reference, got {resp.status_code}"
+        print(f"\n[OK] clone: reference too short → {resp.status_code}")
+
+    def test_clone_non_cloning_model(self, api_server):
+        ref_wav = _make_reference_wav(duration_s=5.0)
+        resp = httpx.post(
+            f"{api_server}/v1/audio/clone",
+            files={"reference_audio": ("ref.wav", ref_wav, "audio/wav")},
+            data={"text": "Hello", "model": "pyttsx3"},
+            timeout=30.0,
+        )
+        assert resp.status_code in (400, 503), f"Expected 400/503 for non-clone model, got {resp.status_code}"
+        print(f"\n[OK] clone: non-cloning model → {resp.status_code}")
+
+    @pytest.mark.skipif(_IN_CI, reason="CI: no GPU hardware")
+    def test_clone_synthesis_wav(self, api_server, ensure_clone_model, clone_model):
+        ref_wav = _make_reference_wav(duration_s=10.0)
+        resp = httpx.post(
+            f"{api_server}/v1/audio/clone",
+            files={"reference_audio": ("ref.wav", ref_wav, "audio/wav")},
+            data={"text": "Hello, this is a test of voice cloning.", "model": clone_model, "language": "en", "response_format": "wav"},
+            timeout=120.0,
+        )
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        assert len(resp.content) > 1000, "Expected non-trivial audio output"
+        buf = io.BytesIO(resp.content)
+        with wave.open(buf, "rb") as wf:
+            assert wf.getnchannels() >= 1
+            assert wf.getframerate() > 0
+            assert wf.getnframes() > 0
+        print(f"\n[OK] clone synthesis → {len(resp.content):,} bytes WAV, rate={wf.getframerate()}")
+
+    @pytest.mark.skipif(_IN_CI, reason="CI: no GPU hardware")
+    def test_clone_response_formats(self, api_server, ensure_clone_model, clone_model):
+        ref_wav = _make_reference_wav(duration_s=10.0)
+        for fmt in ("wav", "mp3"):
+            resp = httpx.post(
+                f"{api_server}/v1/audio/clone",
+                files={"reference_audio": ("ref.wav", ref_wav, "audio/wav")},
+                data={"text": "Format test.", "model": clone_model, "response_format": fmt},
+                timeout=120.0,
+            )
+            assert resp.status_code == 200, f"{fmt}: Expected 200, got {resp.status_code}"
+            assert len(resp.content) > 100, f"{fmt}: empty response"
+            print(f"\n[OK] clone: {fmt} → {len(resp.content):,} bytes")
 
 
 if __name__ == "__main__":

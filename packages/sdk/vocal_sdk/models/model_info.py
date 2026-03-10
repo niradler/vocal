@@ -49,6 +49,16 @@ class ModelInfo:
         likes (int | None | Unset): Likes on HuggingFace
         sha (None | str | Unset): Git commit SHA
         files (list[ModelInfoFilesType0Item] | None | Unset): List of model files
+        supports_streaming (bool | Unset): Whether the model supports true streaming output Default: False.
+        supports_voice_list (bool | Unset): Whether the model exposes selectable voices Default: False.
+        supports_voice_clone (bool | Unset): Whether the model supports reference-audio voice cloning Default: False.
+        supports_voice_design (bool | Unset): Whether the model supports prompt/instruction-based voice design Default:
+            False.
+        requires_gpu (bool | Unset): Whether the model requires GPU acceleration Default: False.
+        voice_mode (None | str | Unset): How /v1/audio/speech interprets the voice field
+        clone_mode (None | str | Unset): How /v1/audio/clone works for this model
+        reference_audio_min_seconds (float | None | Unset): Recommended minimum reference audio length for cloning
+        reference_audio_max_seconds (float | None | Unset): Recommended maximum reference audio length for cloning
     """
 
     id: str
@@ -74,6 +84,15 @@ class ModelInfo:
     likes: int | None | Unset = UNSET
     sha: None | str | Unset = UNSET
     files: list[ModelInfoFilesType0Item] | None | Unset = UNSET
+    supports_streaming: bool | Unset = False
+    supports_voice_list: bool | Unset = False
+    supports_voice_clone: bool | Unset = False
+    supports_voice_design: bool | Unset = False
+    requires_gpu: bool | Unset = False
+    voice_mode: None | str | Unset = UNSET
+    clone_mode: None | str | Unset = UNSET
+    reference_audio_min_seconds: float | None | Unset = UNSET
+    reference_audio_max_seconds: float | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -181,6 +200,40 @@ class ModelInfo:
         else:
             files = self.files
 
+        supports_streaming = self.supports_streaming
+
+        supports_voice_list = self.supports_voice_list
+
+        supports_voice_clone = self.supports_voice_clone
+
+        supports_voice_design = self.supports_voice_design
+
+        requires_gpu = self.requires_gpu
+
+        voice_mode: None | str | Unset
+        if isinstance(self.voice_mode, Unset):
+            voice_mode = UNSET
+        else:
+            voice_mode = self.voice_mode
+
+        clone_mode: None | str | Unset
+        if isinstance(self.clone_mode, Unset):
+            clone_mode = UNSET
+        else:
+            clone_mode = self.clone_mode
+
+        reference_audio_min_seconds: float | None | Unset
+        if isinstance(self.reference_audio_min_seconds, Unset):
+            reference_audio_min_seconds = UNSET
+        else:
+            reference_audio_min_seconds = self.reference_audio_min_seconds
+
+        reference_audio_max_seconds: float | None | Unset
+        if isinstance(self.reference_audio_max_seconds, Unset):
+            reference_audio_max_seconds = UNSET
+        else:
+            reference_audio_max_seconds = self.reference_audio_max_seconds
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -227,6 +280,24 @@ class ModelInfo:
             field_dict["sha"] = sha
         if files is not UNSET:
             field_dict["files"] = files
+        if supports_streaming is not UNSET:
+            field_dict["supports_streaming"] = supports_streaming
+        if supports_voice_list is not UNSET:
+            field_dict["supports_voice_list"] = supports_voice_list
+        if supports_voice_clone is not UNSET:
+            field_dict["supports_voice_clone"] = supports_voice_clone
+        if supports_voice_design is not UNSET:
+            field_dict["supports_voice_design"] = supports_voice_design
+        if requires_gpu is not UNSET:
+            field_dict["requires_gpu"] = requires_gpu
+        if voice_mode is not UNSET:
+            field_dict["voice_mode"] = voice_mode
+        if clone_mode is not UNSET:
+            field_dict["clone_mode"] = clone_mode
+        if reference_audio_min_seconds is not UNSET:
+            field_dict["reference_audio_min_seconds"] = reference_audio_min_seconds
+        if reference_audio_max_seconds is not UNSET:
+            field_dict["reference_audio_max_seconds"] = reference_audio_max_seconds
 
         return field_dict
 
@@ -380,6 +451,56 @@ class ModelInfo:
 
         files = _parse_files(d.pop("files", UNSET))
 
+        supports_streaming = d.pop("supports_streaming", UNSET)
+
+        supports_voice_list = d.pop("supports_voice_list", UNSET)
+
+        supports_voice_clone = d.pop("supports_voice_clone", UNSET)
+
+        supports_voice_design = d.pop("supports_voice_design", UNSET)
+
+        requires_gpu = d.pop("requires_gpu", UNSET)
+
+        def _parse_voice_mode(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        voice_mode = _parse_voice_mode(d.pop("voice_mode", UNSET))
+
+        def _parse_clone_mode(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        clone_mode = _parse_clone_mode(d.pop("clone_mode", UNSET))
+
+        def _parse_reference_audio_min_seconds(data: object) -> float | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(float | None | Unset, data)
+
+        reference_audio_min_seconds = _parse_reference_audio_min_seconds(
+            d.pop("reference_audio_min_seconds", UNSET)
+        )
+
+        def _parse_reference_audio_max_seconds(data: object) -> float | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(float | None | Unset, data)
+
+        reference_audio_max_seconds = _parse_reference_audio_max_seconds(
+            d.pop("reference_audio_max_seconds", UNSET)
+        )
+
         model_info = cls(
             id=id,
             name=name,
@@ -404,6 +525,15 @@ class ModelInfo:
             likes=likes,
             sha=sha,
             files=files,
+            supports_streaming=supports_streaming,
+            supports_voice_list=supports_voice_list,
+            supports_voice_clone=supports_voice_clone,
+            supports_voice_design=supports_voice_design,
+            requires_gpu=requires_gpu,
+            voice_mode=voice_mode,
+            clone_mode=clone_mode,
+            reference_audio_min_seconds=reference_audio_min_seconds,
+            reference_audio_max_seconds=reference_audio_max_seconds,
         )
 
         model_info.additional_properties = d

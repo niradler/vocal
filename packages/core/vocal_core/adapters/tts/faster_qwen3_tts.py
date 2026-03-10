@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import tempfile
+import threading
 import wave
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -66,8 +67,15 @@ class FasterQwen3TTSAdapter(TTSAdapter):
             raise RuntimeError("faster-qwen3-tts requires NVIDIA CUDA. No CUDA device detected. Use a Kokoro or Piper model for CPU-only inference.")
 
         self.model_path = model_path
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(self._executor, self._load_sync)
+        # CUDA graph capture during warmup requires a larger thread stack than the
+        # Windows default (1 MB). Set 64 MB before the executor spawns its thread,
+        # then restore the OS default so other parts of the program are unaffected.
+        prev_stack = threading.stack_size(64 * 1024 * 1024)
+        loop = asyncio.get_running_loop()
+        try:
+            await loop.run_in_executor(self._executor, self._load_sync)
+        finally:
+            threading.stack_size(prev_stack)
 
     def _load_sync(self) -> None:
         logger.info(f"Loading Qwen3-TTS from {self.model_path} ...")
@@ -155,7 +163,7 @@ class FasterQwen3TTSAdapter(TTSAdapter):
             raise ValueError(f"Unsupported format '{output_format}'. Supported: {', '.join(sorted(SUPPORTED_FORMATS))}")
 
         lang = _to_full_language(language or "en")
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         audio_array, sr = await loop.run_in_executor(self._executor, self._synthesize_sync, text, voice, lang)
         self._sample_rate = sr
 
@@ -195,7 +203,7 @@ class FasterQwen3TTSAdapter(TTSAdapter):
             raise ValueError(f"Unsupported format '{request.output_format}'. Supported: {', '.join(sorted(SUPPORTED_FORMATS))}")
 
         language = _to_full_language(request.language or "en")
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         audio_array, sr = await loop.run_in_executor(self._executor, self._clone_sync, request, language)
         self._sample_rate = sr
 

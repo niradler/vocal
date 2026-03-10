@@ -24,6 +24,7 @@ class TransformersSTTAdapter(STTAdapter):
         self.pipe: Any = None
         self.model_path: Path | None = None
         self.device: str = "cpu"
+        self._is_ctc: bool = False
 
     async def load_model(self, model_path: Path, device: str = "auto", **kwargs) -> None:
         if not TRANSFORMERS_AVAILABLE:
@@ -33,32 +34,27 @@ class TransformersSTTAdapter(STTAdapter):
 
     def _load_sync(self, model_path: Path, device: str) -> None:
         import torch
-        from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+        from transformers import AutoConfig, pipeline
 
         resolved = "cuda" if device == "auto" and torch.cuda.is_available() else ("cpu" if device == "auto" else device)
         dtype = torch.float16 if resolved == "cuda" else torch.float32
 
         logger.info("Loading transformers STT model from %s on %s", model_path, resolved)
-        model = AutoModelForSpeechSeq2Seq.from_pretrained(
-            str(model_path),
-            torch_dtype=dtype,
-            low_cpu_mem_usage=True,
-        )
-        model.to(resolved)
-        processor = AutoProcessor.from_pretrained(str(model_path))
+
+        cfg = AutoConfig.from_pretrained(str(model_path))
+        model_type = getattr(cfg, "model_type", "")
+        self._is_ctc = model_type in {"wav2vec2", "wav2vec2-conformer", "hubert", "data2vec-audio", "unispeech", "unispeech-sat", "wavlm"}
 
         self.pipe = pipeline(
             "automatic-speech-recognition",
-            model=model,
-            tokenizer=processor.tokenizer,
-            feature_extractor=processor.feature_extractor,
+            model=str(model_path),
             torch_dtype=dtype,
             device=resolved,
             chunk_length_s=30,
         )
         self.model_path = model_path
         self.device = resolved
-        logger.info("Transformers STT model loaded on %s", resolved)
+        logger.info("Transformers STT model loaded on %s (type=%s)", resolved, model_type)
 
     async def unload_model(self) -> None:
         self.pipe = None
@@ -105,10 +101,11 @@ class TransformersSTTAdapter(STTAdapter):
                 audio_path = temp_path
 
             generate_kwargs: dict[str, Any] = {}
-            if language:
-                generate_kwargs["language"] = language
-            if task == "translate":
-                generate_kwargs["task"] = "translate"
+            if not self._is_ctc:
+                if language:
+                    generate_kwargs["language"] = language
+                if task == "translate":
+                    generate_kwargs["task"] = "translate"
 
             loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(None, self._run_pipeline, audio_path, generate_kwargs)

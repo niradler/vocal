@@ -47,6 +47,7 @@ kokoro = [
 qwen3-tts = [
     "faster-qwen3-tts>=0.2.1",
     "torch>=2.6.0",
+    "torchaudio>=2.6.0",
 ]
 transformers = [
     "transformers>=4.40.0",

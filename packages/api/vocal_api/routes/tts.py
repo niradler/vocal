@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from vocal_core.config import vocal_settings
 
@@ -123,6 +123,13 @@ class TTSRequest(BaseModel):
     response_format: AudioFormat = Field("mp3", description="Audio format: mp3, opus, aac, flac, wav, pcm")
     stream: bool = Field(False, description="Stream audio chunks as they are generated")
 
+    @field_validator("input")
+    @classmethod
+    def input_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("input text must not be blank or whitespace-only")
+        return v
+
 
 class VoiceInfo(BaseModel):
     """Voice information"""
@@ -152,7 +159,10 @@ class CloneResponse(BaseModel):
 @router.post(
     "/speech",
     response_class=Response,
-    responses={200: {"content": {"audio/mpeg": {}}, "description": "Audio file in the requested format"}},
+    responses={
+        200: {"content": {"audio/mpeg": {}}, "description": "Audio file in the requested format"},
+        503: {"description": "Model or required dependency not available on this server"},
+    },
 )
 async def text_to_speech(request: TTSRequest, service: TTSService = Depends(get_tts_service)):
     """
@@ -205,7 +215,7 @@ async def text_to_speech(request: TTSRequest, service: TTSService = Depends(get_
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except ImportError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.exception("TTS synthesis failed")
         raise HTTPException(status_code=500, detail=f"TTS error: {str(e)}")
@@ -229,7 +239,10 @@ async def list_voices(model: str | None = None, service: TTSService = Depends(ge
 @router.post(
     "/clone",
     response_class=Response,
-    responses={200: {"content": {"audio/wav": {}}, "description": "Synthesized audio using cloned voice"}},
+    responses={
+        200: {"content": {"audio/wav": {}}, "description": "Synthesized audio using cloned voice"},
+        503: {"description": "Model or required dependency not available on this server"},
+    },
     summary="Voice cloning synthesis",
 )
 async def voice_clone(
@@ -294,9 +307,9 @@ async def voice_clone(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except ImportError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=503, detail=str(e))
     except RuntimeError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.exception("Voice clone synthesis failed")
         raise HTTPException(status_code=500, detail=f"Voice clone error: {str(e)}")

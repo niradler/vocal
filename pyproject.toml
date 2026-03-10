@@ -49,6 +49,7 @@ kokoro = [
 qwen3-tts = [
     "faster-qwen3-tts>=0.2.2",
     "torch>=2.6.0",
+    "torchaudio>=2.6.0",
 ]
 
 [build-system]
@@ -77,6 +78,7 @@ vocal-api = { workspace = true, editable = true }
 vocal-sdk = { workspace = true, editable = true }
 vocal-cli = { workspace = true, editable = true }
 torch = { index = "pytorch" }
+torchaudio = { index = "pytorch" }
 
 [dependency-groups]
 dev = [

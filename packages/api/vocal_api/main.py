@@ -1,3 +1,19 @@
+import os
+import sys
+
+if sys.platform == "win32":
+    import ctypes
+    try:
+        import torch as _torch
+        _torch_lib = os.path.join(os.path.dirname(_torch.__file__), "lib")
+        _cudnn_stub = os.path.join(_torch_lib, "cudnn64_9.dll")
+        if os.path.exists(_cudnn_stub):
+            ctypes.WinDLL(_cudnn_stub)
+        del _torch, _torch_lib, _cudnn_stub
+    except Exception:
+        pass
+    del ctypes
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi

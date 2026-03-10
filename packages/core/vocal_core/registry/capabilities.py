@@ -226,7 +226,8 @@ def infer_model_capabilities(
     overrides = overrides or CapabilityOverrides()
     inferred_voice_mode = overrides.voice_mode
     inferred_clone_mode = overrides.clone_mode
-    inferred_supports_streaming = overrides.supports_streaming if overrides.supports_streaming is not None else False
+    _streaming_default = backend == "faster_whisper"
+    inferred_supports_streaming = overrides.supports_streaming if overrides.supports_streaming is not None else _streaming_default
     inferred_supports_voice_list = overrides.supports_voice_list if overrides.supports_voice_list is not None else False
     inferred_supports_voice_clone = overrides.supports_voice_clone if overrides.supports_voice_clone is not None else False
     inferred_supports_voice_design = overrides.supports_voice_design if overrides.supports_voice_design is not None else False

@@ -28,10 +28,12 @@ from vocal_sdk.api.transcription import (
     create_transcription_v1_audio_transcriptions_post,
     create_translation_v1_audio_translations_post,
 )
+from vocal_sdk.errors import UnexpectedStatus
 from vocal_sdk.models import (
     BodyCreateTranscriptionV1AudioTranscriptionsPost,
     BodyCreateTranslationV1AudioTranslationsPost,
     BodyVoiceCloneV1AudioClonePost,
+    BodyVoiceCloneV1AudioClonePostResponseFormat,
     TranscriptionFormat,
 )
 from vocal_sdk.types import UNSET, File, Unset
@@ -51,6 +53,7 @@ _SAMPLE_RATE = vocal_settings.STT_SAMPLE_RATE
 _FRAME_SIZE = vocal_settings.AUDIO_FRAME_SIZE
 _CHANNELS = vocal_settings.AUDIO_CHANNELS
 _PLAYBACK_COOLDOWN = vocal_settings.PLAYBACK_COOLDOWN
+_VAD_THRESHOLD = vocal_settings.VAD_THRESHOLD
 _CALIB_FRAMES = 15
 
 _print_lock = threading.Lock()
@@ -76,6 +79,38 @@ def _make_client(api_url: str) -> VocalClient:
     return VocalClient(base_url=api_url, timeout=httpx.Timeout(300.0), raise_on_unexpected_status=True)
 
 
+def _api_error_message(exc: UnexpectedStatus) -> str:
+    try:
+        body = json.loads(exc.content)
+        detail = body.get("detail", "")
+        if isinstance(detail, list):
+            return "; ".join(e.get("msg", str(e)) for e in detail)
+        if detail:
+            return str(detail)
+    except Exception:
+        pass
+    return f"HTTP {exc.status_code}"
+
+
+def _print_transcription(result, output_format: str) -> None:
+    if output_format == "text":
+        console.print(result.text)
+    elif output_format == "json":
+        console.print_json(json.dumps(result.to_dict()))
+    elif output_format in ("srt", "vtt"):
+        segs = [] if isinstance(result.segments, Unset) or result.segments is None else result.segments
+        if output_format == "vtt":
+            console.print("WEBVTT\n")
+        for seg in segs:
+            if output_format == "srt":
+                console.print(f"{seg.id + 1}")
+                console.print(f"{_format_timestamp(seg.start)} --> {_format_timestamp(seg.end)}")
+            else:
+                console.print(f"{_format_timestamp(seg.start, use_comma=False)} --> {_format_timestamp(seg.end, use_comma=False)}")
+            console.print(seg.text)
+            console.print()
+
+
 @app.command("transcribe")
 def transcribe(
     audio_file: Path = typer.Argument(..., help="Path to audio file to transcribe"),
@@ -85,49 +120,59 @@ def transcribe(
         "-m",
         help="STT model to use",
     ),
-    language: str | None = typer.Option(None, "--language", "-l", help="Language code (e.g., 'en', 'es')"),
+    models: bool = typer.Option(False, "--models", help="Interactively select from downloaded STT models"),
+    language: str | None = typer.Option(None, "--language", "-l", help="Language code (e.g. 'en'). Auto-detected if omitted."),
+    task: str = typer.Option("transcribe", "--task", "-t", help="'transcribe' (default) or 'translate' to English"),
     output_format: str = typer.Option("text", "--format", "-f", help="Output format: text, json, srt, vtt"),
     api_url: str = typer.Option("http://localhost:8000", "--api-url", envvar="VOCAL_API_URL", help="Vocal API URL"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show latency and timing info"),
 ):
-    """Transcribe an audio file to text"""
+    """Transcribe an audio file to text (use --task translate to translate to English)"""
+    if models:
+        selected_model = _model_wizard(api_url)
+        if selected_model is None:
+            raise typer.Exit(1)
+        model = selected_model
     if not audio_file.exists():
         console.print(f"[red]Error:[/red] File not found: {audio_file}")
         raise typer.Exit(1)
 
+    _check_model_ready(api_url, model)
+
     try:
         vc = _make_client(api_url)
-        console.print("Transcribing audio...")
+        t0 = time.monotonic()
 
         with open(audio_file, "rb") as fobj:
-            body = BodyCreateTranscriptionV1AudioTranscriptionsPost(
-                file=File(payload=fobj, file_name=audio_file.name),
-                model=model,
-                language=language if language is not None else UNSET,
-                response_format=TranscriptionFormat.JSON,
-            )
-            result = create_transcription_v1_audio_transcriptions_post.sync(client=vc, body=body)
+            if task == "translate":
+                body_t = BodyCreateTranslationV1AudioTranslationsPost(
+                    file=File(payload=fobj, file_name=audio_file.name),
+                    model=model,
+                )
+                result = create_translation_v1_audio_translations_post.sync(client=vc, body=body_t)
+            else:
+                body_s = BodyCreateTranscriptionV1AudioTranscriptionsPost(
+                    file=File(payload=fobj, file_name=audio_file.name),
+                    model=model,
+                    language=language if language is not None else UNSET,
+                    response_format=TranscriptionFormat.JSON,
+                )
+                result = create_transcription_v1_audio_transcriptions_post.sync(client=vc, body=body_s)
+
+        elapsed = time.monotonic() - t0
 
         if result is None:
             console.print("[red]Error:[/red] Transcription failed - no response")
             raise typer.Exit(1)
 
-        if output_format == "text":
-            console.print(result.text)
-        elif output_format == "json":
-            console.print_json(json.dumps(result.to_dict()))
-        elif output_format in ("srt", "vtt"):
-            segs = [] if isinstance(result.segments, Unset) or result.segments is None else result.segments
-            if output_format == "vtt":
-                console.print("WEBVTT\n")
-            for seg in segs:
-                if output_format == "srt":
-                    console.print(f"{seg.id + 1}")
-                    console.print(f"{_format_timestamp(seg.start)} --> {_format_timestamp(seg.end)}")
-                else:
-                    console.print(f"{_format_timestamp(seg.start, use_comma=False)} --> {_format_timestamp(seg.end, use_comma=False)}")
-                console.print(seg.text)
-                console.print()
+        if verbose:
+            size_kb = audio_file.stat().st_size / 1024
+            console.print(f"[dim]  {audio_file.name} ({size_kb:.1f} KB) → {elapsed:.1f}s[/dim]")
 
+        _print_transcription(result, output_format)
+
+    except typer.Exit:
+        raise
     except Exception as e:
         console.print(f"[red]Error:[/red] {str(e)}")
         raise typer.Exit(1)
@@ -139,6 +184,10 @@ def models_list(
     api_url: str = typer.Option("http://localhost:8000", "--api-url", envvar="VOCAL_API_URL", help="Vocal API URL"),
 ):
     """List all available models"""
+    _VALID_TASKS = ("stt", "tts")
+    if task is not None and task not in _VALID_TASKS:
+        console.print(f"[red]Error:[/red] Invalid task '{task}'. Valid options: {', '.join(_VALID_TASKS)}")
+        raise typer.Exit(1)
     try:
         vc = _make_client(api_url)
         response = list_models_v1_models_get.sync(client=vc, task=task if task is not None else UNSET)
@@ -258,19 +307,35 @@ def clone(
         "-m",
         help="TTS model to use for voice cloning (must support cloning)",
     ),
+    models: bool = typer.Option(False, "--models", help="Interactively select from downloaded TTS models"),
     reference_text: str | None = typer.Option(None, "--reference-text", help="Optional transcript of the reference audio"),
-    language: str = typer.Option("en", "--language", "-l", help="Target language code (e.g. 'en', 'zh')"),
-    response_format: str = typer.Option("wav", "--format", "-f", help="Output audio format: wav, mp3, flac, pcm"),
+    language: str = typer.Option("en", "--language", "-l", help="Language code (e.g. 'en', 'zh')"),
+    response_format: str = typer.Option("wav", "--format", "-f", help="Output audio format: wav, mp3, flac, pcm, aac, opus"),
     api_url: str = typer.Option("http://localhost:8000", "--api-url", envvar="VOCAL_API_URL", help="Vocal API URL"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show synthesis timing and output size"),
 ) -> None:
     """Clone a voice from a reference recording and synthesize text with it"""
+    if models:
+        selected_model = _model_wizard(api_url, task="tts")
+        if selected_model is None:
+            raise typer.Exit(1)
+        model = selected_model
     if not reference.exists():
         console.print(f"[red]Error:[/red] Reference file not found: {reference}")
         raise typer.Exit(1)
 
     try:
+        fmt = BodyVoiceCloneV1AudioClonePostResponseFormat(response_format.lower())
+    except ValueError:
+        valid = ", ".join(f.value for f in BodyVoiceCloneV1AudioClonePostResponseFormat)
+        console.print(f"[red]Error:[/red] Invalid format '{response_format}'. Valid options: {valid}")
+        raise typer.Exit(1)
+
+    _check_model_ready(api_url, model)
+
+    try:
         vc = _make_client(api_url)
-        console.print(f"[dim]Cloning voice from [cyan]{reference.name}[/cyan]...[/dim]")
+        t0 = time.monotonic()
 
         with open(reference, "rb") as fobj:
             body = BodyVoiceCloneV1AudioClonePost(
@@ -279,22 +344,27 @@ def clone(
                 model=model,
                 reference_text=reference_text if reference_text is not None else UNSET,
                 language=language,
+                response_format=fmt,
             )
             resp = voice_clone_v1_audio_clone_post.sync_detailed(client=vc, body=body)
 
+        elapsed = time.monotonic() - t0
+
         if resp.status_code != 200:
-            console.print(f"[red]Error:[/red] Server returned {resp.status_code}")
+            _clone_error(resp.content, resp.status_code)
             raise typer.Exit(1)
 
         audio_bytes = resp.content
-        if output:
-            output.write_bytes(audio_bytes)
-            console.print(f"[green]Saved[/green] {len(audio_bytes):,} bytes → [cyan]{output}[/cyan]")
-        else:
-            sys.stdout.buffer.write(audio_bytes)
+        _clone_output(audio_bytes, fmt, response_format, output, elapsed, verbose)
 
     except typer.Exit:
         raise
+    except UnexpectedStatus as e:
+        msg = _api_error_message(e)
+        console.print(f"[red]Error:[/red] {msg}")
+        if e.status_code == 503:
+            console.print("[dim]The model or a required package is not available on the server.[/dim]")
+        raise typer.Exit(1)
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
@@ -585,10 +655,32 @@ def _device_wizard() -> str | None:
     return None
 
 
-def _model_wizard(api_url: str) -> str | None:
+def _output_device_wizard() -> str | None:
+    devs = _output_devices()
+    if not devs:
+        console.print("[red]No output devices found.[/red]")
+        return None
+    console.print("\n[bold]Select output device:[/bold]\n")
+    default_pos = next((i for i, d in enumerate(devs) if d["is_default"]), 0)
+    for i, dev in enumerate(devs):
+        marker = "  [green]default[/green]" if dev["is_default"] else ""
+        console.print(f"  [cyan]{i}[/cyan]  {dev['name']}  [dim]{dev['sample_rate']} Hz[/dim]{marker}")
+    raw = typer.prompt("\nDevice", default=str(default_pos))
+    if raw.isdigit():
+        pos = int(raw)
+        if 0 <= pos < len(devs):
+            return str(devs[pos]["index"])
+    for dev in devs:
+        if raw.lower() in dev["name"].lower():
+            return str(dev["index"])
+    console.print("[red]Invalid selection.[/red]")
+    return None
+
+
+def _model_wizard(api_url: str, task: str = "stt", require_streaming: bool = False) -> str | None:
     try:
         probe = VocalClient(base_url=api_url, timeout=httpx.Timeout(5.0), raise_on_unexpected_status=False)
-        result = list_models_v1_models_get.sync(client=probe, task="stt")
+        result = list_models_v1_models_get.sync(client=probe, task=task)
     except Exception as e:
         console.print(f"[red]Could not reach API:[/red] {e}")
         return None
@@ -597,15 +689,23 @@ def _model_wizard(api_url: str) -> str | None:
         console.print("[red]No response from API.[/red]")
         return None
 
-    models = [m for m in result.models if str(m.status).lower().endswith("available")]
+    models = [m for m in result.models if m.status.value == "available"]
+    if require_streaming:
+        models = [m for m in models if not isinstance(m.supports_streaming, Unset) and m.supports_streaming]
     if not models:
-        console.print("[yellow]No downloaded STT models found.[/yellow] Run [cyan]vocal models pull <id>[/cyan] first.")
+        no_models_msg = (
+            f"[yellow]No downloaded {task.upper()} models with streaming support found.[/yellow] Pull a [cyan]faster-whisper[/cyan] model first."
+            if require_streaming
+            else f"[yellow]No downloaded {task.upper()} models found.[/yellow] Run [cyan]vocal models pull <id>[/cyan] first."
+        )
+        console.print(no_models_msg)
         return None
 
-    default_model = vocal_settings.STT_DEFAULT_MODEL
+    default_model = vocal_settings.STT_DEFAULT_MODEL if task == "stt" else vocal_settings.TTS_DEFAULT_MODEL
     default_pos = next((i for i, m in enumerate(models) if m.id == default_model), 0)
 
-    console.print("\n[bold]Select STT model:[/bold]")
+    hint = "  [dim](streaming-capable only)[/dim]" if require_streaming else ""
+    console.print(f"\n[bold]Select {task.upper()} model:[/bold]{hint}")
     console.print("[dim]Only downloaded (available) models are shown.[/dim]\n")
     for i, m in enumerate(models):
         size = f"  [dim]{m.size_readable}[/dim]" if not isinstance(m.size_readable, Unset) else ""
@@ -624,6 +724,7 @@ def _model_wizard(api_url: str) -> str | None:
             return m.id
     console.print("[red]Invalid selection.[/red]")
     return None
+
 
 
 def _listen_stream(device_idx: int | None, model: str, task: str, language: str | None, api_url: str, verbose: bool) -> None:
@@ -646,7 +747,7 @@ def _listen_stream(device_idx: int | None, model: str, task: str, language: str 
 
 def _check_model_ready(api_url: str, model: str) -> None:
     probe = VocalClient(base_url=api_url, timeout=httpx.Timeout(5.0), raise_on_unexpected_status=False)
-    console.print("[dim]Checking model status...[/dim]", end=" ")
+    console.print(f"[dim]Checking model status on {api_url}...[/dim]", end=" ")
     try:
         models_result = list_models_v1_models_get.sync(client=probe)
         model_info = next((m for m in (models_result.models if models_result else []) if m.id == model), None)
@@ -711,11 +812,11 @@ def _listen_vad(
 @app.command()
 def listen(
     model: str = typer.Option(vocal_settings.STT_DEFAULT_MODEL, "--model", "-m", help="STT model to use"),
-    language: str | None = typer.Option(None, "--language", "-l", help="Language code (e.g. 'en'). Auto-detects if omitted."),
-    task: str = typer.Option("transcribe", "--task", help="'transcribe' (default) or 'translate' to English"),
-    device: str | None = typer.Option(None, "--device", "-d", help="Input device index or name. Use --devices to pick interactively."),
-    devices: bool = typer.Option(False, "--devices", help="Show a device picker and select your input source before starting"),
-    models: bool = typer.Option(False, "--models", help="Show a model picker from downloaded STT models before starting"),
+    models: bool = typer.Option(False, "--models", help="Interactively select from downloaded STT models"),
+    language: str | None = typer.Option(None, "--language", "-l", help="Language code (e.g. 'en'). Auto-detected if omitted."),
+    task: str = typer.Option("transcribe", "--task", "-t", help="'transcribe' (default) or 'translate' to English"),
+    device: str | None = typer.Option(None, "--device", "-d", help="Input device index or name (use --devices to pick interactively)"),
+    devices: bool = typer.Option(False, "--devices", help="Interactively select input device before starting"),
     stream: bool = typer.Option(False, "--stream", help="Low-latency mode (~200ms) that streams audio over WebSocket. Default mode waits for a pause in speech before sending."),
     silence_threshold: float | None = typer.Option(None, "--silence-threshold", help="Mic sensitivity level. Auto-set from ambient noise at startup. Ignored with --stream."),
     silence_duration: float = typer.Option(1.5, "--silence-duration", help="Seconds of quiet that trigger a transcription. Ignored with --stream."),
@@ -734,7 +835,7 @@ def listen(
             raise typer.Exit(1)
         device = selected
     if models:
-        selected_model = _model_wizard(api_url)
+        selected_model = _model_wizard(api_url, require_streaming=True)
         if selected_model is None:
             raise typer.Exit(1)
         model = selected_model
@@ -801,20 +902,32 @@ def _print_output_devices_table() -> None:
 
 @app.command()
 def chat(
-    model: str = typer.Option(
-        "Systran/faster-whisper-tiny",
-        "--model",
-        "-m",
-        help="STT model to use for transcription",
-    ),
-    device: str | None = typer.Option(None, "--device", "-d", help="Input device index or name substring. Run `vocal devices` to list."),
-    output_device: str | None = typer.Option(None, "--output-device", "-o", help="Output device index or name. Run `vocal output-devices` to list."),
-    language: str | None = typer.Option(None, "--language", "-l", help="Language code (e.g. 'en'). Auto-detect if omitted."),
+    model: str = typer.Option(vocal_settings.STT_DEFAULT_MODEL, "--model", "-m", help="STT model to use"),
+    models: bool = typer.Option(False, "--models", help="Interactively select from downloaded STT models"),
+    language: str | None = typer.Option(None, "--language", "-l", help="Language code (e.g. 'en'). Auto-detected if omitted."),
+    device: str | None = typer.Option(None, "--device", "-d", help="Input device index or name (use --devices to pick interactively)"),
+    output_device: str | None = typer.Option(None, "--output-device", "-o", help="Output device index or name (run `vocal devices --output` to list)"),
+    devices: bool = typer.Option(False, "--devices", help="Interactively select input and output devices before starting"),
+    silence_threshold: float | None = typer.Option(None, "--silence-threshold", help="VAD sensitivity (same scale as listen). Auto-configured if omitted."),
     system_prompt: str = typer.Option(_DEFAULT_SYSTEM_PROMPT, "--system-prompt", "-s", help="System prompt sent to the LLM."),
     api_url: str = typer.Option("http://localhost:8000", "--api-url", envvar="VOCAL_API_URL", help="Vocal API URL"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show transcription and LLM response text"),
 ) -> None:
     """Voice chat: speak to the AI and hear it respond (STT -> LLM -> TTS loop via /v1/realtime)"""
+    if devices:
+        selected = _device_wizard()
+        if selected is None:
+            raise typer.Exit(1)
+        device = selected
+        selected_out = _output_device_wizard()
+        if selected_out is None:
+            raise typer.Exit(1)
+        output_device = selected_out
+    if models:
+        selected_model = _model_wizard(api_url, require_streaming=True)
+        if selected_model is None:
+            raise typer.Exit(1)
+        model = selected_model
     try:
         device_idx = _resolve_device(device)
         output_device_idx = _resolve_output_device(output_device)
@@ -822,20 +935,62 @@ def chat(
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
 
+    _check_model_ready(api_url, model)
     ws_url = api_url.replace("http://", "ws://").replace("https://", "wss://")
     active_device = sd.query_devices(device_idx if device_idx is not None else sd.default.device[0])
     device_label = f"[dim]{active_device['name']}[/dim]"
+    threshold_hint = f"  vad=[cyan]{silence_threshold:.0f}[/cyan]" if silence_threshold is not None else ""
 
-    console.print(f"[green]Voice chat started[/green] model=[cyan]{model}[/cyan] device={device_label}  Ctrl+C to stop\n")
+    console.print(f"[green]Voice chat started[/green] model=[cyan]{model}[/cyan] device={device_label}{threshold_hint}  Ctrl+C to stop\n")
     console.print("[dim]Speak — I'll transcribe, think, and respond with audio.[/dim]\n")
 
     try:
-        asyncio.run(_chat_async(ws_url, device_idx, output_device_idx, model, language, system_prompt, verbose))
+        asyncio.run(_chat_async(ws_url, device_idx, output_device_idx, model, language, system_prompt, silence_threshold, verbose))
     except KeyboardInterrupt:
         console.print("\n[yellow]Stopped.[/yellow]")
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
+
+
+def _clone_error(content: bytes, status_code: int) -> None:
+    try:
+        detail = json.loads(content).get("detail", "")
+        msg = detail if isinstance(detail, str) else "; ".join(e.get("msg", str(e)) for e in detail)
+    except Exception:
+        msg = ""
+    console.print(f"[red]Error:[/red] {msg or f'HTTP {status_code}'}")
+    if status_code == 503:
+        console.print("[dim]The model or a required package is not available on the server.[/dim]")
+
+
+def _clone_output(audio_bytes: bytes, fmt: BodyVoiceCloneV1AudioClonePostResponseFormat, response_format: str, output: Path | None, elapsed: float, verbose: bool) -> None:
+    if output:
+        output.write_bytes(audio_bytes)
+        timing = f"  [dim]{elapsed:.1f}s[/dim]" if verbose else ""
+        console.print(f"[green]Saved[/green] {len(audio_bytes):,} bytes → [cyan]{output}[/cyan]{timing}")
+    elif sys.stdout.isatty():
+        if fmt == BodyVoiceCloneV1AudioClonePostResponseFormat.WAV:
+            timing = f"  [dim]{elapsed:.1f}s[/dim]" if verbose else ""
+            console.print(f"[green]Playing[/green] {len(audio_bytes):,} bytes{timing}")
+            _play_wav_bytes(audio_bytes)
+        else:
+            console.print(f"[yellow]Tip:[/yellow] Use [cyan]--output file.{response_format}[/cyan] to save non-WAV audio, or omit [cyan]--format[/cyan] for auto-play.")
+            sys.stdout.buffer.write(audio_bytes)
+    else:
+        if verbose:
+            sys.stderr.write(f"  {len(audio_bytes):,} bytes ({response_format}) in {elapsed:.1f}s\n")
+        sys.stdout.buffer.write(audio_bytes)
+
+
+def _play_wav_bytes(audio_bytes: bytes, device: int | None = None) -> None:
+    buf = io.BytesIO(audio_bytes)
+    with wave.open(buf, "rb") as wf:
+        rate = wf.getframerate()
+        frames = wf.readframes(wf.getnframes())
+    arr = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+    sd.play(arr, samplerate=rate, device=device)
+    sd.wait()
 
 
 def _play_pcm16(pcm_bytes: bytes, sample_rate: int = 24000, device: int | None = None) -> None:
@@ -930,7 +1085,16 @@ async def _chat_receiver(ws, output_device_idx: int | None, verbose: bool, loop:
             console.print(f"\n[red]error:[/red] {event.get('error', {}).get('message', 'unknown')}")
 
 
-async def _chat_async(ws_url: str, device_idx: int | None, output_device_idx: int | None, model: str, language: str | None, system_prompt: str, verbose: bool) -> None:
+def _build_chat_session_cfg(model: str, language: str | None, system_prompt: str, vad_threshold: float | None) -> dict:
+    cfg: dict = {"type": "realtime", "model": model, "input_sample_rate": _SAMPLE_RATE, "system_prompt": system_prompt}
+    if language:
+        cfg["language"] = language
+    if vad_threshold is not None:
+        cfg["turn_detection"] = {"threshold": vad_threshold / 32768.0}
+    return cfg
+
+
+async def _chat_async(ws_url: str, device_idx: int | None, output_device_idx: int | None, model: str, language: str | None, system_prompt: str, vad_threshold: float | None, verbose: bool) -> None:
     audio_q: queue.SimpleQueue = queue.SimpleQueue()
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
@@ -944,10 +1108,10 @@ async def _chat_async(ws_url: str, device_idx: int | None, output_device_idx: in
     async def _sender(ws) -> None:
         while not stop_event.is_set():
             try:
-                frame = await loop.run_in_executor(None, audio_q.get, True, 0.1)
+                frame_bytes = await loop.run_in_executor(None, audio_q.get, True, 0.1)
                 if playing.is_set():
                     continue
-                b64 = base64.b64encode(frame).decode()
+                b64 = base64.b64encode(frame_bytes).decode()
                 await ws.send(json.dumps({"type": "input_audio_buffer.append", "audio": b64}))
             except queue.Empty:
                 continue
@@ -957,14 +1121,7 @@ async def _chat_async(ws_url: str, device_idx: int | None, output_device_idx: in
     async with websockets.connect(f"{ws_url}/v1/realtime", open_timeout=10) as ws:
         await asyncio.wait_for(ws.recv(), timeout=5.0)
 
-        session_cfg: dict = {
-            "type": "realtime",
-            "model": model,
-            "input_sample_rate": _SAMPLE_RATE,
-            "system_prompt": system_prompt,
-        }
-        if language:
-            session_cfg["language"] = language
+        session_cfg = _build_chat_session_cfg(model, language, system_prompt, vad_threshold)
         await ws.send(json.dumps({"type": "session.update", "session": session_cfg}))
         await asyncio.wait_for(ws.recv(), timeout=5.0)
 
