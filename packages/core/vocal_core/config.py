@@ -14,6 +14,15 @@ class VocalSettings(BaseSettings):
     TTS_DEFAULT_VOICE: str | None = None
     TTS_DEFAULT_CLONE_MODEL: str = "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
 
+    DEFAULT_LANGUAGE: str = "en"
+
+    WHISPERX_BATCH_SIZE: int = 16
+    CHATTERBOX_EXAGGERATION: float = 0.5
+    CHATTERBOX_CFG_WEIGHT: float = 0.5
+    NEMO_DEFAULT_LANGUAGE: str = "en"
+
+    VAD_BACKEND: str = "silero"
+    VAD_SPEECH_THRESHOLD: float = 0.5
     VAD_THRESHOLD: float = 400.0
     VAD_SILENCE_FRAMES: int = 15
     VAD_MAX_BUFFER_FRAMES: int = 150

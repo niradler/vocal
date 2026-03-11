@@ -5,8 +5,10 @@ from pathlib import Path
 
 from vocal_core import ModelRegistry
 from vocal_core.adapters.tts import (
+    CHATTERBOX_AVAILABLE,
     FASTER_QWEN3_TTS_AVAILABLE,
     KOKORO_AVAILABLE,
+    ChatterboxTTSAdapter,
     FasterQwen3TTSAdapter,
     KokoroTTSAdapter,
     PiperTTSAdapter,
@@ -259,6 +261,13 @@ class TTSService:
 
         return self.adapters[model_id]
 
+    _INSTALL_HINTS: dict[str, str] = {
+        "xtts": "XTTS-v2 requires the Coqui TTS library. Install with: pip install TTS",
+        "fish_speech": "FishSpeech requires the fish-speech library. Install with: pip install fish-speech",
+        "orpheus": "Orpheus TTS requires custom setup. See https://github.com/canopyai/Orpheus-TTS",
+        "dia": "Dia TTS requires the nari-labs dia library. Install with: pip install dia-tts",
+    }
+
     def _create_adapter(self, backend: str) -> TTSAdapter:
         if backend == "kokoro":
             if not KOKORO_AVAILABLE:
@@ -272,4 +281,10 @@ class TTSService:
             if not PIPER_AVAILABLE:
                 raise ImportError(optional_dependency_install_hint("piper", "piper-tts"))
             return PiperTTSAdapter()
-        raise ValueError(f"Unsupported TTS backend: '{backend}'. Supported backends: kokoro, faster_qwen3_tts, piper")
+        if backend == "chatterbox":
+            if not CHATTERBOX_AVAILABLE:
+                raise ImportError("chatterbox-tts is required. Install with: pip install chatterbox-tts torchaudio")
+            return ChatterboxTTSAdapter()
+        if backend in self._INSTALL_HINTS:
+            raise ImportError(self._INSTALL_HINTS[backend])
+        raise ValueError(f"Unsupported TTS backend: '{backend}'. Supported backends: kokoro, faster_qwen3_tts, piper, chatterbox")

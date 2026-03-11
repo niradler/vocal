@@ -447,7 +447,7 @@ def _print_devices_table() -> None:
             "* default" if dev["is_default"] else "",
         )
     console.print(table)
-    console.print('\nOn Windows, prefer [cyan]WASAPI[/cyan] entries for best quality.')
+    console.print("\nOn Windows, prefer [cyan]WASAPI[/cyan] entries for best quality.")
     console.print('Use [cyan]--device <#>[/cyan] or [cyan]--device "name"[/cyan] to select.')
 
 
@@ -693,11 +693,7 @@ def _model_wizard(api_url: str, task: str = "stt", require_streaming: bool = Fal
     if require_streaming:
         models = [m for m in models if not isinstance(m.supports_streaming, Unset) and m.supports_streaming]
     if not models:
-        no_models_msg = (
-            f"[yellow]No downloaded {task.upper()} models with streaming support found.[/yellow] Pull a [cyan]faster-whisper[/cyan] model first."
-            if require_streaming
-            else f"[yellow]No downloaded {task.upper()} models found.[/yellow] Run [cyan]vocal models pull <id>[/cyan] first."
-        )
+        no_models_msg = f"[yellow]No downloaded {task.upper()} models with streaming support found.[/yellow] Pull a [cyan]faster-whisper[/cyan] model first." if require_streaming else f"[yellow]No downloaded {task.upper()} models found.[/yellow] Run [cyan]vocal models pull <id>[/cyan] first."
         console.print(no_models_msg)
         return None
 
@@ -724,7 +720,6 @@ def _model_wizard(api_url: str, task: str = "stt", require_streaming: bool = Fal
             return m.id
     console.print("[red]Invalid selection.[/red]")
     return None
-
 
 
 def _listen_stream(device_idx: int | None, model: str, task: str, language: str | None, api_url: str, verbose: bool) -> None:
@@ -1138,7 +1133,6 @@ async def _chat_async(ws_url: str, device_idx: int | None, output_device_idx: in
                 sender_task.cancel()
                 receiver_task.cancel()
                 raise KeyboardInterrupt
-
 
 
 async def _ws_sender(ws, audio_q: queue.SimpleQueue, stop_event: asyncio.Event, loop: asyncio.AbstractEventLoop) -> None:

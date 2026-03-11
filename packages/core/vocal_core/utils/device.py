@@ -1,7 +1,23 @@
 import logging
 import platform
+from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+
+class ComputeType(str, Enum):
+    AUTO = "auto"
+    FLOAT32 = "float32"
+    FLOAT16 = "float16"
+    INT8 = "int8"
+    INT8_FLOAT16 = "int8_float16"
+    INT8_FLOAT32 = "int8_float32"
+
+
+class DeviceType(str, Enum):
+    AUTO = "auto"
+    CPU = "cpu"
+    CUDA = "cuda"
 
 
 def detect_device() -> str:

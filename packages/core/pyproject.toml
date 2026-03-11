@@ -53,6 +53,13 @@ transformers = [
     "transformers>=4.40.0",
     "torch>=2.6.0",
 ]
+nemo = [
+    "nemo_toolkit[asr]>=2.0.0",
+]
+silero-vad = [
+    "silero-vad>=5.1",
+    "torch>=2.6.0",
+]
 
 [build-system]
 requires = ["hatchling"]

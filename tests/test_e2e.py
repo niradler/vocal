@@ -903,12 +903,7 @@ except ImportError:
 def _make_reference_wav(duration_s: float = 5.0, sample_rate: int = 16000) -> bytes:
     n_samples = int(sample_rate * duration_s)
     t = np.linspace(0, duration_s, n_samples, endpoint=False)
-    audio = (
-        0.4 * np.sin(2 * np.pi * 180 * t)
-        + 0.3 * np.sin(2 * np.pi * 360 * t)
-        + 0.2 * np.sin(2 * np.pi * 720 * t)
-        + 0.1 * np.sin(2 * np.pi * 1440 * t)
-    )
+    audio = 0.4 * np.sin(2 * np.pi * 180 * t) + 0.3 * np.sin(2 * np.pi * 360 * t) + 0.2 * np.sin(2 * np.pi * 720 * t) + 0.1 * np.sin(2 * np.pi * 1440 * t)
     samples = (audio * 16383).astype(np.int16)
     buf = io.BytesIO()
     with wave.open(buf, "wb") as wf:
@@ -932,10 +927,7 @@ def ensure_clone_model(client, clone_model):
     if not _HAS_CUDA:
         pytest.fail("CUDA GPU required for voice clone tests — no CUDA device found")
     if not _HAS_TORCHAUDIO_CUDA:
-        pytest.fail(
-            f"CPU-only torchaudio installed ({_torchaudio.__version__}) — "
-            "run: uv sync --extra qwen3-tts (pulls CUDA build from PyTorch index)"
-        )
+        pytest.fail(f"CPU-only torchaudio installed ({_torchaudio.__version__}) — run: uv sync --extra qwen3-tts (pulls CUDA build from PyTorch index)")
     model_info = get_model_v1_models_model_id_get.sync(model_id=clone_model, client=client)
     if model_info is not None and model_info.status == ModelStatus.AVAILABLE:
         return
@@ -1026,6 +1018,218 @@ class TestVoiceClone:
             assert resp.status_code == 200, f"{fmt}: Expected 200, got {resp.status_code}"
             assert len(resp.content) > 100, f"{fmt}: empty response"
             print(f"\n[OK] clone: {fmt} → {len(resp.content):,} bytes")
+
+
+_HAS_TRANSFORMERS = importlib.util.find_spec("transformers") is not None
+_HAS_NEMO = importlib.util.find_spec("nemo") is not None
+_HAS_WHISPERX = importlib.util.find_spec("whisperx") is not None
+_HAS_KOKORO = importlib.util.find_spec("kokoro") is not None
+_HAS_CHATTERBOX = importlib.util.find_spec("chatterbox") is not None
+
+_TRANSFORMERS_STT_MODEL = "Qwen/Qwen3-ASR-0.6B"
+_NEMO_STT_MODEL = "nvidia/parakeet-tdt-0.6b-v2"
+_WHISPERX_STT_MODEL = "whisperx/distil-large-v3"
+_KOKORO_TTS_MODEL = "hexgrad/Kokoro-82M"
+_CHATTERBOX_TTS_MODEL = "ResembleAI/chatterbox"
+
+
+def _ensure_model(client: VocalClient, model_id: str, max_wait: int = 600) -> None:
+    """Pull model and wait for it to become available. Skip test if unavailable."""
+    model_info = get_model_v1_models_model_id_get.sync(model_id=model_id, client=client)
+    if model_info is not None and model_info.status == ModelStatus.AVAILABLE:
+        return
+
+    print(f"\n[setup] Pulling {model_id}...")
+    download_model_v1_models_model_id_download_post.sync(model_id=model_id, client=client)
+
+    for elapsed in range(max_wait):
+        model_info = get_model_v1_models_model_id_get.sync(model_id=model_id, client=client)
+        if model_info and model_info.status == ModelStatus.AVAILABLE:
+            print(f"[setup] {model_id} ready after {elapsed}s")
+            return
+        if elapsed % 30 == 0:
+            print(f"[setup] Waiting for {model_id}... ({elapsed}s / {max_wait}s)")
+        time.sleep(1)
+
+    pytest.skip(f"Model {model_id} not available after {max_wait}s — skipping backend test")
+
+
+@pytest.mark.skipif(not _HAS_TRANSFORMERS, reason="transformers not installed — run: uv sync --extra transformers")
+class TestTransformersSTT:
+    """E2E: HuggingFace Transformers STT backend (Qwen3-ASR-0.6B)"""
+
+    def test_transformers_transcribe(self, client, test_assets):
+        audio_file = test_assets["audio_dir"] / "Recording.m4a"
+        assert audio_file.exists(), f"Test asset not found: {audio_file}"
+
+        _ensure_model(client, _TRANSFORMERS_STT_MODEL, max_wait=600)
+
+        result = _transcribe(client, audio_file, _TRANSFORMERS_STT_MODEL, language="en")
+
+        assert result is not None, "Result should not be None"
+        assert isinstance(result.text, str), "Text should be a string"
+        assert len(result.text.strip()) > 0, "Transcription should not be empty"
+        assert result.duration > 0, "Duration should be positive"
+
+        print(f"\n[OK] transformers STT: '{result.text.strip()}' ({result.duration:.2f}s)")
+
+    def test_transformers_transcribe_segments(self, client, test_assets):
+        audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
+
+        _ensure_model(client, _TRANSFORMERS_STT_MODEL, max_wait=600)
+
+        result = _transcribe(client, audio_file, _TRANSFORMERS_STT_MODEL, response_format=TranscriptionFormat.JSON)
+
+        assert result is not None
+        assert isinstance(result.text, str) and len(result.text.strip()) > 0
+
+        segs = [] if isinstance(result.segments, Unset) or result.segments is None else result.segments
+        print(f"\n[OK] transformers STT with segments: '{result.text.strip()}' ({len(segs)} segments)")
+
+
+@pytest.mark.skipif(_IN_CI, reason="CI: NeMo models require GPU and nemo_toolkit[asr] — skip in CI")
+@pytest.mark.skipif(not _HAS_NEMO, reason="nemo_toolkit not installed — run: uv sync --extra nemo")
+class TestNemoSTT:
+    """E2E: NVIDIA NeMo STT backend (Parakeet-TDT 0.6B V2)"""
+
+    def test_nemo_transcribe(self, client, test_assets):
+        audio_file = test_assets["audio_dir"] / "Recording.m4a"
+        assert audio_file.exists(), f"Test asset not found: {audio_file}"
+
+        _ensure_model(client, _NEMO_STT_MODEL, max_wait=600)
+
+        result = _transcribe(client, audio_file, _NEMO_STT_MODEL)
+
+        assert result is not None, "Result should not be None"
+        assert isinstance(result.text, str), "Text should be a string"
+        assert len(result.text.strip()) > 0, "Transcription should not be empty"
+
+        print(f"\n[OK] NeMo STT: '{result.text.strip()}'")
+
+    def test_nemo_transcribe_word_timestamps(self, client, test_assets):
+        audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
+
+        _ensure_model(client, _NEMO_STT_MODEL, max_wait=600)
+
+        result = _transcribe(client, audio_file, _NEMO_STT_MODEL, response_format=TranscriptionFormat.JSON)
+
+        assert result is not None
+        assert isinstance(result.text, str) and len(result.text.strip()) > 0
+
+        print(f"\n[OK] NeMo STT with JSON: '{result.text.strip()}'")
+
+
+@pytest.mark.skipif(not _HAS_WHISPERX, reason="whisperx not installed — run: pip install whisperx")
+class TestWhisperXSTT:
+    """E2E: WhisperX STT backend (forced word alignment via wav2vec2)"""
+
+    def test_whisperx_transcribe(self, client, test_assets):
+        audio_file = test_assets["audio_dir"] / "Recording.m4a"
+        assert audio_file.exists(), f"Test asset not found: {audio_file}"
+
+        _ensure_model(client, _WHISPERX_STT_MODEL, max_wait=600)
+
+        result = _transcribe(client, audio_file, _WHISPERX_STT_MODEL, language="en")
+
+        assert result is not None, "Result should not be None"
+        assert isinstance(result.text, str), "Text should be a string"
+        assert len(result.text.strip()) > 0, "Transcription should not be empty"
+        assert result.duration > 0, "Duration should be positive"
+
+        print(f"\n[OK] WhisperX STT: '{result.text.strip()}' ({result.duration:.2f}s)")
+
+    def test_whisperx_word_timestamps(self, client, test_assets):
+        audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
+
+        _ensure_model(client, _WHISPERX_STT_MODEL, max_wait=600)
+
+        result = _transcribe(client, audio_file, _WHISPERX_STT_MODEL, response_format=TranscriptionFormat.JSON)
+
+        assert result is not None
+        assert isinstance(result.text, str) and len(result.text.strip()) > 0
+
+        words = [] if isinstance(result.words, Unset) or result.words is None else result.words
+        segs = [] if isinstance(result.segments, Unset) or result.segments is None else result.segments
+
+        print(f"\n[OK] WhisperX forced alignment: '{result.text.strip()}' ({len(segs)} segs, {len(words)} words)")
+        if words:
+            assert words[0].start is not None, "Words should have start timestamps"
+            assert words[0].end is not None, "Words should have end timestamps"
+
+
+@pytest.mark.skipif(not _HAS_KOKORO, reason="kokoro not installed — run: uv sync --extra kokoro")
+class TestKokoroTTS:
+    """E2E: Kokoro TTS backend (hexgrad/Kokoro-82M)"""
+
+    def test_kokoro_synthesize(self, client):
+        _ensure_model(client, _KOKORO_TTS_MODEL, max_wait=300)
+
+        audio = _tts(client, "Hello, this is a Kokoro TTS test.", model=_KOKORO_TTS_MODEL, response_format=TTSRequestResponseFormat.WAV)
+
+        assert isinstance(audio, bytes) and len(audio) > 1000, "Expected non-trivial WAV output"
+        assert audio[:4] == b"RIFF", "Expected RIFF WAV header"
+
+        buf = io.BytesIO(audio)
+        with wave.open(buf, "rb") as wf:
+            assert wf.getframerate() > 0
+            assert wf.getnframes() > 0
+
+        print(f"\n[OK] Kokoro TTS: {len(audio):,} bytes WAV @ {wf.getframerate()}Hz")
+
+    def test_kokoro_synthesize_mp3(self, client):
+        _ensure_model(client, _KOKORO_TTS_MODEL, max_wait=300)
+
+        audio = _tts(client, "MP3 format Kokoro test.", model=_KOKORO_TTS_MODEL, response_format=TTSRequestResponseFormat.MP3)
+
+        assert isinstance(audio, bytes) and len(audio) > 0
+        assert audio[:3] == b"ID3" or audio[0] == 0xFF, "Expected MP3 header"
+
+        print(f"\n[OK] Kokoro TTS MP3: {len(audio):,} bytes")
+
+    def test_kokoro_voice_list(self, client):
+        _ensure_model(client, _KOKORO_TTS_MODEL, max_wait=300)
+
+        result = list_voices_v1_audio_voices_get.sync(client=client, model=_KOKORO_TTS_MODEL)
+
+        assert result is not None and result.total > 0, "Kokoro should expose at least one voice"
+        assert all(v.id and v.language for v in result.voices), "Each voice should have id and language"
+
+        print(f"\n[OK] Kokoro voices: {result.total} voices — {[v.id for v in result.voices[:5]]}")
+
+
+@pytest.mark.skipif(_IN_CI, reason="CI: Chatterbox requires GPU and large download — skip in CI")
+@pytest.mark.skipif(not _HAS_CHATTERBOX, reason="chatterbox-tts not installed — run: pip install chatterbox-tts")
+class TestChatterboxTTS:
+    """E2E: Chatterbox TTS backend (ResembleAI/chatterbox) — requires GPU"""
+
+    def test_chatterbox_synthesize(self, client):
+        _ensure_model(client, _CHATTERBOX_TTS_MODEL, max_wait=600)
+
+        audio = _tts(client, "Hello, this is a Chatterbox synthesis test.", model=_CHATTERBOX_TTS_MODEL, response_format=TTSRequestResponseFormat.WAV)
+
+        assert isinstance(audio, bytes) and len(audio) > 1000, "Expected non-trivial WAV output"
+        assert audio[:4] == b"RIFF", "Expected RIFF WAV header"
+
+        print(f"\n[OK] Chatterbox TTS: {len(audio):,} bytes WAV")
+
+    def test_chatterbox_voice_clone(self, client, api_server):
+        _ensure_model(client, _CHATTERBOX_TTS_MODEL, max_wait=600)
+
+        ref_wav = _make_reference_wav(duration_s=8.0)
+        resp = httpx.post(
+            f"{api_server}/v1/audio/clone",
+            files={"reference_audio": ("ref.wav", ref_wav, "audio/wav")},
+            data={"text": "Voice cloning test with Chatterbox.", "model": _CHATTERBOX_TTS_MODEL, "response_format": "wav"},
+            timeout=120.0,
+        )
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        assert len(resp.content) > 1000, "Expected non-trivial cloned audio"
+
+        buf = io.BytesIO(resp.content)
+        with wave.open(buf, "rb") as wf:
+            assert wf.getframerate() > 0
+
+        print(f"\n[OK] Chatterbox voice clone: {len(resp.content):,} bytes WAV")
 
 
 if __name__ == "__main__":

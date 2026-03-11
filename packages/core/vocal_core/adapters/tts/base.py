@@ -1,9 +1,19 @@
 from abc import abstractmethod
 from collections.abc import AsyncGenerator
+from enum import Enum
 
 from pydantic import BaseModel
 
 from ..base import BaseAdapter
+
+
+class AudioFormat(str, Enum):
+    WAV = "wav"
+    MP3 = "mp3"
+    OPUS = "opus"
+    AAC = "aac"
+    FLAC = "flac"
+    PCM = "pcm"
 
 
 class Voice(BaseModel):

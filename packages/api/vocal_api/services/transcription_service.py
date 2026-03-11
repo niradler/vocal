@@ -9,10 +9,14 @@ from fastapi import UploadFile
 
 from vocal_core import ModelRegistry, TranscriptionResult
 from vocal_core.adapters.stt import (
+    NEMO_AVAILABLE,
     TRANSFORMERS_AVAILABLE,
+    WHISPERX_AVAILABLE,
     FasterWhisperAdapter,
+    NemoSTTAdapter,
     STTAdapter,
     TransformersSTTAdapter,
+    WhisperXSTTAdapter,
 )
 from vocal_core.adapters.stt import (
     TranscriptionSegment as CoreTranscriptionSegment,
@@ -145,7 +149,15 @@ class TranscriptionService:
             if not TRANSFORMERS_AVAILABLE:
                 raise ImportError("transformers and torch are required. Install with: pip install transformers torch")
             return TransformersSTTAdapter()
-        raise ValueError(f"Unsupported STT backend: '{backend}'. Supported backends: faster_whisper, transformers")
+        if backend == "nemo":
+            if not NEMO_AVAILABLE:
+                raise ImportError("nemo_toolkit is required for NeMo models. Install with: pip install nemo_toolkit[asr]")
+            return NemoSTTAdapter()
+        if backend == "whisperx":
+            if not WHISPERX_AVAILABLE:
+                raise ImportError("whisperx is required. Install with: pip install whisperx")
+            return WhisperXSTTAdapter()
+        raise ValueError(f"Unsupported STT backend: '{backend}'. Supported backends: faster_whisper, transformers, nemo, whisperx")
 
     async def _get_or_create_adapter(self, model_id: str, model_path: Path, backend: str) -> STTAdapter:
         """Get or create adapter for model, dispatching by backend."""

@@ -1,6 +1,8 @@
 """Utility functions for vocal-core"""
 
 from .device import (
+    ComputeType,
+    DeviceType,
     detect_device,
     get_device_info,
     get_optimal_compute_type,
@@ -9,6 +11,8 @@ from .device import (
 )
 
 __all__ = [
+    "ComputeType",
+    "DeviceType",
     "detect_device",
     "get_optimal_compute_type",
     "get_optimal_threads",

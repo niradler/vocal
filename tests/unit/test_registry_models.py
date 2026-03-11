@@ -11,10 +11,17 @@ from vocal_core.registry.capabilities import (
 
 def test_model_backend_values():
     assert ModelBackend.FASTER_WHISPER == "faster_whisper"
+    assert ModelBackend.WHISPERX == "whisperx"
     assert ModelBackend.KOKORO == "kokoro"
     assert ModelBackend.FASTER_QWEN3_TTS == "faster_qwen3_tts"
     assert ModelBackend.TRANSFORMERS == "transformers"
     assert ModelBackend.PIPER == "piper"
+    assert ModelBackend.NEMO == "nemo"
+    assert ModelBackend.CHATTERBOX == "chatterbox"
+    assert ModelBackend.XTTS == "xtts"
+    assert ModelBackend.FISH_SPEECH == "fish_speech"
+    assert ModelBackend.ORPHEUS == "orpheus"
+    assert ModelBackend.DIA == "dia"
 
 
 def test_model_task_values():
@@ -153,3 +160,84 @@ def test_supported_model_records_are_validated():
     )
     assert records[0].alias == "qwen3-tts-0.6b"
     assert records[0].actual_parameter_count == 914643008
+
+
+def test_hf_repo_id_is_stored_in_record():
+    records = supported_model_records_from_mapping(
+        {
+            "models": [
+                {
+                    "id": "whisperx/large-v3",
+                    "name": "WhisperX Large-v3",
+                    "provider": "huggingface",
+                    "task": "stt",
+                    "backend": "whisperx",
+                    "hf_repo_id": "Systran/faster-whisper-large-v3",
+                }
+            ]
+        }
+    )
+    assert records[0].hf_repo_id == "Systran/faster-whisper-large-v3"
+    assert records[0].backend == "whisperx"
+
+
+def test_hf_repo_id_defaults_to_none():
+    record = model_record_from_mapping(
+        {
+            "id": "Systran/faster-whisper-tiny",
+            "name": "Faster Whisper Tiny",
+            "provider": "huggingface",
+            "task": "stt",
+            "backend": "faster_whisper",
+        }
+    )
+    assert record.hf_repo_id is None
+
+
+def test_infer_nemo_capabilities():
+    capabilities = infer_model_capabilities(
+        task="stt",
+        backend="nemo",
+        model_id="nvidia/parakeet-tdt-1.1b",
+    )
+    assert capabilities["supports_streaming"] is False
+
+
+def test_infer_whisperx_capabilities():
+    capabilities = infer_model_capabilities(
+        task="stt",
+        backend="whisperx",
+        model_id="whisperx/large-v3",
+    )
+    assert capabilities["supports_streaming"] is False
+
+
+def test_infer_chatterbox_capabilities():
+    capabilities = infer_model_capabilities(
+        task="tts",
+        backend="chatterbox",
+        model_id="ResembleAI/chatterbox",
+    )
+    assert capabilities["supports_voice_clone"] is True
+    assert capabilities["clone_mode"] == "reference_audio"
+    assert capabilities["reference_audio_min_seconds"] == 3.0
+    assert capabilities["reference_audio_max_seconds"] == 30.0
+
+
+def test_infer_xtts_capabilities():
+    capabilities = infer_model_capabilities(
+        task="tts",
+        backend="xtts",
+        model_id="coqui/XTTS-v2",
+    )
+    assert capabilities["supports_voice_clone"] is True
+    assert capabilities["clone_mode"] == "reference_audio"
+
+
+def test_infer_dia_capabilities():
+    capabilities = infer_model_capabilities(
+        task="tts",
+        backend="dia",
+        model_id="nari-labs/Dia-1.6B",
+    )
+    assert capabilities["supports_voice_clone"] is True

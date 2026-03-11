@@ -3,8 +3,10 @@ import sys
 
 if sys.platform == "win32":
     import ctypes
+
     try:
         import torch as _torch
+
         _torch_lib = os.path.join(os.path.dirname(_torch.__file__), "lib")
         _cudnn_stub = os.path.join(_torch_lib, "cudnn64_9.dll")
         if os.path.exists(_cudnn_stub):

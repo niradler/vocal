@@ -12,6 +12,7 @@ import httpx
 import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from vocal_core.adapters.vad import VADAdapter, create_vad_adapter
 from vocal_core.config import vocal_settings
 
 from ..dependencies import get_transcription_service, get_tts_service
@@ -21,7 +22,6 @@ logger = logging.getLogger(__name__)
 
 _INPUT_SAMPLE_RATE = vocal_settings.REALTIME_DEFAULT_INPUT_RATE
 _STT_SAMPLE_RATE = vocal_settings.STT_SAMPLE_RATE
-_VAD_THRESHOLD = vocal_settings.VAD_THRESHOLD
 _SILENCE_FRAMES_NEEDED = vocal_settings.VAD_SILENCE_FRAMES
 _MAX_BUFFER_FRAMES = vocal_settings.VAD_MAX_BUFFER_FRAMES
 _SPEECH_ONSET_FRAMES = vocal_settings.VAD_SPEECH_ONSET_FRAMES
@@ -35,7 +35,7 @@ class _Session:
     model: str = field(default_factory=lambda: vocal_settings.STT_DEFAULT_MODEL)
     language: str | None = field(default_factory=lambda: vocal_settings.STT_DEFAULT_LANGUAGE)
     input_sample_rate: int = _INPUT_SAMPLE_RATE
-    vad_threshold: float = _VAD_THRESHOLD
+    speech_threshold: float = field(default_factory=lambda: vocal_settings.VAD_SPEECH_THRESHOLD)
     audio_buffer: bytearray = field(default_factory=bytearray)
     speech_started: bool = False
     silence_count: int = 0
@@ -43,9 +43,10 @@ class _Session:
     speech_onset_count: int = 0
     speech_frames_count: int = 0
     current_item_id: str = field(default_factory=lambda: f"item_{uuid.uuid4().hex[:16]}")
-    system_prompt: str = "You are a helpful voice assistant. Keep answers short and conversational, 1-2 sentences max."
+    system_prompt: str = field(default_factory=lambda: vocal_settings.CHAT_SYSTEM_PROMPT)
     conversation_history: list = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
+    vad: VADAdapter = field(default_factory=create_vad_adapter)
 
 
 def _make_event(event_type: str, **kwargs) -> str:
@@ -53,6 +54,8 @@ def _make_event(event_type: str, **kwargs) -> str:
 
 
 def _session_config(session: _Session) -> dict:
+    from vocal_core.adapters.vad import SILERO_AVAILABLE
+
     return {
         "id": session.session_id,
         "object": "realtime.session",
@@ -62,19 +65,13 @@ def _session_config(session: _Session) -> dict:
         "output_audio_format": "pcm16",
         "turn_detection": {
             "type": "server_vad",
-            "threshold": session.vad_threshold / 32768.0,
+            "backend": "silero" if SILERO_AVAILABLE else "rms",
+            "threshold": session.speech_threshold,
             "silence_duration_ms": int(_SILENCE_FRAMES_NEEDED * 1000 * 2 / session.input_sample_rate),
         },
         "transcription": {"language": session.language},
         "created_at": session.created_at,
     }
-
-
-def _rms(pcm_bytes: bytes | bytearray) -> float:
-    if not pcm_bytes:
-        return 0.0
-    arr = np.frombuffer(bytes(pcm_bytes), dtype=np.int16).astype(np.float32)
-    return float(np.sqrt(np.mean(arr**2))) if arr.size > 0 else 0.0
 
 
 def _resample_pcm16(pcm_bytes: bytes | bytearray, from_rate: int, to_rate: int) -> bytes:
@@ -225,7 +222,7 @@ async def _handle_session_update(ws: WebSocket, session: _Session, event: dict, 
         session.system_prompt = sess_cfg["system_prompt"]
     td = sess_cfg.get("turn_detection") or {}
     if "threshold" in td:
-        session.vad_threshold = float(td["threshold"]) * 32768.0
+        session.speech_threshold = float(td["threshold"])
     ack_type = "transcription_session.updated" if event_type == "transcription_session.update" else "session.updated"
     await ws.send_text(_make_event(ack_type, session=_session_config(session)))
 
@@ -239,10 +236,10 @@ async def _handle_audio_append(ws: WebSocket, session: _Session, event: dict, tr
         return
 
     session.audio_buffer.extend(pcm_bytes)
-    energy = _rms(pcm_bytes)
     frame_count = len(session.audio_buffer) // 2
+    is_speech = session.vad.is_speech(pcm_bytes, session.input_sample_rate, session.speech_threshold)
 
-    if energy >= session.vad_threshold:
+    if is_speech:
         session.speech_onset_count += 1
         if session.speech_started:
             session.speech_frames_count += 1
@@ -263,12 +260,14 @@ async def _handle_audio_append(ws: WebSocket, session: _Session, event: dict, tr
                     audio_end_ms = int((len(session.audio_buffer) / 2 / session.input_sample_rate) * 1000)
                     await ws.send_text(_make_event("input_audio_buffer.speech_stopped", audio_end_ms=audio_end_ms, item_id=session.current_item_id))
                     session.speech_started = False
+                    session.vad.reset()
                     await _commit_and_process(ws, session, transcription_service, tts_service)
                 else:
                     session.speech_started = False
                     session.speech_frames_count = 0
                     session.silence_count = 0
                     session.audio_buffer = bytearray()
+                    session.vad.reset()
 
 
 async def _dispatch_event(ws: WebSocket, session: _Session, event: dict, transcription_service, tts_service) -> None:

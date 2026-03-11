@@ -16,6 +16,7 @@ class ModelBackend(str, Enum):
     """Model inference backend"""
 
     FASTER_WHISPER = "faster_whisper"
+    WHISPERX = "whisperx"
     TRANSFORMERS = "transformers"
     CTRANSLATE2 = "ctranslate2"
     NEMO = "nemo"
@@ -23,6 +24,11 @@ class ModelBackend(str, Enum):
     KOKORO = "kokoro"
     FASTER_QWEN3_TTS = "faster_qwen3_tts"
     PIPER = "piper"
+    CHATTERBOX = "chatterbox"
+    XTTS = "xtts"
+    FISH_SPEECH = "fish_speech"
+    ORPHEUS = "orpheus"
+    DIA = "dia"
     CUSTOM = "custom"
 
 

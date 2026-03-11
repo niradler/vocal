@@ -34,7 +34,7 @@ class TestModelsList:
             assert m.backend
 
     def test_supported_models_expose_capabilities(self, client):
-        raw = client.get_httpx_client().get("/v1/models/supported")
+        raw = client.get_httpx_client().get("/v1/models/catalog")
         assert raw.status_code == 200
         body = raw.json()
         assert body["total"] >= 1

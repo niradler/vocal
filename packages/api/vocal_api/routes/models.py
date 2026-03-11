@@ -78,6 +78,7 @@ async def download_model(
     Returns immediately with initial status.
     Check progress with GET /models/{model_id}/download/status
     """
+
     async def download_task():
         async for progress in service.download_model(model_id):
             pass
@@ -111,6 +112,7 @@ async def get_download_status(model_id: str, service: ModelService = Depends(get
             size = model.size or 0
             if size == 0 and model.local_path:
                 from pathlib import Path
+
                 size = sum(f.stat().st_size for f in Path(model.local_path).rglob("*") if f.is_file())
             return ModelDownloadProgress(
                 model_id=model_id,

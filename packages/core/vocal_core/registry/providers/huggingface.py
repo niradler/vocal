@@ -248,6 +248,10 @@ class HuggingFaceProvider(BaseProvider):
         model_id = self._resolve_alias(model_id)
         destination.mkdir(parents=True, exist_ok=True)
 
+        supported = self._load_supported_models()
+        record = supported.get(model_id)
+        hf_repo_id = (record.hf_repo_id if record and record.hf_repo_id else None) or model_id
+
         loop = asyncio.get_running_loop()
 
         try:
@@ -259,7 +263,7 @@ class HuggingFaceProvider(BaseProvider):
             await loop.run_in_executor(
                 None,
                 lambda: snapshot_download(
-                    model_id,
+                    hf_repo_id,
                     local_dir=str(destination),
                     cache_dir=str(self.cache_dir) if self.cache_dir else None,
                 ),

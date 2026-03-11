@@ -54,6 +54,7 @@ class StoredModelRecord(CapabilityOverrides):
     files: list[RepoFileRecord] | None = None
     alias: str | None = None
     actual_parameter_count: int | None = None
+    hf_repo_id: str | None = None
 
 
 class HuggingFaceCardRecord(BaseModel):
@@ -137,6 +138,7 @@ def model_record_from_mapping(
         "files",
         "alias",
         "actual_parameter_count",
+        "hf_repo_id",
         "supports_streaming",
         "supports_voice_list",
         "supports_voice_clone",
@@ -226,7 +228,7 @@ def infer_model_capabilities(
     overrides = overrides or CapabilityOverrides()
     inferred_voice_mode = overrides.voice_mode
     inferred_clone_mode = overrides.clone_mode
-    _streaming_default = backend == "faster_whisper"
+    _streaming_default = backend in {"faster_whisper"}
     inferred_supports_streaming = overrides.supports_streaming if overrides.supports_streaming is not None else _streaming_default
     inferred_supports_voice_list = overrides.supports_voice_list if overrides.supports_voice_list is not None else False
     inferred_supports_voice_clone = overrides.supports_voice_clone if overrides.supports_voice_clone is not None else False
@@ -256,6 +258,16 @@ def infer_model_capabilities(
                 inferred_clone_mode = overrides.clone_mode or "reference_audio"
                 inferred_min_seconds = overrides.reference_audio_min_seconds if overrides.reference_audio_min_seconds is not None else 3.0
                 inferred_max_seconds = overrides.reference_audio_max_seconds if overrides.reference_audio_max_seconds is not None else 30.0
+        elif backend == "chatterbox":
+            inferred_supports_voice_clone = overrides.supports_voice_clone if overrides.supports_voice_clone is not None else True
+            inferred_clone_mode = overrides.clone_mode or "reference_audio"
+            inferred_min_seconds = overrides.reference_audio_min_seconds if overrides.reference_audio_min_seconds is not None else 3.0
+            inferred_max_seconds = overrides.reference_audio_max_seconds if overrides.reference_audio_max_seconds is not None else 30.0
+        elif backend in {"xtts", "fish_speech", "dia"}:
+            inferred_supports_voice_clone = overrides.supports_voice_clone if overrides.supports_voice_clone is not None else True
+            inferred_clone_mode = overrides.clone_mode or "reference_audio"
+            inferred_min_seconds = overrides.reference_audio_min_seconds if overrides.reference_audio_min_seconds is not None else 3.0
+            inferred_max_seconds = overrides.reference_audio_max_seconds if overrides.reference_audio_max_seconds is not None else 30.0
 
     return {
         "supports_streaming": inferred_supports_streaming,

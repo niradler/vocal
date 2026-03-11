@@ -76,3 +76,37 @@ Bypass `pipeline`, call `model.generate()` directly with HuggingFace's `TextIter
 **Plan:** Implement option 1 now for feature parity. Revisit option 2 only as part of the live chunked mic streaming feature.
 
 **Status:** Pending implementation.
+
+---
+
+### Speech-to-Speech Models support
+
+**Context:** Beyond STT→LLM→TTS pipelines, there is a growing class of end-to-end Speech-to-Speech (S2S) models that accept audio in and produce audio out directly — eliminating the latency penalty of separate STT and TTS hops.
+
+| Model | Type | Parameters | License | Notes |
+|-------|------|-----------|---------|-------|
+| `mini-omni2` | S2S | ~1B | MIT | Real-time streaming input/output, tool use |
+| `Moshi` | S2S | ~7B | CC-BY-4.0 | Full-duplex; speaks while listening |
+| `SALMONN` | Audio→Text+Audio | ~13B | Apache 2.0 | Audio understanding + generation |
+| `Freeze-Omni` | S2S | ~7B | Apache 2.0 | Low-latency streaming |
+| `LLaMA-Omni` | S2S | ~8B | Apache 2.0 | Based on LLaMA 3.1 |
+
+**Why this matters:**
+- Eliminates compounded latency (STT ~200ms + LLM ~300ms + TTS ~200ms = ~700ms minimum)
+- Preserves prosody and emotion across the full turn — the model "hears" how you said it
+- Full-duplex models (e.g. Moshi) can interrupt and respond mid-sentence
+- Fits naturally into Vocal's pull/serve/endpoint model
+
+**What needs to change:**
+1. New `ModelTask.s2s` variant
+2. New `S2SAdapter` base class with `process_audio(input_audio) -> AsyncGenerator[bytes]`
+3. New endpoint: `POST /v1/audio/speech-to-speech` and WebSocket `/v1/s2s`
+4. Adapter implementations per model family (Moshi has a Python library; others via `transformers`)
+5. Registry entries in `supported_models.json`
+
+**Open sub-questions:**
+- Should S2S share the `/v1/realtime` WebSocket or have its own protocol?
+- How to handle full-duplex models that produce audio while still receiving input?
+- Streaming output format: base64 PCM chunks (current realtime pattern) or raw binary frames?
+
+**Priority:** Medium — current STT→LLM→TTS loop works well for most use cases, but S2S would be a meaningful latency and quality step-up for real-time agents.

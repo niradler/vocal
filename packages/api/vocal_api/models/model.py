@@ -19,10 +19,16 @@ class ModelBackend(str, Enum):
     TRANSFORMERS = "transformers"
     CTRANSLATE2 = "ctranslate2"
     NEMO = "nemo"
+    WHISPERX = "whisperx"
     ONNX = "onnx"
     KOKORO = "kokoro"
     FASTER_QWEN3_TTS = "faster_qwen3_tts"
     PIPER = "piper"
+    CHATTERBOX = "chatterbox"
+    XTTS = "xtts"
+    FISH_SPEECH = "fish_speech"
+    ORPHEUS = "orpheus"
+    DIA = "dia"
     CUSTOM = "custom"
 
 
