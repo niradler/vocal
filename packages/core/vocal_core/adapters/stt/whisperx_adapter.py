@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, BinaryIO
 
-from ...config import vocal_settings
+from ...config import optional_dependency_install_hint, vocal_settings
 from ...utils import get_optimal_compute_type
 from .base import STTAdapter, TranscriptionResult, TranscriptionSegment, TranscriptionWord
 
@@ -32,7 +32,7 @@ class WhisperXSTTAdapter(STTAdapter):
 
     async def load_model(self, model_path: Path, device: str = "auto", **kwargs) -> None:
         if not WHISPERX_AVAILABLE:
-            raise ImportError("whisperx is required for WhisperX models. Install with: pip install whisperx")
+            raise ImportError(optional_dependency_install_hint("whisperx", "whisperx"))
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._load_sync, model_path, device)
 

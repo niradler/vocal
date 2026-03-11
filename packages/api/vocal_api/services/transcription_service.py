@@ -21,6 +21,7 @@ from vocal_core.adapters.stt import (
 from vocal_core.adapters.stt import (
     TranscriptionSegment as CoreTranscriptionSegment,
 )
+from vocal_core.config import optional_dependency_install_hint
 
 from ..models.transcription import (
     TranscriptionRequest,
@@ -151,11 +152,11 @@ class TranscriptionService:
             return TransformersSTTAdapter()
         if backend == "nemo":
             if not NEMO_AVAILABLE:
-                raise ImportError("nemo_toolkit is required for NeMo models. Install with: pip install nemo_toolkit[asr]")
+                raise ImportError(optional_dependency_install_hint("nemo", "nemo_toolkit[asr]"))
             return NemoSTTAdapter()
         if backend == "whisperx":
             if not WHISPERX_AVAILABLE:
-                raise ImportError("whisperx is required. Install with: pip install whisperx")
+                raise ImportError(optional_dependency_install_hint("whisperx", "whisperx"))
             return WhisperXSTTAdapter()
         raise ValueError(f"Unsupported STT backend: '{backend}'. Supported backends: faster_whisper, transformers, nemo, whisperx")
 

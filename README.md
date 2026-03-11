@@ -40,12 +40,18 @@ vocal listen
 vocal chat    # requires Ollama running locally
 ```
 
-**Optional backends:**
-```bash
-pip install "vocal-ai[kokoro]"     # Kokoro-82M neural TTS (CPU/GPU)
-pip install "vocal-ai[piper]"      # Piper TTS (offline, fast, multilingual)
-pip install "vocal-ai[qwen3-tts]"  # Qwen3-TTS (CUDA required)
-```
+**Optional backends** (base install already includes torch + faster-whisper + transformers + silero-vad):
+
+| Extra | What you get | Install |
+|-------|-------------|---------|
+| `kokoro` | Kokoro-82M neural TTS, #1 on TTS Arena | `pip install "vocal-ai[kokoro]"` |
+| `piper` | Piper offline TTS, fast, multilingual | `pip install "vocal-ai[piper]"` |
+| `qwen3-tts` | Qwen3-TTS voice cloning (CUDA required) | `pip install "vocal-ai[qwen3-tts]"` |
+| `whisperx` | WhisperX — word-level timestamps + diarization | `pip install "vocal-ai[whisperx]"` |
+| `nemo` | NVIDIA NeMo STT (Parakeet-TDT, Canary-Qwen) | `pip install "vocal-ai[nemo]"` |
+| `chatterbox` | Chatterbox voice cloning TTS | `pip install "vocal-ai[chatterbox]"` |
+
+Missing a backend? The error message will tell you exactly which command to run.
 
 ---
 

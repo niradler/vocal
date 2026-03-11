@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, BinaryIO
 
-from ...config import vocal_settings
+from ...config import optional_dependency_install_hint, vocal_settings
 from .base import STTAdapter, TranscriptionResult, TranscriptionSegment
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ class NemoSTTAdapter(STTAdapter):
 
     async def load_model(self, model_path: Path, device: str = "auto", **kwargs) -> None:
         if not NEMO_AVAILABLE:
-            raise ImportError("nemo_toolkit is required for NeMo models. Install with: pip install nemo_toolkit[asr]")
+            raise ImportError(optional_dependency_install_hint("nemo", "nemo_toolkit[asr]"))
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._load_sync, model_path, device)
 

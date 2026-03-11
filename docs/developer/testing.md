@@ -12,6 +12,21 @@ Vocal uses three test tiers. **E2E is the primary confidence path** for local de
 | Format | `make format` | ~5 s | Auto-fix code style | No | No |
 | Lint | `make lint` | ~5 s | Ruff check | No | No |
 
+## Dependency Tiers
+
+Vocal uses **optional dependencies** intentionally. Different backends require hundreds of MBs of conflicting packages (e.g. `chatterbox-tts` pins `transformers==4.46.3` while `qwen3-tts` requires `>=4.57` — they cannot both be mandatory). The plugin architecture keeps the base install small.
+
+| Command | What's installed | Tests covered |
+|---------|-----------------|---------------|
+| `make install` | Base + dev (pytest, ruff, nemo, whisperx, chatterbox) | Unit + Contract + E2E (basic STT/TTS) |
+| `make install-dev` | Everything above + `kokoro` + `silero-vad` extras | All unit + contract tests, no skips |
+
+**First-time dev setup that covers every test:**
+```bash
+make install-dev
+make lint && make test-unit && make test-contract
+```
+
 ## Running Tests
 
 ```bash

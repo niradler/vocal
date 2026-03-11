@@ -51,9 +51,14 @@ qwen3-tts = [
     "torch>=2.6.0",
     "torchaudio>=2.6.0",
 ]
-silero-vad = [
-    "silero-vad>=5.1",
-    "torch>=2.6.0",
+nemo = [
+    "nemo_toolkit[asr]>=2.0.0",
+]
+whisperx = [
+    "whisperx>=3.3.0",
+]
+chatterbox = [
+    "chatterbox-tts>=0.1.0",
 ]
 
 [build-system]

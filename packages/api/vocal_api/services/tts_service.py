@@ -262,10 +262,10 @@ class TTSService:
         return self.adapters[model_id]
 
     _INSTALL_HINTS: dict[str, str] = {
-        "xtts": "XTTS-v2 requires the Coqui TTS library. Install with: pip install TTS",
-        "fish_speech": "FishSpeech requires the fish-speech library. Install with: pip install fish-speech",
-        "orpheus": "Orpheus TTS requires custom setup. See https://github.com/canopyai/Orpheus-TTS",
-        "dia": "Dia TTS requires the nari-labs dia library. Install with: pip install dia-tts",
+        "xtts": optional_dependency_install_hint("xtts", "TTS"),
+        "fish_speech": optional_dependency_install_hint("fish-speech", "fish-speech"),
+        "orpheus": optional_dependency_install_hint("orpheus", "orpheus-tts"),
+        "dia": optional_dependency_install_hint("dia", "dia-tts"),
     }
 
     def _create_adapter(self, backend: str) -> TTSAdapter:
@@ -283,7 +283,7 @@ class TTSService:
             return PiperTTSAdapter()
         if backend == "chatterbox":
             if not CHATTERBOX_AVAILABLE:
-                raise ImportError("chatterbox-tts is required. Install with: pip install chatterbox-tts torchaudio")
+                raise ImportError(optional_dependency_install_hint("chatterbox", "chatterbox-tts"))
             return ChatterboxTTSAdapter()
         if backend in self._INSTALL_HINTS:
             raise ImportError(self._INSTALL_HINTS[backend])

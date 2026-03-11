@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from ...config import vocal_settings
+from ...config import optional_dependency_install_hint, vocal_settings
 from .base import AudioFormat, TTSAdapter, TTSCapabilities, TTSResult, Voice, VoiceCloneRequest
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ class ChatterboxTTSAdapter(TTSAdapter):
 
     async def load_model(self, model_path: Path, device: str = "auto", **kwargs) -> None:
         if not CHATTERBOX_AVAILABLE:
-            raise ImportError("chatterbox-tts is required. Install with: pip install chatterbox-tts torchaudio")
+            raise ImportError(optional_dependency_install_hint("chatterbox", "chatterbox-tts"))
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._load_sync, model_path, device)
 

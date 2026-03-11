@@ -29,7 +29,7 @@ class SileroVADAdapter(VADAdapter):
 
     def __init__(self) -> None:
         if not SILERO_AVAILABLE:
-            raise ImportError("silero-vad is required for Silero VAD. Install with: pip install silero-vad")
+            raise ImportError("silero-vad failed to import. It is a required dependency — reinstall with: pip install --upgrade silero-vad")
         from silero_vad import load_silero_vad
 
         self._model = load_silero_vad()

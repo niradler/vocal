@@ -6,7 +6,8 @@ help:
 	@echo "============================"
 	@echo ""
 	@echo "Setup & Installation:"
-	@echo "  make install       - Install dependencies and setup project"
+	@echo "  make install       - Install base + dev dependencies (no heavy optional backends)"
+	@echo "  make install-dev   - Install ALL backends for full local testing (kokoro, silero-vad, nemo, whisperx, chatterbox)"
 	@echo "  make sync          - Sync dependencies with uv"
 	@echo ""
 	@echo "Testing:"
@@ -45,11 +46,21 @@ help:
 
 # Setup & Installation
 install:
-	@echo "Installing dependencies..."
+	@echo "Installing base + dev dependencies..."
 	uv sync
 	@echo ""
 	@echo "✓ Installation complete!"
 	@echo "Run 'make serve' to start the API server"
+	@echo "Run 'make install-dev' to also install optional backends (kokoro, silero-vad, nemo, whisperx, chatterbox)"
+
+install-dev:
+	@echo "Installing ALL optional backends for full local testing..."
+	@echo "(kokoro, silero-vad — plus nemo, whisperx, chatterbox already in dev group)"
+	uv sync --extra kokoro --extra silero-vad
+	@echo ""
+	@echo "✓ Full dev environment ready"
+	@echo "All backends installed: kokoro, silero-vad, nemo, whisperx, chatterbox"
+	@echo "Run 'make test-unit' to verify"
 
 sync:
 	@echo "Syncing dependencies..."

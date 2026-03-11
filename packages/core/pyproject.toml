@@ -27,6 +27,7 @@ dependencies = [
     "numpy>=1.24.0",
     "transformers>=4.40.0",
     "torch>=2.6.0",
+    "silero-vad>=5.1",
 ]
 
 [project.urls]
@@ -56,9 +57,11 @@ transformers = [
 nemo = [
     "nemo_toolkit[asr]>=2.0.0",
 ]
-silero-vad = [
-    "silero-vad>=5.1",
-    "torch>=2.6.0",
+whisperx = [
+    "whisperx>=3.3.0",
+]
+chatterbox = [
+    "chatterbox-tts>=0.1.0",
 ]
 
 [build-system]

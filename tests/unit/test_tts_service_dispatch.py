@@ -39,10 +39,10 @@ def test_create_adapter_chatterbox_returns_chatterbox_or_import_error():
 @pytest.mark.parametrize(
     "backend,expected_hint",
     [
-        ("xtts", "pip install TTS"),
-        ("fish_speech", "pip install fish-speech"),
-        ("orpheus", "Orpheus-TTS"),
-        ("dia", "pip install dia-tts"),
+        ("xtts", "vocal-ai\\[xtts\\]"),
+        ("fish_speech", "vocal-ai\\[fish-speech\\]"),
+        ("orpheus", "vocal-ai\\[orpheus\\]"),
+        ("dia", "vocal-ai\\[dia\\]"),
     ],
 )
 def test_unimplemented_backends_raise_import_error_with_hint(backend, expected_hint):
