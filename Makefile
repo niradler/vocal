@@ -7,7 +7,7 @@ help:
 	@echo ""
 	@echo "Setup & Installation:"
 	@echo "  make install       - Install base + dev dependencies (no heavy optional backends)"
-	@echo "  make install-dev   - Install ALL backends for full local testing (kokoro, silero-vad, nemo, whisperx, chatterbox)"
+	@echo "  make install-dev   - Install ALL backends for full local testing (kokoro, qwen3-tts, nemo, whisperx, chatterbox)"
 	@echo "  make sync          - Sync dependencies with uv"
 	@echo ""
 	@echo "Testing:"
@@ -52,15 +52,13 @@ install:
 	@echo ""
 	@echo "✓ Installation complete!"
 	@echo "Run 'make serve' to start the API server"
-	@echo "Run 'make install-dev' to also install optional backends (kokoro, silero-vad, nemo, whisperx, chatterbox)"
+	@echo "Run 'make install-dev' to also install optional backends (kokoro, qwen3-tts, nemo, whisperx, chatterbox)"
 
 install-dev:
 	@echo "Installing ALL optional backends for full local testing..."
-	@echo "(kokoro, silero-vad — plus nemo, whisperx, chatterbox already in dev group)"
-	uv sync --extra kokoro --extra silero-vad
+	uv sync --extra kokoro --extra qwen3-tts --extra nemo --extra whisperx --extra chatterbox
 	@echo ""
 	@echo "✓ Full dev environment ready"
-	@echo "All backends installed: kokoro, silero-vad, nemo, whisperx, chatterbox"
 	@echo "Run 'make test-unit' to verify"
 
 sync:
