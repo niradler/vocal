@@ -132,7 +132,16 @@ class NemoSTTAdapter(STTAdapter):
                 segments = None
         else:
             output = self.model.transcribe([audio_path])
-            text = str(output[0]) if output else ""
+            logger.debug("NeMo transcribe output type=%s len=%s", type(output).__name__, len(output) if hasattr(output, "__len__") else "?")
+            if isinstance(output, tuple):
+                hypotheses = output[0]
+                text = str(hypotheses[0]) if hypotheses else ""
+            elif output:
+                item = output[0]
+                # NeMo Hypothesis objects expose .text directly
+                text = getattr(item, "text", None) or str(item)
+            else:
+                text = ""
             segments = None
 
         return TranscriptionResult(

@@ -76,7 +76,10 @@ class TranscriptionService:
 
         temp_path: str | None = None
         try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".audio") as tmp:
+            # Preserve original extension so audio libraries (lhotse, soundfile)
+            # can detect the format correctly.
+            ext = Path(file.filename).suffix if file.filename else ".wav"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext or ".wav") as tmp:
                 temp_path = tmp.name
             content = await file.read()
             async with aiofiles.open(temp_path, "wb") as f:
@@ -109,7 +112,8 @@ class TranscriptionService:
 
         temp_path: str | None = None
         try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".audio") as tmp:
+            ext = Path(file.filename).suffix if file.filename else ".wav"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext or ".wav") as tmp:
                 temp_path = tmp.name
             content = await file.read()
             async with aiofiles.open(temp_path, "wb") as f:
