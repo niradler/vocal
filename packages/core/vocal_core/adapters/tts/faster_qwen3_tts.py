@@ -17,10 +17,7 @@ from .piper import SUPPORTED_FORMATS, _convert_audio
 
 logger = logging.getLogger(__name__)
 
-FASTER_QWEN3_TTS_AVAILABLE: bool = (
-    importlib.util.find_spec("faster_qwen3_tts") is not None
-    and importlib.util.find_spec("torch") is not None
-)
+FASTER_QWEN3_TTS_AVAILABLE: bool = importlib.util.find_spec("faster_qwen3_tts") is not None and importlib.util.find_spec("torch") is not None
 
 _QWEN3_PATCHES_APPLIED = False
 
@@ -28,6 +25,7 @@ _QWEN3_PATCHES_APPLIED = False
 def _patch_talker_config() -> None:
     try:
         from qwen_tts.core.models.configuration_qwen3_tts import Qwen3TTSTalkerConfig as _TalkerConfig
+
         if not hasattr(_TalkerConfig, "pad_token_id"):
             _TalkerConfig.pad_token_id = None
     except (ImportError, AttributeError):
@@ -37,6 +35,7 @@ def _patch_talker_config() -> None:
 def _patch_tokenizers_backend() -> None:
     try:
         from transformers.tokenization_utils_tokenizers import TokenizersBackend as _TBK
+
         _orig_init = _TBK.__init__
 
         def _patched_init(self, *args, **kwargs):
@@ -51,6 +50,7 @@ def _patch_tokenizers_backend() -> None:
 def _patch_static_layer() -> None:
     try:
         from transformers.cache_utils import StaticLayer as _SL
+
         _orig_lazy_init = _SL.lazy_initialization
 
         def _patched_lazy_init(self, key_states, value_states=None):
@@ -66,10 +66,13 @@ def _patch_static_layer() -> None:
 def _patch_dynamic_cache() -> None:
     try:
         from transformers.cache_utils import DynamicCache as _DC
+
         if not hasattr(_DC, "__getitem__"):
+
             def _dc_getitem(self, layer_idx):
                 layer = self.layers[layer_idx]
                 return layer.keys, layer.values
+
             _DC.__getitem__ = _dc_getitem
     except (ImportError, AttributeError):
         pass
@@ -81,6 +84,7 @@ def _apply_qwen3_patches() -> None:
         return
 
     from vocal_core.adapters._compat import apply_transformers_shims
+
     apply_transformers_shims()
 
     _patch_talker_config()
@@ -89,6 +93,7 @@ def _apply_qwen3_patches() -> None:
     _patch_dynamic_cache()
 
     _QWEN3_PATCHES_APPLIED = True
+
 
 LANGUAGE_MAP: dict[str, str] = {
     "en": "English",
@@ -130,6 +135,7 @@ class FasterQwen3TTSAdapter(TTSAdapter):
         if not FASTER_QWEN3_TTS_AVAILABLE:
             raise ImportError(optional_dependency_install_hint("qwen3-tts", "faster-qwen3-tts"))
         import torch
+
         if not torch.cuda.is_available():
             raise RuntimeError("faster-qwen3-tts requires NVIDIA CUDA. No CUDA device detected. Use a Kokoro or Piper model for CPU-only inference.")
 
@@ -163,6 +169,7 @@ class FasterQwen3TTSAdapter(TTSAdapter):
                 self._variant = "base"
 
         import torch
+
         vram_gb = torch.cuda.memory_allocated(0) / (1024**3)
         gpu_name = torch.cuda.get_device_name(0)
         logger.info(f"Qwen3-TTS loaded | variant={self._variant} | GPU={gpu_name} | VRAM={vram_gb:.2f}GB")
@@ -173,6 +180,7 @@ class FasterQwen3TTSAdapter(TTSAdapter):
         self._executor = ThreadPoolExecutor(max_workers=1)
         try:
             import torch
+
             torch.cuda.empty_cache()
         except Exception:
             pass
@@ -192,6 +200,7 @@ class FasterQwen3TTSAdapter(TTSAdapter):
         }
         try:
             import torch
+
             info["gpu_name"] = torch.cuda.get_device_name(0)
             info["vram_allocated_gb"] = torch.cuda.memory_allocated(0) / (1024**3)
         except Exception:

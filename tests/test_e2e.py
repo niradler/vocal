@@ -1047,6 +1047,7 @@ _HAS_CHATTERBOX = importlib.util.find_spec("chatterbox") is not None
 # check actual importability so we skip tests correctly.
 try:
     from nemo.collections.asr.models import ASRModel as _ASRModel  # noqa: F401
+
     _HAS_NEMO = True
 except Exception:
     _HAS_NEMO = False

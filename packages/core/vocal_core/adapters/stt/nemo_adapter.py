@@ -116,6 +116,7 @@ def _suppress_nemo_noise():
         os.close(devnull_fd)
 
     import subprocess as _subprocess
+
     _orig_run, _orig_popen = _patch_subprocess_quiet(_subprocess)
 
     with warnings.catch_warnings():

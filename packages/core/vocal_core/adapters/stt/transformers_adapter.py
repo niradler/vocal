@@ -80,17 +80,20 @@ class TransformersSTTAdapter(STTAdapter):
 
         try:
             from qwen_asr.core.transformers_backend.configuration_qwen3_asr import Qwen3ASRThinkerConfig as _ThinkerCfg
+
             if not hasattr(_ThinkerCfg, "pad_token_id"):
                 _ThinkerCfg.pad_token_id = None
         except (ImportError, AttributeError):
             pass
 
         if not hasattr(_RotEmb, "compute_default_rope_parameters"):
+
             def _default_rope_params(self, config):
                 base = getattr(config, "rope_theta", 10000.0)
                 dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
                 inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2, dtype=torch.float32) / dim))
                 return inv_freq, 1.0
+
             _RotEmb.compute_default_rope_parameters = _default_rope_params
 
     def _load_qwen_asr(self, model_path: Path, device: str) -> None:
@@ -111,7 +114,9 @@ class TransformersSTTAdapter(STTAdapter):
 
         dtype = torch.float16 if device == "cuda" else torch.float32
         self._qwen_model = Qwen3ASRModel.from_pretrained(
-            model_name, torch_dtype=dtype, device_map=device,
+            model_name,
+            torch_dtype=dtype,
+            device_map=device,
         )
         self._is_qwen_asr = True
 
@@ -193,14 +198,36 @@ class TransformersSTTAdapter(STTAdapter):
 
     # Qwen3-ASR expects full language names, not ISO codes.
     _QWEN_LANG_MAP: dict[str, str] = {
-        "en": "English", "zh": "Chinese", "yue": "Cantonese", "ar": "Arabic",
-        "de": "German", "fr": "French", "es": "Spanish", "pt": "Portuguese",
-        "id": "Indonesian", "it": "Italian", "ko": "Korean", "ru": "Russian",
-        "th": "Thai", "vi": "Vietnamese", "ja": "Japanese", "tr": "Turkish",
-        "hi": "Hindi", "ms": "Malay", "nl": "Dutch", "sv": "Swedish",
-        "da": "Danish", "fi": "Finnish", "pl": "Polish", "cs": "Czech",
-        "fil": "Filipino", "fa": "Persian", "el": "Greek", "ro": "Romanian",
-        "hu": "Hungarian", "mk": "Macedonian",
+        "en": "English",
+        "zh": "Chinese",
+        "yue": "Cantonese",
+        "ar": "Arabic",
+        "de": "German",
+        "fr": "French",
+        "es": "Spanish",
+        "pt": "Portuguese",
+        "id": "Indonesian",
+        "it": "Italian",
+        "ko": "Korean",
+        "ru": "Russian",
+        "th": "Thai",
+        "vi": "Vietnamese",
+        "ja": "Japanese",
+        "tr": "Turkish",
+        "hi": "Hindi",
+        "ms": "Malay",
+        "nl": "Dutch",
+        "sv": "Swedish",
+        "da": "Danish",
+        "fi": "Finnish",
+        "pl": "Polish",
+        "cs": "Czech",
+        "fil": "Filipino",
+        "fa": "Persian",
+        "el": "Greek",
+        "ro": "Romanian",
+        "hu": "Hungarian",
+        "mk": "Macedonian",
     }
 
     @staticmethod
@@ -208,15 +235,19 @@ class TransformersSTTAdapter(STTAdapter):
         """Estimate audio duration in seconds."""
         try:
             import soundfile as sf
+
             info = sf.info(audio_path)
             return info.duration
         except Exception:
             pass
         try:
             import subprocess
+
             out = subprocess.run(
                 ["ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", audio_path],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             return float(out.stdout.strip())
         except Exception:

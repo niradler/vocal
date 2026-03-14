@@ -36,6 +36,7 @@ def apply_transformers_shims() -> None:
 
     # --- check_model_inputs decorator (removed in transformers 5.x) ----------
     if not hasattr(_tug, "check_model_inputs"):
+
         def _shim(func=None, **kw):  # noqa: ARG001
             return (lambda f: f) if func is None else func
 
@@ -47,6 +48,7 @@ def apply_transformers_shims() -> None:
         from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS
 
         if "default" not in ROPE_INIT_FUNCTIONS:
+
             def _default_rope_init(config, device=None, seq_len=None, **kw):  # noqa: ARG001
                 base = getattr(config, "rope_theta", 10000.0)
                 dim = getattr(
@@ -54,9 +56,7 @@ def apply_transformers_shims() -> None:
                     "head_dim",
                     config.hidden_size // config.num_attention_heads,
                 )
-                inv_freq = 1.0 / (
-                    base ** (torch.arange(0, dim, 2, dtype=torch.float32).to(device) / dim)
-                )
+                inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2, dtype=torch.float32).to(device) / dim))
                 return inv_freq, 1.0
 
             ROPE_INIT_FUNCTIONS["default"] = _default_rope_init

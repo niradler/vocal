@@ -24,10 +24,7 @@ from .piper import SUPPORTED_FORMATS, _convert_audio
 
 logger = logging.getLogger(__name__)
 
-KOKORO_AVAILABLE: bool = (
-    importlib.util.find_spec("kokoro") is not None
-    and importlib.util.find_spec("torch") is not None
-)
+KOKORO_AVAILABLE: bool = importlib.util.find_spec("kokoro") is not None and importlib.util.find_spec("torch") is not None
 
 KOKORO_SAMPLE_RATE = 24000
 
@@ -186,6 +183,7 @@ class KokoroTTSAdapter(TTSAdapter):
         if self.device == "cuda":
             try:
                 import torch
+
                 torch.cuda.empty_cache()
             except Exception:
                 pass
@@ -206,6 +204,7 @@ class KokoroTTSAdapter(TTSAdapter):
         if self.device == "cuda":
             try:
                 import torch
+
                 info["gpu_name"] = torch.cuda.get_device_name(0)
                 info["vram_allocated_gb"] = torch.cuda.memory_allocated(0) / (1024**3)
             except Exception:
