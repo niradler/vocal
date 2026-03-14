@@ -40,7 +40,8 @@ Located in root `pyproject.toml` under `[tool.uv] override-dependencies`. These 
 | Override | Reason |
 |---|---|
 | `ctranslate2>=4.7.1` | Ensure minimum version for faster-whisper compatibility |
-| `transformers>=5.3.0` | Force v5 — huggingface-hub 1.x pulls it in anyway |
+| `transformers>=5.3.0` | Force v5 because transformers 4.x hard-checks `huggingface-hub<1.0` at import time and refuses to start |
+| `setuptools>=70.0.0,<81` | setuptools 82.0.0 removed `pkg_resources`; pin below 81 to keep it for perth/chatterbox and other legacy packages |
 | `numpy>=2.4.3` | chatterbox-tts pins `numpy>=1.24,<1.26`; numpy 2.x is backward compatible |
 | `huggingface-hub>=1.7.1` | whisperx<3.8.2 declares `huggingface-hub<1.0.0`; 1.7.1 works fine at runtime |
 | `torch>=2.8.0` | chatterbox-tts hard-pins `torch==2.6.0`; tested and works with 2.10.0 |
@@ -79,12 +80,30 @@ url = "https://download.pytorch.org/whl/cu128"
 - Both chatterbox-tts and whisperx now work with 2.10.0 via overrides
 
 ### transformers (v5 major bump)
-- huggingface-hub 1.x transitively requires transformers 5.x
-- No breaking changes observed in tests — all 208 pass
+- `huggingface-hub` does **not** depend on transformers — the override note "huggingface-hub 1.x pulls it in" was incorrect. The override is needed because whisperx (and others) transitively pull in huggingface-hub 1.x, which is incompatible with transformers 4.x's hard `<1.0` version check at import time.
+- Transformers 5.x introduced multiple breaking API changes that affect `qwen_asr` and `qwen_tts`. All resolved via adapter-level monkey-patching (no source editing, no forks):
+  - `check_model_inputs` removed from `transformers.utils.generic` → shim added before `qwen_asr` import in `_apply_qwen_asr_shims()`
+  - `"default"` RoPE type removed from `ROPE_INIT_FUNCTIONS` → re-added with standard inv_freq formula
+  - `Qwen3ASRThinkerTextRotaryEmbedding` missing `compute_default_rope_parameters` method (called by `modeling_utils.py` weight init) → method added to class
+  - `Qwen3ASRThinkerConfig` and `Qwen3TTSTalkerConfig` missing `pad_token_id` (required by transformers 5.x `GenerationMixin`) → set to `None` as class attribute
+  - `TokenizersBackend.__init__` passes `fix_mistral_regex` both as an explicit kwarg and via `**kwargs` when vocab > 100k → wrap `__init__` to pop it first
+  - `StaticLayer.lazy_initialization` now requires both `key_states` and `value_states`; `faster_qwen3_tts` only passes one → default `value_states = key_states`
+  - `DynamicCache` subscript access removed (`cache[i]` → `cache.layers[i].keys/values`) → add `__getitem__` returning `(layer.keys, layer.values)`
+
+### torchaudio (2.10.0 + cu128)
+- **`torchaudio.io` module removed** — lhotse (NeMo's audio backend) used `torchaudio.io.AudioFileInfo` to probe audio metadata. Removed in torchaudio 2.7+. Fix: pre-convert unsupported formats (`.m4a`, `.aac`, `.wma`, `.amr`) to wav via ffmpeg in the NeMo adapter before passing to NeMo. Implemented in `vocal_core/adapters/stt/nemo_adapter.py`.
+- **`torchaudio.save` requires torchcodec on Windows** — torchaudio 2.10.0 uses torchcodec as its default backend. Torchcodec needs FFmpeg shared DLLs (`full-shared` build). The standard static FFmpeg build (e.g. essentials from gyan.dev) does not provide these DLLs. Fix: use `soundfile` for WAV output in adapters. Implemented in `chatterbox.py`.
+
+### setuptools (82.x)
+- **`pkg_resources` removed in setuptools 82.0.0** (February 2026). `pkg_resources` was part of setuptools for decades and used by many older packages at runtime. Fix: pin `setuptools>=70.0.0,<81` via override. This restores `pkg_resources` and fixes `perth` (used by chatterbox-tts for audio watermarking), which silently set `PerthImplicitWatermarker = None` on import failure, causing `'NoneType' object is not callable` at synthesis time.
 
 ### kokoro
 - Latest available: 0.9.4 — no update available
-- `misaki[en]` (kokoro's G2P) calls `spacy.cli.download('en_core_web_sm')` at runtime, which uses pip — not available in uv-managed venvs. Fix: add `en-core-web-sm` as a URL dep in the kokoro extra (GitHub release wheel). Defined in `[tool.uv.sources]`.
+- `misaki[en]` (kokoro's G2P) calls `spacy.cli.download('en_core_web_sm')` at runtime, which uses pip — not available in uv-managed venvs. Fix: add `en-core-web-sm` as a URL dep in the kokoro extra (GitHub release wheel). Defined in `[tool.uv.sources]`. Do **not** add pip as a dep — that would allow arbitrary runtime installs and make the environment non-reproducible.
+
+## Open Issues (Upstream Blockers)
+
+No outstanding upstream blockers remain. All previously open issues have been resolved via adapter-level monkey-patching. See the transformers v5 notes above.
 
 ## Packages That Cannot Be Upgraded
 
@@ -97,3 +116,5 @@ url = "https://download.pytorch.org/whl/cu128"
 | Date | Action |
 |---|---|
 | 2026-03-14 | Bulk upgrade all packages to latest; switched cu124→cu128; resolved chatterbox/whisperx/torch conflicts via overrides; added en-core-web-sm URL dep to fix kokoro G2P pip-call issue in uv venvs |
+| 2026-03-14 | Added `setuptools<81` override (setuptools 82 removed `pkg_resources`, breaking `perth` → chatterbox); fixed NeMo m4a support via ffmpeg pre-conversion in adapter; fixed chatterbox WAV output via soundfile (replacing torchaudio.save which needs torchcodec DLLs); documented qwen-asr/qwen-tts as upstream blockers on transformers 5.x |
+| 2026-03-14 | Resolved all qwen-asr and qwen-tts transformers 5.x incompatibilities via adapter-level monkey-patching (7 distinct API breaks fixed); `TestTransformersSTT` and `TestVoiceClone` now pass on Windows; all 3 test suites green, lint clean |

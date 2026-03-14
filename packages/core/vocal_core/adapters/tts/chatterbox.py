@@ -41,7 +41,6 @@ class ChatterboxTTSAdapter(TTSAdapter):
         self.device = resolved
 
         logger.info("Loading Chatterbox TTS model from %s on %s", model_path, resolved)
-        path_str = str(model_path)
         self.model = ChatterboxTTS.from_pretrained(device=resolved)
         self.sample_rate = self.model.sr
         self.model_path = model_path
@@ -128,7 +127,7 @@ class ChatterboxTTSAdapter(TTSAdapter):
         exaggeration: float,
         cfg_weight: float,
     ) -> tuple[bytes, float]:
-        import torchaudio
+        import soundfile as sf
 
         kwargs: dict = {"exaggeration": exaggeration, "cfg_weight": cfg_weight}
         if audio_prompt_path:
@@ -138,7 +137,8 @@ class ChatterboxTTSAdapter(TTSAdapter):
         duration = wav.shape[-1] / self.sample_rate
 
         buf = io.BytesIO()
-        torchaudio.save(buf, wav, self.sample_rate, format=AudioFormat.WAV)
+        wav_np = wav.squeeze(0).cpu().numpy()
+        sf.write(buf, wav_np, self.sample_rate, format="WAV", subtype="PCM_16")
         return buf.getvalue(), duration
 
     async def get_voices(self) -> list[Voice]:

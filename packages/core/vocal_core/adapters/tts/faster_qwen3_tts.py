@@ -17,8 +17,69 @@ from .piper import SUPPORTED_FORMATS, _convert_audio
 logger = logging.getLogger(__name__)
 
 try:
-    import faster_qwen3_tts as _fqt_module
     import torch
+    import transformers.utils.generic as _tug
+
+    if not hasattr(_tug, "check_model_inputs"):
+        def _shim(func=None, **kw):
+            return (lambda f: f) if func is None else func
+        _tug.check_model_inputs = _shim
+
+    try:
+        from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS as _ROPE_FNS
+        if "default" not in _ROPE_FNS:
+            def _default_rope_init(config, device=None, seq_len=None, **kw):
+                base = getattr(config, "rope_theta", 10000.0)
+                dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
+                inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2, dtype=torch.float32).to(device) / dim))
+                return inv_freq, 1.0
+            _ROPE_FNS["default"] = _default_rope_init
+    except (ImportError, AttributeError):
+        pass
+
+    import faster_qwen3_tts as _fqt_module
+
+    try:
+        from qwen_tts.core.models.configuration_qwen3_tts import Qwen3TTSTalkerConfig as _TalkerConfig
+        if not hasattr(_TalkerConfig, "pad_token_id"):
+            _TalkerConfig.pad_token_id = None
+    except (ImportError, AttributeError):
+        pass
+
+    try:
+        from transformers.tokenization_utils_tokenizers import TokenizersBackend as _TBK
+        _orig_tbk_init = _TBK.__init__
+
+        def _patched_tbk_init(self, *args, **kwargs):
+            kwargs.pop("fix_mistral_regex", None)
+            _orig_tbk_init(self, *args, **kwargs)
+
+        _TBK.__init__ = _patched_tbk_init
+    except (ImportError, AttributeError):
+        pass
+
+    try:
+        from transformers.cache_utils import StaticLayer as _SL
+        _orig_lazy_init = _SL.lazy_initialization
+
+        def _patched_lazy_init(self, key_states, value_states=None):
+            if value_states is None:
+                value_states = key_states
+            return _orig_lazy_init(self, key_states, value_states)
+
+        _SL.lazy_initialization = _patched_lazy_init
+    except (ImportError, AttributeError):
+        pass
+
+    try:
+        from transformers.cache_utils import DynamicCache as _DC
+        if not hasattr(_DC, "__getitem__"):
+            def _dc_getitem(self, layer_idx):
+                layer = self.layers[layer_idx]
+                return layer.keys, layer.values
+            _DC.__getitem__ = _dc_getitem
+    except (ImportError, AttributeError):
+        pass
 
     FASTER_QWEN3_TTS_AVAILABLE = True
 except ImportError:

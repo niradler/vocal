@@ -85,6 +85,7 @@ override-dependencies = [
     "aiofiles>=25.1.0",
     "pydantic>=2.12.5",
     "websockets>=16.0",
+    "setuptools>=70.0.0,<81",
 ]
 
 [tool.uv.extra-build-dependencies]
@@ -119,7 +120,7 @@ dev = [
     "pytest-xdist>=3.8.0",
     "qwen-asr>=0.0.6",
     "ruff>=0.15.6",
-    "setuptools>=82.0.0",
+    "setuptools>=70.0.0,<81",
     "twine>=6.2.0",
     "websockets>=16.0",
     "whisperx>=3.8.2",

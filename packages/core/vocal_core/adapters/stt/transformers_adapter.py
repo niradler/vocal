@@ -36,8 +36,6 @@ class TransformersSTTAdapter(STTAdapter):
         await loop.run_in_executor(None, self._load_sync, model_path, device)
 
     def _load_sync(self, model_path: Path, device: str) -> None:
-        import json as _json
-
         import torch
 
         resolved = "cuda" if device == "auto" and torch.cuda.is_available() else ("cpu" if device == "auto" else device)
@@ -69,10 +67,52 @@ class TransformersSTTAdapter(STTAdapter):
                 return _json.load(f).get("model_type", "")
         return ""
 
+    @staticmethod
+    def _apply_qwen_asr_shims() -> None:
+        import torch
+        import transformers.utils.generic as _tug
+
+        if not hasattr(_tug, "check_model_inputs"):
+            def _shim(func=None, **kw):
+                return (lambda f: f) if func is None else func
+            _tug.check_model_inputs = _shim
+
+        try:
+            from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS
+            if "default" not in ROPE_INIT_FUNCTIONS:
+                def _default_rope_init(config, dev=None, seq_len=None, **kw):
+                    base = getattr(config, "rope_theta", 10000.0)
+                    dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
+                    inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2, dtype=torch.float32).to(dev) / dim))
+                    return inv_freq, 1.0
+                ROPE_INIT_FUNCTIONS["default"] = _default_rope_init
+        except (ImportError, AttributeError):
+            pass
+
+        from qwen_asr.core.transformers_backend.modeling_qwen3_asr import Qwen3ASRThinkerTextRotaryEmbedding as _RotEmb
+
+        try:
+            from qwen_asr.core.transformers_backend.configuration_qwen3_asr import Qwen3ASRThinkerConfig as _ThinkerCfg
+            if not hasattr(_ThinkerCfg, "pad_token_id"):
+                _ThinkerCfg.pad_token_id = None
+        except (ImportError, AttributeError):
+            pass
+
+        if not hasattr(_RotEmb, "compute_default_rope_parameters"):
+            def _default_rope_params(self, config):
+                base = getattr(config, "rope_theta", 10000.0)
+                dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
+                inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2, dtype=torch.float32) / dim))
+                return inv_freq, 1.0
+            _RotEmb.compute_default_rope_parameters = _default_rope_params
+
     def _load_qwen_asr(self, model_path: Path, device: str) -> None:
         if not QWEN_ASR_AVAILABLE:
             raise ImportError("qwen_asr is required for Qwen3-ASR models. Install with: pip install qwen-asr")
         import torch
+
+        self._apply_qwen_asr_shims()
+
         from qwen_asr import Qwen3ASRModel
 
         # Derive HF model name from directory (org--repo → org/repo)
