@@ -19,10 +19,10 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
 ]
 dependencies = [
-    "fastapi>=0.109.0",
-    "uvicorn[standard]>=0.27.0",
-    "pydantic>=2.5.0",
-    "python-multipart>=0.0.6",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "pydantic>=2.8.0",
+    "python-multipart>=0.0.12",
     "vocal-core>=0.3.5",
     "aiofiles>=25.1.0",
 ]
