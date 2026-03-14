@@ -1,14 +1,14 @@
 Server Side Public License (SSPL)
 Version 1, October 16, 2018
 
-Copyright (C) 2024–2026 Vocal Contributors
+Copyright (C) 2025 Vocal
 
 Everyone is permitted to copy and distribute verbatim copies of this license
 document, but changing it is not allowed.
 
                     TERMS AND CONDITIONS
 
-  0. Definitions.
+1. Definitions.
 
 "This License" refers to Server Side Public License.
 
@@ -36,12 +36,12 @@ available to third parties as a service, including but not limited to offering
 the Program as a cloud-based service, a hosted API, a managed service, or a
 software-as-a-service (SaaS) product.
 
-  1. Source Code.
+1. Source Code.
 
 The "source code" for a work means the preferred form of the work for making
 modifications to it. "Object code" means any non-source form of a work.
 
-  2. Basic Permissions.
+2. Basic Permissions.
 
 All rights granted under this License are granted for the term of copyright on
 the Program, and are irrevocable provided the stated conditions are met. This
@@ -55,13 +55,13 @@ exclusively for you, or provide you with facilities for running those works,
 provided that you comply with the terms of this License in conveying all
 material for which you do not control copyright.
 
-  3. Protecting Users' Legal Rights From Anti-Circumvention Law.
+3. Protecting Users' Legal Rights From Anti-Circumvention Law.
 
 No covered work shall be deemed part of an effective technological measure
 under any applicable law fulfilling obligations under article 11 of the WIPO
 copyright treaty adopted on 20 December 1996.
 
-  4. Conveying Verbatim Copies.
+4. Conveying Verbatim Copies.
 
 You may convey verbatim copies of the Program's source code as you receive it,
 in any medium, provided that you conspicuously and appropriately publish on
@@ -69,32 +69,32 @@ each copy an appropriate copyright notice and disclaimer of warranty; keep
 intact all notices stating that this License applies to the code; and give all
 recipients a copy of this License along with the Program.
 
-  5. Conveying Modified Source Versions.
+5. Conveying Modified Source Versions.
 
 You may convey a work based on the Program, or the modifications to produce it
 from the Program, in the form of source code under the terms of section 4,
 provided that you also meet all of these conditions:
 
-  a) The work must carry prominent notices stating that you modified it, and
-     giving a relevant date.
-  b) The work must carry prominent notices stating that it is released under
-     this License.
-  c) You must license the entire work, as a whole, under this License to
-     anyone who comes into possession of a copy.
+a) The work must carry prominent notices stating that you modified it, and
+giving a relevant date.
+b) The work must carry prominent notices stating that it is released under
+this License.
+c) You must license the entire work, as a whole, under this License to
+anyone who comes into possession of a copy.
 
-  6. Conveying Non-Source Forms.
+6. Conveying Non-Source Forms.
 
 You may convey the Program in object code form under the terms of sections 4
 and 5, provided that you also convey the machine-readable Corresponding Source
 under the terms of this License, in one of these ways: on a durable physical
 medium; or on a network server accessible to the public.
 
-  7. Additional Terms.
+7. Additional Terms.
 
 You may place additional permissions on material added by you to a covered
 work, for which you have or can give appropriate copyright permission.
 
-  8. If You Use This Program to Provide a Service.
+8. If You Use This Program to Provide a Service.
 
 If you make the functionality of the Program, or a modified version, available
 to third parties as a Service, you must make the Service Source Code available
@@ -109,7 +109,7 @@ offer it for free. If you make a modified version of the Program available as
 a Service without complying with this section, you may not make the Program
 available as a Service at all.
 
-  9. Termination.
+9. Termination.
 
 You may not propagate or modify a covered work except as expressly provided
 under this License. Any attempt otherwise to propagate or modify it is void,
@@ -121,7 +121,7 @@ the copyright holder explicitly and finally terminates your license, and (b)
 permanently, if the copyright holder fails to notify you of the violation by
 some reasonable means prior to 60 days after the cessation.
 
-  10. Disclaimer of Warranty.
+10. Disclaimer of Warranty.
 
 THERE IS NO WARRANTY FOR THE PROGRAM, TO THE EXTENT PERMITTED BY APPLICABLE
 LAW. EXCEPT WHEN OTHERWISE STATED IN WRITING, THE COPYRIGHT HOLDERS AND/OR
@@ -129,7 +129,7 @@ OTHER PARTIES PROVIDE THE PROGRAM "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER
 EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
 MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
 
-  11. Limitation of Liability.
+11. Limitation of Liability.
 
 IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING WILL ANY
 COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MODIFIES AND/OR CONVEYS THE PROGRAM AS
@@ -137,7 +137,7 @@ PERMITTED ABOVE, BE LIABLE TO YOU FOR DAMAGES, INCLUDING ANY GENERAL, SPECIAL,
 INCIDENTAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE USE OR INABILITY TO USE
 THE PROGRAM.
 
-  12. Interpretation.
+12. Interpretation.
 
 If the disclaimer of warranty and limitation of liability provided above cannot
 be given local legal effect according to their terms, reviewing courts shall
@@ -146,39 +146,44 @@ liability in connection with the Program.
 
                      END OF TERMS AND CONDITIONS
 
--------------------------------------------------------------------------------
+---
 
 WHAT THIS MEANS IN PLAIN LANGUAGE
 
 You CAN:
-  - Use Vocal for personal or internal business use (self-hosted)
-  - Modify Vocal and run the modified version internally
-  - Integrate Vocal into your own products (where you control the deployment)
-  - Contribute improvements back as open source
-  - Redistribute Vocal under this same license
-  - Run Vocal as a service for your own organization
+
+- Use Vocal for personal or internal business use (self-hosted)
+- Modify Vocal and run the modified version internally
+- Integrate Vocal into your own products (where you control the deployment)
+- Contribute improvements back as open source
+- Redistribute Vocal under this same license
+- Run Vocal as a service for your own organization
 
 You MUST (if you offer Vocal as a service to third parties):
-  - Publish all source code for the complete service stack under this License,
-    including your deployment scripts, management code, and infrastructure code
+
+- Publish all source code for the complete service stack under this License,
+  including your deployment scripts, management code, and infrastructure code
 
 You CANNOT:
-  - Offer Vocal (or a modified version) as a managed cloud service / SaaS to
-    external users without complying with Section 8 above
-  - Remove or alter this license notice
+
+- Offer Vocal (or a modified version) as a managed cloud service / SaaS to
+  external users without complying with Section 8 above
+- Remove or alter this license notice
 
 EXAMPLES:
 
-  ALLOWED:
-  - Running Vocal on-prem for your company's internal transcription pipeline
-  - Building a desktop or mobile app that uses a self-hosted Vocal API
-  - A startup building a voice product where Vocal runs on their own servers
-  - Academic research or personal projects
+ALLOWED:
 
-  REQUIRES Section 8 compliance (open-source your full stack):
-  - "TranscriptionCloud.io" — selling managed Vocal as a SaaS to customers
-  - Offering a hosted Vocal API to external developers (paid or free)
-  - Any cloud service where external users send audio to your Vocal instance
+- Running Vocal on-prem for your company's internal transcription pipeline
+- Building a desktop or mobile app that uses a self-hosted Vocal API
+- A startup building a voice product where Vocal runs on their own servers
+- Academic research or personal projects
+
+REQUIRES Section 8 compliance (open-source your full stack):
+
+- "TranscriptionCloud.io" — selling managed Vocal as a SaaS to customers
+- Offering a hosted Vocal API to external developers (paid or free)
+- Any cloud service where external users send audio to your Vocal instance
 
 For the authoritative SSPL v1 legal text see:
 https://www.mongodb.com/licensing/server-side-public-license
