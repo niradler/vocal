@@ -71,6 +71,26 @@ def _restore_fd(fd: int, old: int | None) -> None:
             pass
 
 
+def _patch_subprocess_quiet(subprocess_mod):
+    orig_run = subprocess_mod.run
+    orig_popen = subprocess_mod.Popen
+
+    def _quiet_run(*args, **kw):
+        kw.setdefault("stdout", subprocess_mod.DEVNULL)
+        kw.setdefault("stderr", subprocess_mod.DEVNULL)
+        return orig_run(*args, **kw)
+
+    class _QuietPopen(orig_popen):
+        def __init__(self, *args, **kw):
+            kw.setdefault("stdout", subprocess_mod.DEVNULL)
+            kw.setdefault("stderr", subprocess_mod.DEVNULL)
+            super().__init__(*args, **kw)
+
+    subprocess_mod.run = _quiet_run
+    subprocess_mod.Popen = _QuietPopen
+    return orig_run, orig_popen
+
+
 # TODO: fix root causes — megatron/apex init, torch distributed redirects on Windows,
 # OneLogger telemetry, flash-attn missing, SoX not found — suppressed for now
 @contextmanager
@@ -96,22 +116,7 @@ def _suppress_nemo_noise():
         os.close(devnull_fd)
 
     import subprocess as _subprocess
-    _orig_run = _subprocess.run
-    _orig_popen = _subprocess.Popen
-
-    def _quiet_run(*args, **kw):
-        kw.setdefault("stdout", _subprocess.DEVNULL)
-        kw.setdefault("stderr", _subprocess.DEVNULL)
-        return _orig_run(*args, **kw)
-
-    class _QuietPopen(_orig_popen):
-        def __init__(self, *args, **kw):
-            kw.setdefault("stdout", _subprocess.DEVNULL)
-            kw.setdefault("stderr", _subprocess.DEVNULL)
-            super().__init__(*args, **kw)
-
-    _subprocess.run = _quiet_run
-    _subprocess.Popen = _QuietPopen
+    _orig_run, _orig_popen = _patch_subprocess_quiet(_subprocess)
 
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=UserWarning)
@@ -120,7 +125,7 @@ def _suppress_nemo_noise():
             yield
         finally:
             _subprocess.run = _orig_run
-            _subprocess.Popen = _orig_popen
+            _subprocess.Popen = _orig_popen  # type: ignore[assignment]
 
             sys.stdout.flush()
             sys.stderr.flush()

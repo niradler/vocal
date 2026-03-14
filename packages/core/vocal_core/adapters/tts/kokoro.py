@@ -10,8 +10,13 @@ import wave
 from collections.abc import AsyncGenerator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
+
+if TYPE_CHECKING:
+    import torch
+    from kokoro import KPipeline
 
 from ...config import optional_dependency_install_hint
 from .base import TTSAdapter, TTSCapabilities, TTSResult, Voice

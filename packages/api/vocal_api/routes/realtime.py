@@ -162,17 +162,8 @@ async def _transcribe_buffer(ws: WebSocket, session: _Session, transcription_ser
             Path(tmp_path).unlink(missing_ok=True)
 
 
-async def _run_voice_agent(ws: WebSocket, session: _Session, user_text: str, tts_service) -> None:
-    if not user_text:
-        return
-    response_id = f"resp_{uuid.uuid4().hex[:16]}"
-    item_id = f"item_{uuid.uuid4().hex[:16]}"
-    if not await _safe_send(ws, _make_event("response.created", response={"id": response_id, "status": "in_progress"})):
-        return
-
+async def _stream_llm(ws: WebSocket, messages: list, response_id: str, item_id: str) -> str:
     full_response = ""
-    sys_msg = [{"role": "system", "content": session.system_prompt}] if session.system_prompt else []
-    messages = sys_msg + session.conversation_history + [{"role": "user", "content": user_text}]
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             async with client.stream(
@@ -182,47 +173,54 @@ async def _run_voice_agent(ws: WebSocket, session: _Session, user_text: str, tts
                 json={"model": vocal_settings.LLM_MODEL, "messages": messages, "stream": True},
             ) as resp:
                 async for line in resp.aiter_lines():
-                    if line.startswith("data: ") and "[DONE]" not in line:
-                        try:
-                            chunk = json.loads(line[6:])
-                            delta = (chunk.get("choices") or [{}])[0].get("delta", {}).get("content") or ""
-                            if delta:
-                                full_response += delta
-                                ok = await _safe_send(
-                                    ws,
-                                    _make_event(
-                                        "response.output_audio_transcript.delta",
-                                        response_id=response_id,
-                                        item_id=item_id,
-                                        delta=delta,
-                                    ),
-                                )
-                                if not ok:
-                                    return
-                        except (json.JSONDecodeError, KeyError, IndexError):
-                            pass
+                    if not (line.startswith("data: ") and "[DONE]" not in line):
+                        continue
+                    try:
+                        chunk = json.loads(line[6:])
+                        delta = (chunk.get("choices") or [{}])[0].get("delta", {}).get("content") or ""
+                    except (json.JSONDecodeError, KeyError, IndexError):
+                        continue
+                    if delta:
+                        full_response += delta
+                        if not await _safe_send(ws, _make_event("response.output_audio_transcript.delta", response_id=response_id, item_id=item_id, delta=delta)):
+                            return full_response
     except Exception as exc:
         logger.warning("LLM call failed: %s", exc)
+    return full_response
 
-    if full_response:
-        session.conversation_history.append({"role": "user", "content": user_text})
-        session.conversation_history.append({"role": "assistant", "content": full_response})
 
+async def _send_tts_audio(ws: WebSocket, tts_service, text: str, response_id: str, item_id: str) -> None:
     try:
-        tts_result = await tts_service.synthesize(vocal_settings.TTS_DEFAULT_MODEL, full_response or "...", voice=vocal_settings.TTS_DEFAULT_VOICE, output_format="pcm")
+        tts_result = await tts_service.synthesize(vocal_settings.TTS_DEFAULT_MODEL, text, voice=vocal_settings.TTS_DEFAULT_VOICE, output_format="pcm")
         pcm_bytes = tts_result.audio_data
         output_sample_rate = tts_result.sample_rate or 22050
         audio_24k = _resample_pcm16(pcm_bytes, output_sample_rate, 24000)
         logger.info("TTS: %d raw PCM bytes @ %dHz -> %d bytes @ 24kHz", len(pcm_bytes), output_sample_rate, len(audio_24k))
-        chunk_size = 4800
-        for i in range(0, len(audio_24k), chunk_size):
-            chunk = audio_24k[i : i + chunk_size]
-            encoded = base64.b64encode(chunk).decode()
+        for i in range(0, len(audio_24k), 4800):
+            encoded = base64.b64encode(audio_24k[i : i + 4800]).decode()
             if not await _safe_send(ws, _make_event("response.output_audio.delta", response_id=response_id, item_id=item_id, delta=encoded)):
                 return
     except Exception as exc:
         logger.exception("TTS failed in voice agent: %s", exc)
 
+
+async def _run_voice_agent(ws: WebSocket, session: _Session, user_text: str, tts_service) -> None:
+    if not user_text:
+        return
+    response_id = f"resp_{uuid.uuid4().hex[:16]}"
+    item_id = f"item_{uuid.uuid4().hex[:16]}"
+    if not await _safe_send(ws, _make_event("response.created", response={"id": response_id, "status": "in_progress"})):
+        return
+
+    sys_msg = [{"role": "system", "content": session.system_prompt}] if session.system_prompt else []
+    messages = sys_msg + session.conversation_history + [{"role": "user", "content": user_text}]
+    full_response = await _stream_llm(ws, messages, response_id, item_id)
+
+    if full_response:
+        session.conversation_history.append({"role": "user", "content": user_text})
+        session.conversation_history.append({"role": "assistant", "content": full_response})
+
+    await _send_tts_audio(ws, tts_service, full_response or "...", response_id, item_id)
     await _safe_send(ws, _make_event("response.output_audio_transcript.done", response_id=response_id, item_id=item_id, transcript=full_response))
     await _safe_send(ws, _make_event("response.output_audio.done", response_id=response_id, item_id=item_id))
     await _safe_send(ws, _make_event("response.done", response={"id": response_id, "status": "completed"}))
@@ -370,7 +368,7 @@ async def realtime_endpoint(
                     websocket.receive_text(),
                     timeout=float(_KEEPALIVE_S),
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 if not await _safe_send(websocket, _make_event("ping")):
                     break
                 session.touch()

@@ -25,14 +25,7 @@ FASTER_QWEN3_TTS_AVAILABLE: bool = (
 _QWEN3_PATCHES_APPLIED = False
 
 
-def _apply_qwen3_patches() -> None:
-    global _QWEN3_PATCHES_APPLIED
-    if _QWEN3_PATCHES_APPLIED:
-        return
-
-    from vocal_core.adapters._compat import apply_transformers_shims
-    apply_transformers_shims()
-
+def _patch_talker_config() -> None:
     try:
         from qwen_tts.core.models.configuration_qwen3_tts import Qwen3TTSTalkerConfig as _TalkerConfig
         if not hasattr(_TalkerConfig, "pad_token_id"):
@@ -40,18 +33,22 @@ def _apply_qwen3_patches() -> None:
     except (ImportError, AttributeError):
         pass
 
+
+def _patch_tokenizers_backend() -> None:
     try:
         from transformers.tokenization_utils_tokenizers import TokenizersBackend as _TBK
-        _orig_tbk_init = _TBK.__init__
+        _orig_init = _TBK.__init__
 
-        def _patched_tbk_init(self, *args, **kwargs):
+        def _patched_init(self, *args, **kwargs):
             kwargs.pop("fix_mistral_regex", None)
-            _orig_tbk_init(self, *args, **kwargs)
+            _orig_init(self, *args, **kwargs)
 
-        _TBK.__init__ = _patched_tbk_init
+        _TBK.__init__ = _patched_init
     except (ImportError, AttributeError):
         pass
 
+
+def _patch_static_layer() -> None:
     try:
         from transformers.cache_utils import StaticLayer as _SL
         _orig_lazy_init = _SL.lazy_initialization
@@ -65,6 +62,8 @@ def _apply_qwen3_patches() -> None:
     except (ImportError, AttributeError):
         pass
 
+
+def _patch_dynamic_cache() -> None:
     try:
         from transformers.cache_utils import DynamicCache as _DC
         if not hasattr(_DC, "__getitem__"):
@@ -74,6 +73,20 @@ def _apply_qwen3_patches() -> None:
             _DC.__getitem__ = _dc_getitem
     except (ImportError, AttributeError):
         pass
+
+
+def _apply_qwen3_patches() -> None:
+    global _QWEN3_PATCHES_APPLIED
+    if _QWEN3_PATCHES_APPLIED:
+        return
+
+    from vocal_core.adapters._compat import apply_transformers_shims
+    apply_transformers_shims()
+
+    _patch_talker_config()
+    _patch_tokenizers_backend()
+    _patch_static_layer()
+    _patch_dynamic_cache()
 
     _QWEN3_PATCHES_APPLIED = True
 
