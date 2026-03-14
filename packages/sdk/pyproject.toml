@@ -18,7 +18,8 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "requests>=2.31.0",
+    "attrs>=23.1.0",
+    "httpx>=0.24.0",
     "pydantic>=2.5.0",
 ]
 
