@@ -1,6 +1,6 @@
 import asyncio
-import importlib.util
 import logging
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, BinaryIO
@@ -89,6 +89,18 @@ class NemoSTTAdapter(STTAdapter):
             "backend": "nemo",
         }
 
+    _LHOTSE_UNSUPPORTED = {".m4a", ".aac", ".wma", ".amr"}
+
+    @staticmethod
+    def _to_wav(src: str) -> str:
+        dst = tempfile.NamedTemporaryFile(delete=False, suffix=".wav").name
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", src, "-ar", "16000", "-ac", "1", dst],
+            check=True,
+            capture_output=True,
+        )
+        return dst
+
     async def transcribe(
         self,
         audio: str | Path | BinaryIO,
@@ -102,9 +114,13 @@ class NemoSTTAdapter(STTAdapter):
             raise RuntimeError("Model not loaded. Call load_model() first.")
 
         temp_path: str | None = None
+        converted_path: str | None = None
         try:
             if isinstance(audio, (str, Path)):
                 audio_path = str(audio)
+                if Path(audio_path).suffix.lower() in self._LHOTSE_UNSUPPORTED:
+                    converted_path = self._to_wav(audio_path)
+                    audio_path = converted_path
             else:
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
                     tmp.write(audio.read())
@@ -117,6 +133,8 @@ class NemoSTTAdapter(STTAdapter):
         finally:
             if temp_path:
                 Path(temp_path).unlink(missing_ok=True)
+            if converted_path:
+                Path(converted_path).unlink(missing_ok=True)
 
     def _run_transcribe(self, audio_path: str, language: str | None, word_timestamps: bool) -> TranscriptionResult:
         resolved_language = language or vocal_settings.STT_DEFAULT_LANGUAGE or vocal_settings.NEMO_DEFAULT_LANGUAGE or vocal_settings.DEFAULT_LANGUAGE

@@ -17,8 +17,55 @@ from .piper import SUPPORTED_FORMATS, _convert_audio
 logger = logging.getLogger(__name__)
 
 try:
-    import faster_qwen3_tts as _fqt_module
     import torch
+
+    from vocal_core.adapters._compat import apply_transformers_shims
+
+    apply_transformers_shims()
+
+    import faster_qwen3_tts as _fqt_module
+
+    try:
+        from qwen_tts.core.models.configuration_qwen3_tts import Qwen3TTSTalkerConfig as _TalkerConfig
+        if not hasattr(_TalkerConfig, "pad_token_id"):
+            _TalkerConfig.pad_token_id = None
+    except (ImportError, AttributeError):
+        pass
+
+    try:
+        from transformers.tokenization_utils_tokenizers import TokenizersBackend as _TBK
+        _orig_tbk_init = _TBK.__init__
+
+        def _patched_tbk_init(self, *args, **kwargs):
+            kwargs.pop("fix_mistral_regex", None)
+            _orig_tbk_init(self, *args, **kwargs)
+
+        _TBK.__init__ = _patched_tbk_init
+    except (ImportError, AttributeError):
+        pass
+
+    try:
+        from transformers.cache_utils import StaticLayer as _SL
+        _orig_lazy_init = _SL.lazy_initialization
+
+        def _patched_lazy_init(self, key_states, value_states=None):
+            if value_states is None:
+                value_states = key_states
+            return _orig_lazy_init(self, key_states, value_states)
+
+        _SL.lazy_initialization = _patched_lazy_init
+    except (ImportError, AttributeError):
+        pass
+
+    try:
+        from transformers.cache_utils import DynamicCache as _DC
+        if not hasattr(_DC, "__getitem__"):
+            def _dc_getitem(self, layer_idx):
+                layer = self.layers[layer_idx]
+                return layer.keys, layer.values
+            _DC.__getitem__ = _dc_getitem
+    except (ImportError, AttributeError):
+        pass
 
     FASTER_QWEN3_TTS_AVAILABLE = True
 except ImportError:

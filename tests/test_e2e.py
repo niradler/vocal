@@ -93,25 +93,35 @@ def _tts(
     return text_to_speech_v1_audio_speech_post.sync_detailed(client=client, body=body).content
 
 
+def _find_free_port() -> int:
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
 @pytest.fixture(scope="session")
 def api_server():
-    """Start API server for E2E testing, or reuse an already-running one.
+    """Always start a fresh isolated API server for E2E testing.
 
-    Respects ``VOCAL_TEST_URL`` env-var so WSL / remote runs can point at a
-    different server (e.g. ``VOCAL_TEST_URL=http://127.0.0.1:8001``).
+    Never reuses an existing server — each test run gets a clean instance
+    on a random free port so tests are not affected by leftover state.
+
+    Set VOCAL_TEST_URL to point at an externally managed server instead
+    (e.g. WSL runs where the server must be started separately via make serve-wsl).
     """
     import sys
 
-    base_url = os.environ.get("VOCAL_TEST_URL", "http://localhost:8000")
+    # WSL / remote: caller manages the server, just point at it
+    external_url = os.environ.get("VOCAL_TEST_URL")
+    if external_url:
+        print(f"\nUsing external server at {external_url}")
+        yield external_url
+        return
 
-    try:
-        response = requests.get(f"{base_url}/health", timeout=2)
-        if response.status_code == 200:
-            print(f"\nReusing existing API server on {base_url}")
-            yield base_url
-            return
-    except requests.exceptions.RequestException:
-        pass
+    port = _find_free_port()
+    base_url = f"http://127.0.0.1:{port}"
 
     server_process = subprocess.Popen(
         [
@@ -120,7 +130,7 @@ def api_server():
             "uvicorn",
             "vocal_api.main:app",
             "--port",
-            "8000",
+            str(port),
             "--log-level",
             "error",
         ],
