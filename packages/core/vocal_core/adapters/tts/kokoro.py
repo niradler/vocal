@@ -146,7 +146,7 @@ class KokoroTTSAdapter(TTSAdapter):
         else:
             self.device = device
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         with ThreadPoolExecutor(max_workers=1) as executor:
             await loop.run_in_executor(executor, self._load_sync)
 
@@ -227,7 +227,7 @@ class KokoroTTSAdapter(TTSAdapter):
 
         voice_id = voice or "af_heart"
         lang_code = _voice_lang_code(voice_id)
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         with ThreadPoolExecutor(max_workers=1) as executor:
             audio_array = await loop.run_in_executor(executor, self._synthesize_sync, text, voice_id, lang_code, speed)
@@ -271,7 +271,7 @@ class KokoroTTSAdapter(TTSAdapter):
 
         voice_id = voice or "af_heart"
         lang_code = _voice_lang_code(voice_id)
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         queue: asyncio.Queue[bytes | None] = asyncio.Queue()
 
         def _run() -> None:

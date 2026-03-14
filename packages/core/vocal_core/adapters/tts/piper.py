@@ -365,7 +365,7 @@ class SimpleTTSAdapter(TTSAdapter):
 
         try:
             # Run blocking TTS in thread pool to avoid blocking event loop
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             with ThreadPoolExecutor(max_workers=1) as executor:
                 await loop.run_in_executor(
                     executor,

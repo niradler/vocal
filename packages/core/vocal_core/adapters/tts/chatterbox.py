@@ -98,6 +98,9 @@ class ChatterboxTTSAdapter(TTSAdapter):
         if not self.is_loaded():
             raise RuntimeError("Model not loaded. Call load_model() first.")
 
+        if output_format != AudioFormat.WAV:
+            raise ValueError(f"Chatterbox only supports WAV output. Requested: '{output_format}'. Convert the result yourself if another format is needed.")
+
         exaggeration = exaggeration if exaggeration is not None else vocal_settings.CHATTERBOX_EXAGGERATION
         cfg_weight = cfg_weight if cfg_weight is not None else vocal_settings.CHATTERBOX_CFG_WEIGHT
         loop = asyncio.get_running_loop()
@@ -108,12 +111,15 @@ class ChatterboxTTSAdapter(TTSAdapter):
         if not self.is_loaded():
             raise RuntimeError("Model not loaded. Call load_model() first.")
 
+        output_format = request.output_format if request.output_format else AudioFormat.WAV
+        if output_format != AudioFormat.WAV:
+            raise ValueError(f"Chatterbox only supports WAV output. Requested: '{output_format}'. Convert the result yourself if another format is needed.")
+
         exaggeration = vocal_settings.CHATTERBOX_EXAGGERATION
         cfg_weight = vocal_settings.CHATTERBOX_CFG_WEIGHT
-        output_format = request.output_format if request.output_format else AudioFormat.WAV
         loop = asyncio.get_running_loop()
         audio_bytes, duration = await loop.run_in_executor(None, self._synthesize_sync, request.text, request.reference_audio_path, exaggeration, cfg_weight)
-        return TTSResult(audio_data=audio_bytes, sample_rate=self.sample_rate, duration=duration, format=output_format)
+        return TTSResult(audio_data=audio_bytes, sample_rate=self.sample_rate, duration=duration, format=AudioFormat.WAV)
 
     def _synthesize_sync(
         self,
