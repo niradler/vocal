@@ -80,15 +80,8 @@ url = "https://download.pytorch.org/whl/cu128"
 - Both chatterbox-tts and whisperx now work with 2.10.0 via overrides
 
 ### transformers (v5 major bump)
-- `huggingface-hub` does **not** depend on transformers — the override note "huggingface-hub 1.x pulls it in" was incorrect. The override is needed because whisperx (and others) transitively pull in huggingface-hub 1.x, which is incompatible with transformers 4.x's hard `<1.0` version check at import time.
-- Transformers 5.x introduced multiple breaking API changes that affect `qwen_asr` and `qwen_tts`. All resolved via adapter-level monkey-patching (no source editing, no forks):
-  - `check_model_inputs` removed from `transformers.utils.generic` → shim added before `qwen_asr` import in `_apply_qwen_asr_shims()`
-  - `"default"` RoPE type removed from `ROPE_INIT_FUNCTIONS` → re-added with standard inv_freq formula
-  - `Qwen3ASRThinkerTextRotaryEmbedding` missing `compute_default_rope_parameters` method (called by `modeling_utils.py` weight init) → method added to class
-  - `Qwen3ASRThinkerConfig` and `Qwen3TTSTalkerConfig` missing `pad_token_id` (required by transformers 5.x `GenerationMixin`) → set to `None` as class attribute
-  - `TokenizersBackend.__init__` passes `fix_mistral_regex` both as an explicit kwarg and via `**kwargs` when vocab > 100k → wrap `__init__` to pop it first
-  - `StaticLayer.lazy_initialization` now requires both `key_states` and `value_states`; `faster_qwen3_tts` only passes one → default `value_states = key_states`
-  - `DynamicCache` subscript access removed (`cache[i]` → `cache.layers[i].keys/values`) → add `__getitem__` returning `(layer.keys, layer.values)`
+- `huggingface-hub` does **not** depend on transformers — the override is needed because whisperx transitively pulls in huggingface-hub 1.x, which is incompatible with transformers 4.x's hard `<1.0` import-time check.
+- Transformers 5.x broke `qwen_asr` and `qwen_tts` in several ways. All fixed via adapter-level patches — see the **Runtime Patches** section below.
 
 ### torchaudio (2.10.0 + cu128)
 - **`torchaudio.io` module removed** — lhotse (NeMo's audio backend) used `torchaudio.io.AudioFileInfo` to probe audio metadata. Removed in torchaudio 2.7+. Fix: pre-convert unsupported formats (`.m4a`, `.aac`, `.wma`, `.amr`) to wav via ffmpeg in the NeMo adapter before passing to NeMo. Implemented in `vocal_core/adapters/stt/nemo_adapter.py`.
@@ -100,6 +93,21 @@ url = "https://download.pytorch.org/whl/cu128"
 ### kokoro
 - Latest available: 0.9.4 — no update available
 - `misaki[en]` (kokoro's G2P) calls `spacy.cli.download('en_core_web_sm')` at runtime, which uses pip — not available in uv-managed venvs. Fix: add `en-core-web-sm` as a URL dep in the kokoro extra (GitHub release wheel). Defined in `[tool.uv.sources]`. Do **not** add pip as a dep — that would allow arbitrary runtime installs and make the environment non-reproducible.
+
+## Runtime Patches
+
+Monkey-patches applied at adapter import time to bridge transformers 5.x API breaks in `qwen_asr` / `qwen_tts`. No library source edits, no forks.
+
+| Patch | File | What changed in transformers 5.x |
+|---|---|---|
+| `transformers.utils.generic.check_model_inputs = <no-op>` | `transformers_adapter.py`, `faster_qwen3_tts.py` | Decorator removed |
+| `ROPE_INIT_FUNCTIONS["default"] = <inv_freq fn>` | `transformers_adapter.py`, `faster_qwen3_tts.py` | `"default"` key removed from RoPE registry |
+| `Qwen3ASRThinkerTextRotaryEmbedding.compute_default_rope_parameters = <method>` | `transformers_adapter.py` | Method dropped from base class; `modeling_utils.py` calls it for `rope_type == "default"` |
+| `Qwen3ASRThinkerConfig.pad_token_id = None` | `transformers_adapter.py` | `GenerationMixin` now requires the attribute on sub-configs |
+| `Qwen3TTSTalkerConfig.pad_token_id = None` | `faster_qwen3_tts.py` | Same |
+| `TokenizersBackend.__init__` wrapped to pop `fix_mistral_regex` from `kwargs` | `faster_qwen3_tts.py` | `__init__` passes it both explicitly and via `**kwargs` when vocab > 100k — Python rejects the duplicate |
+| `StaticLayer.lazy_initialization(self, key, value=None)` | `faster_qwen3_tts.py` | Signature gained required `value_states`; `faster_qwen3_tts` only passes one arg |
+| `DynamicCache.__getitem__ = lambda self, i: (self.layers[i].keys, self.layers[i].values)` | `faster_qwen3_tts.py` | Subscript access removed; `faster_qwen3_tts` uses `cache[layer_idx]` |
 
 ## Open Issues (Upstream Blockers)
 
