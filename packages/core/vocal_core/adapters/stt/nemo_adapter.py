@@ -1,7 +1,13 @@
 import asyncio
+import importlib.util
+import io
 import logging
+import os
 import subprocess
+import sys
 import tempfile
+import warnings
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, BinaryIO
 
@@ -10,12 +16,130 @@ from .base import STTAdapter, TranscriptionResult, TranscriptionSegment
 
 logger = logging.getLogger(__name__)
 
-try:
-    from nemo.collections.asr.models import ASRModel as _ASRModel  # noqa: F401
+_NEMO_NOISY_LOGGERS = [
+    "nemo",
+    "nemo_logger",
+    "nemo.collections",
+    "nemo.core",
+    "nemo.utils",
+    "pytorch_lightning",
+    "lightning",
+    "lightning.pytorch",
+    "omegaconf",
+    "hydra",
+    "torch",
+    "torch.distributed",
+    "torch.distributed.elastic",
+    "torch.distributed.elastic.multiprocessing",
+    "torch.distributed.elastic.multiprocessing.redirects",
+]
 
-    NEMO_AVAILABLE = True
-except Exception:
-    NEMO_AVAILABLE = False
+_NOISE_PATTERNS = (
+    "megatron_init",
+    "num_microbatches_calculator",
+    "Redirects are currently not supported",
+    "OneLogger",
+    "error_handling_strategy",
+    "No exporters were provided",
+    "flash-attn is not installed",
+    "sox",
+    "SoX could not be found",
+    "http://sox.sourceforge.net",
+    "path variables",
+)
+
+
+def _is_nemo_noise(line: str) -> bool:
+    return any(pat in line for pat in _NOISE_PATTERNS)
+
+
+def _redirect_fd(fd: int, devnull_fd: int) -> int | None:
+    try:
+        old = os.dup(fd)
+        os.dup2(devnull_fd, fd)
+        return old
+    except OSError:
+        return None
+
+
+def _restore_fd(fd: int, old: int | None) -> None:
+    if old is not None:
+        try:
+            os.dup2(old, fd)
+            os.close(old)
+        except OSError:
+            pass
+
+
+# TODO: fix root causes — megatron/apex init, torch distributed redirects on Windows,
+# OneLogger telemetry, flash-attn missing, SoX not found — suppressed for now
+@contextmanager
+def _suppress_nemo_noise():
+    saved_levels = {}
+    for name in _NEMO_NOISY_LOGGERS:
+        lg = logging.getLogger(name)
+        saved_levels[name] = lg.level
+        lg.setLevel(logging.ERROR)
+
+    old_stdout, old_stderr = sys.stdout, sys.stderr
+    buf_out, buf_err = io.StringIO(), io.StringIO()
+    sys.stdout, sys.stderr = buf_out, buf_err
+
+    try:
+        devnull_fd = os.open(os.devnull, os.O_WRONLY)
+    except OSError:
+        devnull_fd = None
+
+    old_fd1 = _redirect_fd(1, devnull_fd) if devnull_fd is not None else None
+    old_fd2 = _redirect_fd(2, devnull_fd) if devnull_fd is not None else None
+    if devnull_fd is not None:
+        os.close(devnull_fd)
+
+    import subprocess as _subprocess
+    _orig_run = _subprocess.run
+    _orig_popen = _subprocess.Popen
+
+    def _quiet_run(*args, **kw):
+        kw.setdefault("stdout", _subprocess.DEVNULL)
+        kw.setdefault("stderr", _subprocess.DEVNULL)
+        return _orig_run(*args, **kw)
+
+    class _QuietPopen(_orig_popen):
+        def __init__(self, *args, **kw):
+            kw.setdefault("stdout", _subprocess.DEVNULL)
+            kw.setdefault("stderr", _subprocess.DEVNULL)
+            super().__init__(*args, **kw)
+
+    _subprocess.run = _quiet_run
+    _subprocess.Popen = _QuietPopen
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=UserWarning)
+        warnings.filterwarnings("ignore", category=FutureWarning)
+        try:
+            yield
+        finally:
+            _subprocess.run = _orig_run
+            _subprocess.Popen = _orig_popen
+
+            sys.stdout.flush()
+            sys.stderr.flush()
+            _restore_fd(1, old_fd1)
+            _restore_fd(2, old_fd2)
+            sys.stdout, sys.stderr = old_stdout, old_stderr
+
+            for name, level in saved_levels.items():
+                logging.getLogger(name).setLevel(level)
+
+            for buf, stream in ((buf_out, sys.stdout), (buf_err, sys.stderr)):
+                captured = buf.getvalue()
+                if captured:
+                    for line in captured.splitlines():
+                        if line.strip() and not _is_nemo_noise(line):
+                            print(line, file=stream)
+
+
+NEMO_AVAILABLE: bool = importlib.util.find_spec("nemo") is not None
 
 
 class NemoSTTAdapter(STTAdapter):
@@ -39,29 +163,28 @@ class NemoSTTAdapter(STTAdapter):
 
     def _load_sync(self, model_path: Path, device: str) -> None:
         import torch
-        from nemo.collections.asr.models import ASRModel
+
+        with _suppress_nemo_noise():
+            from nemo.collections.asr.models import ASRModel
 
         resolved = "cuda" if device == "auto" and torch.cuda.is_available() else ("cpu" if device == "auto" else device)
         self.device = resolved
 
-        # NeMo models are loaded via from_pretrained() with a HuggingFace model name.
-        # The model_path directory name follows "org--repo" convention from vocal's registry.
-        # If a .nemo checkpoint exists locally, use restore_from; otherwise derive the HF
-        # model name and let NeMo download/cache it via from_pretrained.
         nemo_file = next(model_path.glob("*.nemo"), None)
-        if nemo_file is not None:
-            logger.info("Loading NeMo STT model from %s on %s", nemo_file, resolved)
-            self.model = ASRModel.restore_from(str(nemo_file), map_location=resolved)
-        else:
-            dir_name = model_path.name
-            if "--" in dir_name:
-                model_name = dir_name.replace("--", "/", 1)
+        with _suppress_nemo_noise():
+            if nemo_file is not None:
+                logger.info("Loading NeMo STT model from %s on %s", nemo_file, resolved)
+                self.model = ASRModel.restore_from(str(nemo_file), map_location=resolved)
             else:
-                model_name = str(model_path)
-            logger.info("Loading NeMo STT model %s via from_pretrained on %s", model_name, resolved)
-            self.model = ASRModel.from_pretrained(model_name=model_name, map_location=resolved)
+                dir_name = model_path.name
+                if "--" in dir_name:
+                    model_name = dir_name.replace("--", "/", 1)
+                else:
+                    model_name = str(model_path)
+                logger.info("Loading NeMo STT model %s via from_pretrained on %s", model_name, resolved)
+                self.model = ASRModel.from_pretrained(model_name=model_name, map_location=resolved)
 
-        self.model.eval()
+            self.model.eval()
         self.model_path = model_path
         logger.info("NeMo STT model loaded on %s", resolved)
 

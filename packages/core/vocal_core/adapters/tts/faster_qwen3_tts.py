@@ -1,4 +1,5 @@
 import asyncio
+import importlib.util
 import logging
 import os
 import tempfile
@@ -16,14 +17,21 @@ from .piper import SUPPORTED_FORMATS, _convert_audio
 
 logger = logging.getLogger(__name__)
 
-try:
-    import torch
+FASTER_QWEN3_TTS_AVAILABLE: bool = (
+    importlib.util.find_spec("faster_qwen3_tts") is not None
+    and importlib.util.find_spec("torch") is not None
+)
+
+_QWEN3_PATCHES_APPLIED = False
+
+
+def _apply_qwen3_patches() -> None:
+    global _QWEN3_PATCHES_APPLIED
+    if _QWEN3_PATCHES_APPLIED:
+        return
 
     from vocal_core.adapters._compat import apply_transformers_shims
-
     apply_transformers_shims()
-
-    import faster_qwen3_tts as _fqt_module
 
     try:
         from qwen_tts.core.models.configuration_qwen3_tts import Qwen3TTSTalkerConfig as _TalkerConfig
@@ -67,9 +75,7 @@ try:
     except (ImportError, AttributeError):
         pass
 
-    FASTER_QWEN3_TTS_AVAILABLE = True
-except ImportError:
-    FASTER_QWEN3_TTS_AVAILABLE = False
+    _QWEN3_PATCHES_APPLIED = True
 
 LANGUAGE_MAP: dict[str, str] = {
     "en": "English",
@@ -110,6 +116,7 @@ class FasterQwen3TTSAdapter(TTSAdapter):
     async def load_model(self, model_path: Path, device: str = "auto", **kwargs) -> None:
         if not FASTER_QWEN3_TTS_AVAILABLE:
             raise ImportError(optional_dependency_install_hint("qwen3-tts", "faster-qwen3-tts"))
+        import torch
         if not torch.cuda.is_available():
             raise RuntimeError("faster-qwen3-tts requires NVIDIA CUDA. No CUDA device detected. Use a Kokoro or Piper model for CPU-only inference.")
 
@@ -125,6 +132,9 @@ class FasterQwen3TTSAdapter(TTSAdapter):
             threading.stack_size(prev_stack)
 
     def _load_sync(self) -> None:
+        _apply_qwen3_patches()
+        import faster_qwen3_tts as _fqt_module
+
         logger.info(f"Loading Qwen3-TTS from {self.model_path} ...")
         self._model = _fqt_module.FasterQwen3TTS.from_pretrained(str(self.model_path))
 
@@ -139,6 +149,7 @@ class FasterQwen3TTSAdapter(TTSAdapter):
             else:
                 self._variant = "base"
 
+        import torch
         vram_gb = torch.cuda.memory_allocated(0) / (1024**3)
         gpu_name = torch.cuda.get_device_name(0)
         logger.info(f"Qwen3-TTS loaded | variant={self._variant} | GPU={gpu_name} | VRAM={vram_gb:.2f}GB")
@@ -148,6 +159,7 @@ class FasterQwen3TTSAdapter(TTSAdapter):
         self._executor.shutdown(wait=True)
         self._executor = ThreadPoolExecutor(max_workers=1)
         try:
+            import torch
             torch.cuda.empty_cache()
         except Exception:
             pass
@@ -166,6 +178,7 @@ class FasterQwen3TTSAdapter(TTSAdapter):
             "device": "cuda",
         }
         try:
+            import torch
             info["gpu_name"] = torch.cuda.get_device_name(0)
             info["vram_allocated_gb"] = torch.cuda.memory_allocated(0) / (1024**3)
         except Exception:

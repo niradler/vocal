@@ -31,6 +31,8 @@ class VocalSettings(BaseSettings):
     VAD_SILENCE_DURATION_S: float = 1.5
 
     REALTIME_DEFAULT_INPUT_RATE: int = 24000
+    REALTIME_KEEPALIVE_S: int = 20
+    REALTIME_SESSION_TTL_S: int = 1800
 
     AUDIO_FRAME_SIZE: int = 1600
     AUDIO_CHANNELS: int = 1
