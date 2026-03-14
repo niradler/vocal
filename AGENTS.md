@@ -262,14 +262,14 @@ Auto-updates: all `pyproject.toml` + `__init__.py` files.
 
 ## Common Gotchas
 
-| Problem                            | Fix                                                                                               |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| `pyttsx3` deadlock on Windows      | `SimpleTTSAdapter` creates a fresh engine per call in a thread — do not share engine across calls |
-| WSL venv I/O error                 | Use `UV_PROJECT_ENVIRONMENT=/tmp/vocal_venv` to avoid Windows-style `.venv/Scripts/`              |
-| Port 8000 in use                   | `netstat -ano                                                                                     | findstr :8000`then`taskkill /F /PID <pid>` |
-| Model not found                    | Check `~/.cache/vocal/models/` — download with `vocal models pull <id>`                           |
-| SDK out of date                    | Run `make generate-sdk` after any API route change                                                |
-| `asyncio.get_event_loop()` warning | Use `asyncio.get_running_loop()` instead — already fixed in `TransformersSTTAdapter`              |
+| Problem | Fix |
+|---------|-----|
+| `pyttsx3` deadlock on Windows | `SimpleTTSAdapter` creates a fresh engine per call in a thread — do not share engine across calls |
+| WSL venv I/O error | Use `UV_PROJECT_ENVIRONMENT=/tmp/vocal_venv` to avoid Windows-style `.venv/Scripts/` |
+| Port 8000 in use | `netstat -ano \| findstr :8000` then `taskkill /F /PID <pid>` |
+| Model not found | Check `~/.cache/vocal/models/` — download with `vocal models pull <id>` |
+| SDK out of date | Run `make generate-sdk` after any API route change |
+| `asyncio.get_event_loop()` warning | Use `asyncio.get_running_loop()` instead — already fixed in `TransformersSTTAdapter` |
 
 ---
 

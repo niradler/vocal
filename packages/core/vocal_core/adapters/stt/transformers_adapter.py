@@ -70,25 +70,12 @@ class TransformersSTTAdapter(STTAdapter):
     @staticmethod
     def _apply_qwen_asr_shims() -> None:
         import torch
-        import transformers.utils.generic as _tug
 
-        if not hasattr(_tug, "check_model_inputs"):
-            def _shim(func=None, **kw):
-                return (lambda f: f) if func is None else func
-            _tug.check_model_inputs = _shim
+        from vocal_core.adapters._compat import apply_transformers_shims
 
-        try:
-            from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS
-            if "default" not in ROPE_INIT_FUNCTIONS:
-                def _default_rope_init(config, dev=None, seq_len=None, **kw):
-                    base = getattr(config, "rope_theta", 10000.0)
-                    dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
-                    inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2, dtype=torch.float32).to(dev) / dim))
-                    return inv_freq, 1.0
-                ROPE_INIT_FUNCTIONS["default"] = _default_rope_init
-        except (ImportError, AttributeError):
-            pass
+        apply_transformers_shims()
 
+        # --- qwen_asr-specific patches (not shared with TTS) -----------------
         from qwen_asr.core.transformers_backend.modeling_qwen3_asr import Qwen3ASRThinkerTextRotaryEmbedding as _RotEmb
 
         try:

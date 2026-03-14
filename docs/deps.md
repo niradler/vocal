@@ -98,6 +98,15 @@ url = "https://download.pytorch.org/whl/cu128"
 
 Monkey-patches applied at adapter import time to bridge transformers 5.x API breaks in `qwen_asr` / `qwen_tts`. No library source edits, no forks.
 
+### Patch Maintenance
+
+**These patches are fragile.** Each one compensates for a specific API break between transformers 5.x and qwen_asr/qwen_tts. On future upgrades:
+
+1. **Check if patches are still needed.** After upgrading transformers or qwen packages, temporarily remove each patch and run the relevant tests. If a patch target already exists natively (e.g. `check_model_inputs` is re-added to transformers), the patch is stale — delete it.
+2. **Check if patches still work.** If transformers changes the patched API again (e.g. `StaticLayer.lazy_initialization` gains a third arg), the patch will silently break. Test the actual model inference, not just import.
+3. **Duplicated shims.** `check_model_inputs` and `ROPE_INIT_FUNCTIONS["default"]` are duplicated in both `transformers_adapter.py` and `faster_qwen3_tts.py`. If adding more patches, consider extracting shared shims to `vocal_core/adapters/_compat.py`.
+4. **Upstream fixes.** Monitor `qwen-asr` and `faster-qwen3-tts` releases — once they officially support transformers 5.x, all patches for that package can be removed.
+
 | Patch | File | What changed in transformers 5.x |
 |---|---|---|
 | `transformers.utils.generic.check_model_inputs = <no-op>` | `transformers_adapter.py`, `faster_qwen3_tts.py` | Decorator removed |
@@ -126,3 +135,42 @@ No outstanding upstream blockers remain. All previously open issues have been re
 | 2026-03-14 | Bulk upgrade all packages to latest; switched cu124→cu128; resolved chatterbox/whisperx/torch conflicts via overrides; added en-core-web-sm URL dep to fix kokoro G2P pip-call issue in uv venvs |
 | 2026-03-14 | Added `setuptools<81` override (setuptools 82 removed `pkg_resources`, breaking `perth` → chatterbox); fixed NeMo m4a support via ffmpeg pre-conversion in adapter; fixed chatterbox WAV output via soundfile (replacing torchaudio.save which needs torchcodec DLLs); documented qwen-asr/qwen-tts as upstream blockers on transformers 5.x |
 | 2026-03-14 | Resolved all qwen-asr and qwen-tts transformers 5.x incompatibilities via adapter-level monkey-patching (7 distinct API breaks fixed); `TestTransformersSTT` and `TestVoiceClone` now pass on Windows; all 3 test suites green, lint clean |
+
+## Future Upgrade Checklist
+
+Quick reference for the next bulk upgrade. Follow the step-by-step in "How to Upgrade All Dependencies" above, plus these extra checks:
+
+### Before upgrading
+
+- [ ] Read this file end-to-end — past pain saves future pain
+- [ ] Note which overrides exist and why (table above)
+- [ ] Check if `qwen-asr` / `faster-qwen3-tts` have released versions with native transformers 5.x support — if so, monkey-patches can be removed
+
+### During upgrade
+
+- [ ] Update all `>=` floors in every `pyproject.toml` (root + packages/core, api, sdk, cli)
+- [ ] Run `uv sync` — fix resolution errors with overrides, not by downgrading
+- [ ] Check CUDA index: if torch needs a newer CUDA, update the `[[tool.uv.index]]` URL (cu128 → cu1xx)
+- [ ] Check `en-core-web-sm` URL in `[tool.uv.sources]` — new spacy major versions change the wheel URL
+
+### After upgrade
+
+- [ ] Run all 3 test suites: `uv run python -m pytest tests/unit/ tests/contract/ tests/test_e2e.py tests/test_tts_formats.py -q`
+- [ ] Zero skips, zero failures — skips count as failures
+- [ ] Test each monkey-patch: temporarily remove it, run the relevant adapter's tests, see if it's still needed
+- [ ] Remove any override whose upstream package has fixed the version conflict
+- [ ] Run `make lint`
+- [ ] Update the "Upgrade History" table in this file
+
+### Known areas of future breakage
+
+| Area | What to watch for |
+|---|---|
+| `setuptools<81` override | Remove once `perth` (chatterbox dep) drops `pkg_resources` usage |
+| `chatterbox-tts` torch pin | Remove override once chatterbox unpins from `torch==2.6.0` |
+| `whisperx` huggingface-hub pin | Remove override once whisperx drops `huggingface-hub<1.0` constraint |
+| `gradio` pins (aiofiles, pydantic, websockets) | Remove overrides once chatterbox upgrades its gradio dep or drops it |
+| Monkey-patches in `transformers_adapter.py` | Remove once `qwen-asr` supports transformers 5.x natively |
+| Monkey-patches in `faster_qwen3_tts.py` | Remove once `faster-qwen3-tts` supports transformers 5.x natively |
+| `torchaudio.io` removal workaround in `nemo_adapter.py` | Remove if lhotse/NeMo adds native support for torchaudio 2.7+ |
+| `soundfile` workaround in `chatterbox.py` | Remove if torchcodec ships Windows DLLs or torchaudio restores non-torchcodec backend |

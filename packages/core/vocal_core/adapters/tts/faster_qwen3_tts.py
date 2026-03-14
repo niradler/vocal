@@ -18,24 +18,10 @@ logger = logging.getLogger(__name__)
 
 try:
     import torch
-    import transformers.utils.generic as _tug
 
-    if not hasattr(_tug, "check_model_inputs"):
-        def _shim(func=None, **kw):
-            return (lambda f: f) if func is None else func
-        _tug.check_model_inputs = _shim
+    from vocal_core.adapters._compat import apply_transformers_shims
 
-    try:
-        from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS as _ROPE_FNS
-        if "default" not in _ROPE_FNS:
-            def _default_rope_init(config, device=None, seq_len=None, **kw):
-                base = getattr(config, "rope_theta", 10000.0)
-                dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
-                inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2, dtype=torch.float32).to(device) / dim))
-                return inv_freq, 1.0
-            _ROPE_FNS["default"] = _default_rope_init
-    except (ImportError, AttributeError):
-        pass
+    apply_transformers_shims()
 
     import faster_qwen3_tts as _fqt_module
 
