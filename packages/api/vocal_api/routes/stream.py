@@ -58,11 +58,12 @@ async def audio_stream(
     task: str = "transcribe",
     silence_duration: float = _SILENCE_DURATION_S,
     max_chunk_duration: float = _MAX_CHUNK_DURATION_S,
+    threshold: float | None = None,
 ) -> None:
     await websocket.accept()
     service = get_transcription_service()
     sample_rate = vocal_settings.STT_SAMPLE_RATE
-    speech_threshold = vocal_settings.VAD_SPEECH_THRESHOLD
+    speech_threshold = threshold if threshold is not None else vocal_settings.VAD_SPEECH_THRESHOLD
 
     vad = create_vad_adapter()
 

@@ -85,7 +85,7 @@ def test_nemo_load_raises_import_error_when_not_available(monkeypatch):
     import asyncio
 
     with pytest.raises(ImportError, match="nemo_toolkit"):
-        asyncio.get_event_loop().run_until_complete(adapter.load_model(__import__("pathlib").Path(".")))
+        asyncio.run(adapter.load_model(__import__("pathlib").Path(".")))
 
 
 def test_whisperx_load_raises_import_error_when_not_available(monkeypatch):
@@ -97,4 +97,4 @@ def test_whisperx_load_raises_import_error_when_not_available(monkeypatch):
     import asyncio
 
     with pytest.raises(ImportError, match="whisperx"):
-        asyncio.get_event_loop().run_until_complete(adapter.load_model(__import__("pathlib").Path(".")))
+        asyncio.run(adapter.load_model(__import__("pathlib").Path(".")))

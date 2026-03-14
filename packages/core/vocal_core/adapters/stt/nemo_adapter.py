@@ -10,7 +10,12 @@ from .base import STTAdapter, TranscriptionResult, TranscriptionSegment
 
 logger = logging.getLogger(__name__)
 
-NEMO_AVAILABLE = importlib.util.find_spec("nemo") is not None
+try:
+    from nemo.collections.asr.models import ASRModel as _ASRModel  # noqa: F401
+
+    NEMO_AVAILABLE = True
+except Exception:
+    NEMO_AVAILABLE = False
 
 
 class NemoSTTAdapter(STTAdapter):
@@ -39,20 +44,26 @@ class NemoSTTAdapter(STTAdapter):
         resolved = "cuda" if device == "auto" and torch.cuda.is_available() else ("cpu" if device == "auto" else device)
         self.device = resolved
 
-        nemo_file = self._find_nemo_file(model_path)
-        if nemo_file is None:
-            raise FileNotFoundError(f"No .nemo file found in {model_path}. Ensure the model was downloaded with 'vocal models pull'.")
+        # NeMo models are loaded via from_pretrained() with a HuggingFace model name.
+        # The model_path directory name follows "org--repo" convention from vocal's registry.
+        # If a .nemo checkpoint exists locally, use restore_from; otherwise derive the HF
+        # model name and let NeMo download/cache it via from_pretrained.
+        nemo_file = next(model_path.glob("*.nemo"), None)
+        if nemo_file is not None:
+            logger.info("Loading NeMo STT model from %s on %s", nemo_file, resolved)
+            self.model = ASRModel.restore_from(str(nemo_file), map_location=resolved)
+        else:
+            dir_name = model_path.name
+            if "--" in dir_name:
+                model_name = dir_name.replace("--", "/", 1)
+            else:
+                model_name = str(model_path)
+            logger.info("Loading NeMo STT model %s via from_pretrained on %s", model_name, resolved)
+            self.model = ASRModel.from_pretrained(model_name=model_name, map_location=resolved)
 
-        logger.info("Loading NeMo STT model from %s on %s", nemo_file, resolved)
-        self.model = ASRModel.restore_from(str(nemo_file), map_location=resolved)
         self.model.eval()
         self.model_path = model_path
         logger.info("NeMo STT model loaded on %s", resolved)
-
-    def _find_nemo_file(self, model_path: Path) -> Path | None:
-        for candidate in model_path.glob("*.nemo"):
-            return candidate
-        return None
 
     async def unload_model(self) -> None:
         if self.model is not None:

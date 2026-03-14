@@ -42,7 +42,7 @@ class ChatterboxTTSAdapter(TTSAdapter):
 
         logger.info("Loading Chatterbox TTS model from %s on %s", model_path, resolved)
         path_str = str(model_path)
-        self.model = ChatterboxTTS.from_pretrained(path_str, device=resolved)
+        self.model = ChatterboxTTS.from_pretrained(device=resolved)
         self.sample_rate = self.model.sr
         self.model_path = model_path
         logger.info("Chatterbox TTS model loaded on %s (sr=%d)", resolved, self.sample_rate)

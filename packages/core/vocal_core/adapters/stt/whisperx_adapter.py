@@ -44,8 +44,34 @@ class WhisperXSTTAdapter(STTAdapter):
         self.device = resolved
         self.compute_type = get_optimal_compute_type(resolved)
 
-        logger.info("Loading WhisperX model from %s on %s", model_path, resolved)
-        self.model = whisperx.load_model(str(model_path), resolved, compute_type=self.compute_type)
+        # whisperx.load_model expects a CTranslate2 dir (with model.bin), a short Whisper
+        # model name (e.g. "distil-large-v3"), or a HF repo ID ("Systran/faster-...").
+        # If model_path has model.bin, use it directly; otherwise derive a model ref.
+        model_bin = model_path / "model.bin"
+        if model_bin.exists():
+            model_ref = str(model_path)
+        else:
+            dir_name = model_path.name
+            # vocal stores whisperx models as "whisperx--<model-name>"; the part
+            # after "whisperx--" is the short name that faster-whisper can resolve
+            # (e.g. "distil-large-v3" → "Systran/faster-distil-whisper-large-v3").
+            if dir_name.startswith("whisperx--"):
+                model_ref = dir_name.removeprefix("whisperx--")
+            elif "--" in dir_name:
+                model_ref = dir_name.replace("--", "/", 1)
+            else:
+                model_ref = str(model_path)
+            logger.info("model.bin not in %s — loading via model ref: %s", model_path, model_ref)
+
+        logger.info("Loading WhisperX model from %s on %s", model_ref, resolved)
+        # PyTorch 2.6+ defaults weights_only=True which breaks CTranslate2/whisperx
+        # (many omegaconf classes not in safe globals). Temporarily patch torch.load.
+        _orig_load = torch.load
+        torch.load = lambda *a, **kw: _orig_load(*a, **{**kw, "weights_only": False})
+        try:
+            self.model = whisperx.load_model(model_ref, resolved, compute_type=self.compute_type)
+        finally:
+            torch.load = _orig_load
         self.model_path = model_path
         logger.info("WhisperX model loaded on %s", resolved)
 

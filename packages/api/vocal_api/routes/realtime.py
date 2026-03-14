@@ -237,7 +237,12 @@ async def _handle_audio_append(ws: WebSocket, session: _Session, event: dict, tr
 
     session.audio_buffer.extend(pcm_bytes)
     frame_count = len(session.audio_buffer) // 2
-    is_speech = session.vad.is_speech(pcm_bytes, session.input_sample_rate, session.speech_threshold)
+    # Silero VAD only supports 8000/16000 Hz — resample if input rate differs
+    if session.input_sample_rate != _STT_SAMPLE_RATE:
+        vad_pcm = _resample_pcm16(bytearray(pcm_bytes), session.input_sample_rate, _STT_SAMPLE_RATE)
+    else:
+        vad_pcm = pcm_bytes
+    is_speech = session.vad.is_speech(vad_pcm, _STT_SAMPLE_RATE, session.speech_threshold)
 
     if is_speech:
         session.speech_onset_count += 1

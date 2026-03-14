@@ -1,4 +1,4 @@
-.PHONY: help install test test-unit test-contract test-ci test-quick test-verbose lint format clean serve serve-wsl cli docs gpu-check bump-patch bump-minor bump-major generate-supported-models generate-sdk
+.PHONY: help install test test-unit test-contract test-ci test-quick test-wsl test-verbose lint format clean serve serve-wsl cli docs gpu-check bump-patch bump-minor bump-major generate-supported-models generate-sdk
 
 # Default target
 help:
@@ -16,6 +16,7 @@ help:
 	@echo "  make test-contract - Run contract tests (starts API, uses pyttsx3)"
 	@echo "  make test-ci       - Run CI gate: unit + contract tests (no heavy models)"
 	@echo "  make test-quick    - Quick validation checks (~5 sec)"
+	@echo "  make test-wsl      - Run E2E tests inside WSL (needs: make serve-wsl)"
 	@echo "  make test-verbose  - Run tests with verbose output"
 	@echo "  make gpu-check     - Check GPU detection and optimization"
 	@echo ""
@@ -91,6 +92,11 @@ test-quick:
 	@echo "Running quick validation checks..."
 	@echo ""
 	uv run python scripts/validate.py
+
+test-wsl:
+	@echo "Running E2E tests inside WSL (separate venv at /tmp/vocal_venv)..."
+	@echo ""
+	wsl bash -ic "cd /mnt/c/Projects/vocal && UV_PROJECT_ENVIRONMENT=/tmp/vocal_venv VOCAL_TEST_URL=http://127.0.0.1:8001 uv run python -m pytest tests/test_e2e.py tests/test_tts_formats.py -v --tb=short"
 
 test-verbose:
 	@echo "Running tests with verbose output..."
@@ -196,6 +202,7 @@ tu: test-unit
 tc: test-contract
 tci: test-ci
 tq: test-quick
+tw: test-wsl
 tv: test-verbose
 s: serve
 sw: serve-wsl

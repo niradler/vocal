@@ -80,3 +80,4 @@ Thumbs.db
 # SDK generator scratch dirs
 packages/sdk/gen-test*/
 packages/sdk/.gen-test*/
+.claude/settings.local.json
