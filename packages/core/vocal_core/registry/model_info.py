@@ -16,12 +16,19 @@ class ModelBackend(str, Enum):
     """Model inference backend"""
 
     FASTER_WHISPER = "faster_whisper"
+    WHISPERX = "whisperx"
     TRANSFORMERS = "transformers"
     CTRANSLATE2 = "ctranslate2"
     NEMO = "nemo"
     ONNX = "onnx"
     KOKORO = "kokoro"
     FASTER_QWEN3_TTS = "faster_qwen3_tts"
+    PIPER = "piper"
+    CHATTERBOX = "chatterbox"
+    XTTS = "xtts"
+    FISH_SPEECH = "fish_speech"
+    ORPHEUS = "orpheus"
+    DIA = "dia"
     CUSTOM = "custom"
 
 
@@ -66,6 +73,15 @@ class ModelInfo(BaseModel):
     likes: int | None = Field(None, description="Total likes on HuggingFace")
     sha: str | None = Field(None, description="Git commit SHA on HuggingFace")
     files: list[dict] | None = Field(None, description="List of model files")
+    supports_streaming: bool = Field(False, description="Whether the model supports true streaming output")
+    supports_voice_list: bool = Field(False, description="Whether the model exposes selectable voices")
+    supports_voice_clone: bool = Field(False, description="Whether the model supports reference-audio voice cloning")
+    supports_voice_design: bool = Field(False, description="Whether the model supports prompt/instruction-based voice design")
+    requires_gpu: bool = Field(False, description="Whether the model requires GPU acceleration for supported inference")
+    voice_mode: str | None = Field(None, description="How /v1/audio/speech interprets the voice field")
+    clone_mode: str | None = Field(None, description="How /v1/audio/clone works for this model")
+    reference_audio_min_seconds: float | None = Field(None, description="Recommended minimum reference audio length for cloning")
+    reference_audio_max_seconds: float | None = Field(None, description="Recommended maximum reference audio length for cloning")
 
     model_config = {
         "json_schema_extra": {
@@ -81,6 +97,11 @@ class ModelInfo(BaseModel):
                 "status": "available",
                 "recommended_vram": "6GB+",
                 "task": "stt",
+                "supports_streaming": False,
+                "supports_voice_list": False,
+                "supports_voice_clone": False,
+                "supports_voice_design": False,
+                "requires_gpu": False,
             }
         }
     }

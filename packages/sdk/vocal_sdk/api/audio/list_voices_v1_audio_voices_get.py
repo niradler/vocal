@@ -74,9 +74,7 @@ def sync_detailed(
 ) -> Response[HTTPValidationError | VoicesResponse]:
     """List Voices
 
-     List available TTS voices
-
-    Returns a list of all available voices that can be used for speech synthesis.
+     List available TTS voices.
 
     - **model**: Optional model ID to list voices for a specific model
 
@@ -109,9 +107,7 @@ def sync(
 ) -> HTTPValidationError | VoicesResponse | None:
     """List Voices
 
-     List available TTS voices
-
-    Returns a list of all available voices that can be used for speech synthesis.
+     List available TTS voices.
 
     - **model**: Optional model ID to list voices for a specific model
 
@@ -139,9 +135,7 @@ async def asyncio_detailed(
 ) -> Response[HTTPValidationError | VoicesResponse]:
     """List Voices
 
-     List available TTS voices
-
-    Returns a list of all available voices that can be used for speech synthesis.
+     List available TTS voices.
 
     - **model**: Optional model ID to list voices for a specific model
 
@@ -172,9 +166,7 @@ async def asyncio(
 ) -> HTTPValidationError | VoicesResponse | None:
     """List Voices
 
-     List available TTS voices
-
-    Returns a list of all available voices that can be used for speech synthesis.
+     List available TTS voices.
 
     - **model**: Optional model ID to list voices for a specific model
 

@@ -6,6 +6,10 @@ from .body_create_transcription_v1_audio_transcriptions_post import (
 from .body_create_translation_v1_audio_translations_post import (
     BodyCreateTranslationV1AudioTranslationsPost,
 )
+from .body_voice_clone_v1_audio_clone_post import BodyVoiceCloneV1AudioClonePost
+from .body_voice_clone_v1_audio_clone_post_response_format import (
+    BodyVoiceCloneV1AudioClonePostResponseFormat,
+)
 from .context import Context
 from .http_validation_error import HTTPValidationError
 from .model_backend import ModelBackend
@@ -31,6 +35,8 @@ from .voices_response import VoicesResponse
 __all__ = (
     "BodyCreateTranscriptionV1AudioTranscriptionsPost",
     "BodyCreateTranslationV1AudioTranslationsPost",
+    "BodyVoiceCloneV1AudioClonePost",
+    "BodyVoiceCloneV1AudioClonePostResponseFormat",
     "Context",
     "HTTPValidationError",
     "ModelBackend",

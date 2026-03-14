@@ -7,6 +7,7 @@ from .adapters import (
     TranscriptionWord,
 )
 from .config import VocalSettings, vocal_settings
+from .logging import get_logger, setup_logging
 from .registry import (
     ModelBackend,
     ModelInfo,
@@ -35,4 +36,6 @@ __all__ = [
     "FasterWhisperAdapter",
     "VocalSettings",
     "vocal_settings",
+    "get_logger",
+    "setup_logging",
 ]

@@ -8,7 +8,6 @@ from ...types import Response
 from ... import errors
 
 from ...models.http_validation_error import HTTPValidationError
-from ...models.model_download_progress import ModelDownloadProgress
 from ...models.model_pull_request import ModelPullRequest
 
 
@@ -33,10 +32,9 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | ModelDownloadProgress | None:
+) -> Any | HTTPValidationError | None:
     if response.status_code == 200:
-        response_200 = ModelDownloadProgress.from_dict(response.json())
-
+        response_200 = response.json()
         return response_200
 
     if response.status_code == 422:
@@ -52,7 +50,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | ModelDownloadProgress]:
+) -> Response[Any | HTTPValidationError]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -65,10 +63,10 @@ def sync_detailed(
     *,
     client: AuthenticatedClient | Client,
     body: ModelPullRequest,
-) -> Response[HTTPValidationError | ModelDownloadProgress]:
+) -> Response[Any | HTTPValidationError]:
     """Pull model
 
-     Download a model (Ollama-style)
+     Stream download progress as newline-delimited JSON
 
     Args:
         body (ModelPullRequest): Request to download/pull a model (Ollama-style)
@@ -78,7 +76,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | ModelDownloadProgress]
+        Response[Any | HTTPValidationError]
     """
 
     kwargs = _get_kwargs(
@@ -96,10 +94,10 @@ def sync(
     *,
     client: AuthenticatedClient | Client,
     body: ModelPullRequest,
-) -> HTTPValidationError | ModelDownloadProgress | None:
+) -> Any | HTTPValidationError | None:
     """Pull model
 
-     Download a model (Ollama-style)
+     Stream download progress as newline-delimited JSON
 
     Args:
         body (ModelPullRequest): Request to download/pull a model (Ollama-style)
@@ -109,7 +107,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | ModelDownloadProgress
+        Any | HTTPValidationError
     """
 
     return sync_detailed(
@@ -122,10 +120,10 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient | Client,
     body: ModelPullRequest,
-) -> Response[HTTPValidationError | ModelDownloadProgress]:
+) -> Response[Any | HTTPValidationError]:
     """Pull model
 
-     Download a model (Ollama-style)
+     Stream download progress as newline-delimited JSON
 
     Args:
         body (ModelPullRequest): Request to download/pull a model (Ollama-style)
@@ -135,7 +133,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | ModelDownloadProgress]
+        Response[Any | HTTPValidationError]
     """
 
     kwargs = _get_kwargs(
@@ -151,10 +149,10 @@ async def asyncio(
     *,
     client: AuthenticatedClient | Client,
     body: ModelPullRequest,
-) -> HTTPValidationError | ModelDownloadProgress | None:
+) -> Any | HTTPValidationError | None:
     """Pull model
 
-     Download a model (Ollama-style)
+     Stream download progress as newline-delimited JSON
 
     Args:
         body (ModelPullRequest): Request to download/pull a model (Ollama-style)
@@ -164,7 +162,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | ModelDownloadProgress
+        Any | HTTPValidationError
     """
 
     return (

@@ -1,4 +1,4 @@
-.PHONY: help install test test-quick test-verbose lint format clean serve cli docs gpu-check bump-patch bump-minor bump-major generate-supported-models generate-sdk
+.PHONY: help install test test-unit test-contract test-ci test-quick test-wsl test-verbose lint format clean serve serve-wsl cli docs gpu-check bump-patch bump-minor bump-major generate-supported-models generate-sdk
 
 # Default target
 help:
@@ -6,12 +6,17 @@ help:
 	@echo "============================"
 	@echo ""
 	@echo "Setup & Installation:"
-	@echo "  make install       - Install dependencies and setup project"
+	@echo "  make install       - Install base + dev dependencies (no heavy optional backends)"
+	@echo "  make install-dev   - Install ALL backends for full local testing (kokoro, qwen3-tts, nemo, whisperx, chatterbox)"
 	@echo "  make sync          - Sync dependencies with uv"
 	@echo ""
 	@echo "Testing:"
-	@echo "  make test          - Run full E2E test suite (~55 sec)"
+	@echo "  make test          - Run full E2E test suite (~55 sec) [local primary gate]"
+	@echo "  make test-unit     - Run unit tests only (~5 sec, no server needed)"
+	@echo "  make test-contract - Run contract tests (starts API, uses pyttsx3)"
+	@echo "  make test-ci       - Run CI gate: unit + contract tests (no heavy models)"
 	@echo "  make test-quick    - Quick validation checks (~5 sec)"
+	@echo "  make test-wsl      - Run E2E tests inside WSL (needs: make serve-wsl)"
 	@echo "  make test-verbose  - Run tests with verbose output"
 	@echo "  make gpu-check     - Check GPU detection and optimization"
 	@echo ""
@@ -22,8 +27,10 @@ help:
 	@echo ""
 	@echo "Development:"
 	@echo "  make serve         - Start API server (port 8000)"
+	@echo "  make serve-wsl     - Start API server inside WSL (port 8001)"
+	@echo "  make cli           - Run CLI — ARGS=\"<cmd>\" [URL=http://...] (default: localhost:8000)"
+	@echo "                       e.g. make cli ARGS=\"models list\" URL=http://127.0.0.1:8001"
 	@echo "  make serve-dev     - Start API server with auto-reload"
-	@echo "  make cli           - Show CLI help"
 	@echo "  make docs          - Open API documentation in browser"
 	@echo "  make generate-sdk              - Regenerate SDK from OpenAPI spec (needs API running)"
 	@echo "  make generate-supported-models - Regenerate supported models metadata"
@@ -40,11 +47,19 @@ help:
 
 # Setup & Installation
 install:
-	@echo "Installing dependencies..."
+	@echo "Installing base + dev dependencies..."
 	uv sync
 	@echo ""
 	@echo "✓ Installation complete!"
 	@echo "Run 'make serve' to start the API server"
+	@echo "Run 'make install-dev' to also install optional backends (kokoro, qwen3-tts, nemo, whisperx, chatterbox)"
+
+install-dev:
+	@echo "Installing ALL optional backends for full local testing..."
+	uv sync --extra kokoro --extra qwen3-tts --extra nemo --extra whisperx --extra chatterbox
+	@echo ""
+	@echo "✓ Full dev environment ready"
+	@echo "Run 'make test-unit' to verify"
 
 sync:
 	@echo "Syncing dependencies..."
@@ -52,14 +67,34 @@ sync:
 
 # Testing
 test:
-	@echo "Running full E2E test suite..."
+	@echo "Running full E2E test suite (local primary gate)..."
 	@echo ""
-	uv run python -m pytest tests/test_e2e.py -v --tb=short
+	uv run python -m pytest tests/test_e2e.py tests/test_tts_formats.py -v --tb=short
+
+test-unit:
+	@echo "Running unit tests (no server or models needed)..."
+	@echo ""
+	uv run python -m pytest tests/unit/ -v --tb=short
+
+test-contract:
+	@echo "Running contract tests (starts API, uses pyttsx3 only)..."
+	@echo ""
+	uv run python -m pytest tests/contract/ -v --tb=short
+
+test-ci:
+	@echo "Running CI gate: unit + contract tests..."
+	@echo ""
+	uv run python -m pytest tests/unit/ tests/contract/ -v --tb=short
 
 test-quick:
 	@echo "Running quick validation checks..."
 	@echo ""
 	uv run python scripts/validate.py
+
+test-wsl:
+	@echo "Running E2E tests inside WSL (separate venv at /tmp/vocal_venv)..."
+	@echo ""
+	wsl bash -ic "cd /mnt/c/Projects/vocal && UV_PROJECT_ENVIRONMENT=/tmp/vocal_venv VOCAL_TEST_URL=http://127.0.0.1:8001 uv run python -m pytest tests/test_e2e.py tests/test_tts_formats.py -v --tb=short"
 
 test-verbose:
 	@echo "Running tests with verbose output..."
@@ -91,17 +126,22 @@ serve:
 	@echo ""
 	uv run uvicorn vocal_api.main:app --host 0.0.0.0 --port 8000
 
+serve-wsl:
+	@echo "Starting API server inside WSL on http://127.0.0.1:8001"
+	@echo "Documentation: http://127.0.0.1:8001/docs"
+	@echo ""
+	wsl bash -ic "cd /mnt/c/Projects/vocal && UV_PROJECT_ENVIRONMENT=/tmp/vocal_venv uv run uvicorn vocal_api.main:app --host 127.0.0.1 --port 8001"
+
+cli:
+	@echo "Running vocal CLI — Usage: make cli ARGS=\"models list\" [URL=http://localhost:8000]"
+	@echo ""
+	VOCAL_API_URL=$(or $(URL),http://localhost:8000) uv run vocal $(ARGS)
+
 serve-dev:
 	@echo "Starting API server with auto-reload..."
 	@echo "Documentation: http://localhost:8000/docs"
 	@echo ""
 	uv run uvicorn vocal_api.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir packages
-
-cli:
-	@echo "Vocal CLI Help"
-	@echo "=============="
-	@echo ""
-	uv run vocal --help
 
 docs:
 	@echo "Opening API documentation..."
@@ -156,9 +196,14 @@ bump-major:
 
 # Quick aliases
 t: test
+tu: test-unit
+tc: test-contract
+tci: test-ci
 tq: test-quick
+tw: test-wsl
 tv: test-verbose
 s: serve
+sw: serve-wsl
 sd: serve-dev
 l: lint
 f: format

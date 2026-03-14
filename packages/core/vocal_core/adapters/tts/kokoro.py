@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import logging
 import os
 import struct
@@ -9,22 +10,21 @@ import wave
 from collections.abc import AsyncGenerator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
+if TYPE_CHECKING:
+    import torch
+    from kokoro import KPipeline
+
 from ...config import optional_dependency_install_hint
-from .base import TTSAdapter, TTSResult, Voice
+from .base import TTSAdapter, TTSCapabilities, TTSResult, Voice
 from .piper import SUPPORTED_FORMATS, _convert_audio
 
 logger = logging.getLogger(__name__)
 
-try:
-    import torch
-    from kokoro import KPipeline
-
-    KOKORO_AVAILABLE = True
-except ImportError:
-    KOKORO_AVAILABLE = False
+KOKORO_AVAILABLE: bool = importlib.util.find_spec("kokoro") is not None and importlib.util.find_spec("torch") is not None
 
 KOKORO_SAMPLE_RATE = 24000
 
@@ -140,17 +140,19 @@ class KokoroTTSAdapter(TTSAdapter):
         if not KOKORO_AVAILABLE:
             raise ImportError(optional_dependency_install_hint("kokoro"))
 
-        self.model_path = model_path
-        if device == "auto":
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        else:
-            self.device = device
+        import torch
 
-        loop = asyncio.get_event_loop()
+        self.model_path = model_path
+        self.device = "cuda" if device == "auto" and torch.cuda.is_available() else ("cpu" if device == "auto" else device)
+
+        loop = asyncio.get_running_loop()
         with ThreadPoolExecutor(max_workers=1) as executor:
             await loop.run_in_executor(executor, self._load_sync)
 
     def _load_sync(self) -> None:
+        import torch
+        from kokoro import KPipeline
+
         primary = KPipeline(lang_code="a", repo_id="hexgrad/Kokoro-82M", device=self.device)
         self._shared_model = primary.model
         self._pipelines["a"] = primary
@@ -163,6 +165,8 @@ class KokoroTTSAdapter(TTSAdapter):
             logger.info(f"Kokoro loaded on {self.device}")
 
     def _get_pipeline(self, lang_code: str) -> KPipeline:
+        from kokoro import KPipeline
+
         if lang_code not in self._pipelines:
             self._pipelines[lang_code] = KPipeline(
                 lang_code=lang_code,
@@ -178,6 +182,8 @@ class KokoroTTSAdapter(TTSAdapter):
         self._shared_model = None
         if self.device == "cuda":
             try:
+                import torch
+
                 torch.cuda.empty_cache()
             except Exception:
                 pass
@@ -197,11 +203,20 @@ class KokoroTTSAdapter(TTSAdapter):
         }
         if self.device == "cuda":
             try:
+                import torch
+
                 info["gpu_name"] = torch.cuda.get_device_name(0)
                 info["vram_allocated_gb"] = torch.cuda.memory_allocated(0) / (1024**3)
             except Exception:
                 pass
         return info
+
+    def get_capabilities(self) -> TTSCapabilities:
+        return TTSCapabilities(
+            supports_streaming=True,
+            supports_voice_list=True,
+            voice_mode="voice_id",
+        )
 
     async def synthesize(
         self,
@@ -220,7 +235,7 @@ class KokoroTTSAdapter(TTSAdapter):
 
         voice_id = voice or "af_heart"
         lang_code = _voice_lang_code(voice_id)
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         with ThreadPoolExecutor(max_workers=1) as executor:
             audio_array = await loop.run_in_executor(executor, self._synthesize_sync, text, voice_id, lang_code, speed)
@@ -264,7 +279,7 @@ class KokoroTTSAdapter(TTSAdapter):
 
         voice_id = voice or "af_heart"
         lang_code = _voice_lang_code(voice_id)
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         queue: asyncio.Queue[bytes | None] = asyncio.Queue()
 
         def _run() -> None:
@@ -293,6 +308,8 @@ class KokoroTTSAdapter(TTSAdapter):
             executor.shutdown(wait=False)
 
     def _load_single_voice(self, voice_id: str) -> torch.Tensor | str:
+        import torch
+
         voice_id = voice_id.strip()
         if self.model_path:
             voice_pt = self.model_path / "voices" / f"{voice_id}.pt"
@@ -302,6 +319,8 @@ class KokoroTTSAdapter(TTSAdapter):
         return voice_id
 
     def _load_voice(self, voice_id: str) -> torch.Tensor | str:
+        import torch
+
         parts = [p.strip() for p in voice_id.split(",") if p.strip()]
         if len(parts) == 1:
             return self._load_single_voice(parts[0])

@@ -42,6 +42,10 @@ def _parse_response(
 
         return response_422
 
+    if response.status_code == 503:
+        response_503 = cast(Any, None)
+        return response_503
+
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
     else:
@@ -66,15 +70,14 @@ def sync_detailed(
 ) -> Response[Any | HTTPValidationError]:
     """Text To Speech
 
-     Generate speech from text (OpenAI-compatible endpoint)
+     Generate speech from text (OpenAI-compatible endpoint).
 
-    This endpoint synthesizes audio from text using the specified TTS model.
-
-    - **model**: TTS model to use (e.g., 'hexgrad/Kokoro-82M', 'coqui/XTTS-v2')
-    - **input**: The text to convert to speech
+    - **model**: TTS model (e.g., 'hexgrad/Kokoro-82M', 'pyttsx3')
+    - **input**: Text to convert to speech
     - **voice**: Optional voice ID (use /v1/audio/voices to list available voices)
     - **speed**: Speech speed multiplier (0.25 to 4.0, default: 1.0)
     - **response_format**: Audio format (mp3, opus, aac, flac, wav, pcm)
+    - **stream**: Stream audio chunks as they are generated
 
     Args:
         body (TTSRequest): Text-to-Speech request (OpenAI-compatible)
@@ -105,15 +108,14 @@ def sync(
 ) -> Any | HTTPValidationError | None:
     """Text To Speech
 
-     Generate speech from text (OpenAI-compatible endpoint)
+     Generate speech from text (OpenAI-compatible endpoint).
 
-    This endpoint synthesizes audio from text using the specified TTS model.
-
-    - **model**: TTS model to use (e.g., 'hexgrad/Kokoro-82M', 'coqui/XTTS-v2')
-    - **input**: The text to convert to speech
+    - **model**: TTS model (e.g., 'hexgrad/Kokoro-82M', 'pyttsx3')
+    - **input**: Text to convert to speech
     - **voice**: Optional voice ID (use /v1/audio/voices to list available voices)
     - **speed**: Speech speed multiplier (0.25 to 4.0, default: 1.0)
     - **response_format**: Audio format (mp3, opus, aac, flac, wav, pcm)
+    - **stream**: Stream audio chunks as they are generated
 
     Args:
         body (TTSRequest): Text-to-Speech request (OpenAI-compatible)
@@ -139,15 +141,14 @@ async def asyncio_detailed(
 ) -> Response[Any | HTTPValidationError]:
     """Text To Speech
 
-     Generate speech from text (OpenAI-compatible endpoint)
+     Generate speech from text (OpenAI-compatible endpoint).
 
-    This endpoint synthesizes audio from text using the specified TTS model.
-
-    - **model**: TTS model to use (e.g., 'hexgrad/Kokoro-82M', 'coqui/XTTS-v2')
-    - **input**: The text to convert to speech
+    - **model**: TTS model (e.g., 'hexgrad/Kokoro-82M', 'pyttsx3')
+    - **input**: Text to convert to speech
     - **voice**: Optional voice ID (use /v1/audio/voices to list available voices)
     - **speed**: Speech speed multiplier (0.25 to 4.0, default: 1.0)
     - **response_format**: Audio format (mp3, opus, aac, flac, wav, pcm)
+    - **stream**: Stream audio chunks as they are generated
 
     Args:
         body (TTSRequest): Text-to-Speech request (OpenAI-compatible)
@@ -176,15 +177,14 @@ async def asyncio(
 ) -> Any | HTTPValidationError | None:
     """Text To Speech
 
-     Generate speech from text (OpenAI-compatible endpoint)
+     Generate speech from text (OpenAI-compatible endpoint).
 
-    This endpoint synthesizes audio from text using the specified TTS model.
-
-    - **model**: TTS model to use (e.g., 'hexgrad/Kokoro-82M', 'coqui/XTTS-v2')
-    - **input**: The text to convert to speech
+    - **model**: TTS model (e.g., 'hexgrad/Kokoro-82M', 'pyttsx3')
+    - **input**: Text to convert to speech
     - **voice**: Optional voice ID (use /v1/audio/voices to list available voices)
     - **speed**: Speech speed multiplier (0.25 to 4.0, default: 1.0)
     - **response_format**: Audio format (mp3, opus, aac, flac, wav, pcm)
+    - **stream**: Stream audio chunks as they are generated
 
     Args:
         body (TTSRequest): Text-to-Speech request (OpenAI-compatible)

@@ -9,7 +9,7 @@ authors = [
 ]
 keywords = ["fastapi", "api", "speech-to-text", "tts", "stt", "openai-compatible"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: Other/Proprietary License",
     "Programming Language :: Python :: 3.11",
@@ -19,17 +19,17 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
 ]
 dependencies = [
-    "fastapi>=0.109.0",
-    "uvicorn[standard]>=0.27.0",
-    "pydantic>=2.5.0",
-    "python-multipart>=0.0.6",
+    "fastapi>=0.135.1",
+    "uvicorn[standard]>=0.41.0",
+    "pydantic>=2.12.5",
+    "python-multipart>=0.0.22",
     "vocal-core>=0.3.5",
     "aiofiles>=25.1.0",
 ]
 
 [project.urls]
 Homepage = "https://github.com/niradler/vocal"
-Documentation = "https://github.com/niradler/vocal#readme"
+Documentation = "https://github.com/niradler/vocal/tree/master/docs"
 Repository = "https://github.com/niradler/vocal"
 Issues = "https://github.com/niradler/vocal/issues"
 

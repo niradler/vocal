@@ -32,6 +32,7 @@ uv.lock
 
 # IDE
 .vscode/
+.cursor
 .idea/
 *.swp
 *.swo
@@ -79,3 +80,4 @@ Thumbs.db
 # SDK generator scratch dirs
 packages/sdk/gen-test*/
 packages/sdk/.gen-test*/
+.claude/settings.local.json

@@ -5,16 +5,28 @@ from pathlib import Path
 
 from vocal_core import ModelRegistry
 from vocal_core.adapters.tts import (
+    CHATTERBOX_AVAILABLE,
     FASTER_QWEN3_TTS_AVAILABLE,
     KOKORO_AVAILABLE,
+    ChatterboxTTSAdapter,
     FasterQwen3TTSAdapter,
     KokoroTTSAdapter,
+    PiperTTSAdapter,
     SimpleTTSAdapter,
     TTSAdapter,
+    TTSCapabilities,
     TTSResult,
     Voice,
+    VoiceCloneRequest,
 )
 from vocal_core.config import optional_dependency_install_hint
+
+try:
+    from piper import PiperVoice as _piper_check  # noqa: F401
+
+    PIPER_AVAILABLE = True
+except ImportError:
+    PIPER_AVAILABLE = False
 
 
 class TTSService:
@@ -62,6 +74,8 @@ class TTSService:
         voice: str | None = None,
         speed: float = 1.0,
         output_format: str = "mp3",
+        language: str | None = None,
+        **kwargs,
     ) -> TTSResult:
         """
         Synthesize text to speech using specified model
@@ -76,10 +90,12 @@ class TTSService:
         Returns:
             TTSResult with audio data
         """
+        extra = {k: v for k, v in ({"language": language} | kwargs).items() if v is not None}
+
         if model_id == "pyttsx3":
             adapter = await self._get_or_create_simple_adapter()
             self.last_used[model_id] = time.time()
-            return await adapter.synthesize(text=text, voice=voice, speed=speed, output_format=output_format)
+            return await adapter.synthesize(text=text, voice=voice, speed=speed, output_format=output_format, **extra)
 
         model_info = await self.registry.get_model(model_id)
         if not model_info:
@@ -96,7 +112,47 @@ class TTSService:
         adapter = await self._get_or_create_adapter(model_id, model_path, model_info.backend.value)
         self.last_used[model_id] = time.time()
 
-        return await adapter.synthesize(text=text, voice=voice, speed=speed, output_format=output_format)
+        return await adapter.synthesize(text=text, voice=voice, speed=speed, output_format=output_format, **extra)
+
+    async def clone_synthesize(
+        self,
+        model_id: str,
+        text: str,
+        reference_audio_path: str,
+        reference_text: str | None = None,
+        output_format: str = "wav",
+        language: str | None = None,
+        speed: float = 1.0,
+    ) -> TTSResult:
+        if model_id == "pyttsx3":
+            raise ValueError("System TTS does not support voice cloning.")
+
+        model_info = await self.registry.get_model(model_id)
+        if not model_info:
+            raise ValueError(f"Model {model_id} not found in registry")
+
+        if model_info.task.value != "tts":
+            raise ValueError(f"Model {model_id} is not a TTS model (task: {model_info.task})")
+
+        model_path = self.registry.get_model_path(model_id)
+        if not model_path:
+            raise ValueError(f"Model {model_id} not downloaded. Download it first: POST /v1/models/{model_id}/download")
+
+        adapter = await self._get_or_create_adapter(model_id, model_path, model_info.backend.value)
+        capabilities = adapter.get_capabilities()
+        if not capabilities.supports_voice_clone:
+            raise ValueError(f"Model {model_id} does not support reference-audio voice cloning.")
+
+        self.last_used[model_id] = time.time()
+        request = VoiceCloneRequest(
+            text=text,
+            reference_audio_path=reference_audio_path,
+            reference_text=reference_text,
+            language=language,
+            speed=speed,
+            output_format=output_format,
+        )
+        return await adapter.clone_synthesize(request)
 
     async def synthesize_stream(
         self,
@@ -170,6 +226,24 @@ class TTSService:
         self.last_used[model_id] = time.time()
         return await adapter.get_voices()
 
+    async def get_capabilities(self, model_id: str | None = None) -> TTSCapabilities:
+        if not model_id or model_id == "pyttsx3":
+            adapter = await self._get_or_create_simple_adapter()
+            self.last_used["pyttsx3"] = time.time()
+            return adapter.get_capabilities()
+
+        model_path = self.registry.get_model_path(model_id)
+        if not model_path:
+            raise ValueError(f"Model {model_id} not downloaded")
+
+        model_info = await self.registry.get_model(model_id)
+        if not model_info:
+            raise ValueError(f"Model {model_id} not found")
+
+        adapter = await self._get_or_create_adapter(model_id, model_path, model_info.backend.value)
+        self.last_used[model_id] = time.time()
+        return adapter.get_capabilities()
+
     async def _get_or_create_simple_adapter(self) -> SimpleTTSAdapter:
         """Get or create the simple system TTS adapter"""
         if "pyttsx3" not in self.adapters:
@@ -196,4 +270,12 @@ class TTSService:
             if not FASTER_QWEN3_TTS_AVAILABLE:
                 raise ImportError(optional_dependency_install_hint("qwen3-tts", "faster-qwen3-tts"))
             return FasterQwen3TTSAdapter()
-        raise ValueError(f"Unsupported TTS backend: '{backend}'. Supported backends: kokoro, faster_qwen3_tts")
+        if backend == "piper":
+            if not PIPER_AVAILABLE:
+                raise ImportError(optional_dependency_install_hint("piper", "piper-tts"))
+            return PiperTTSAdapter()
+        if backend == "chatterbox":
+            if not CHATTERBOX_AVAILABLE:
+                raise ImportError(optional_dependency_install_hint("chatterbox", "chatterbox-tts"))
+            return ChatterboxTTSAdapter()
+        raise ValueError(f"Unsupported TTS backend: '{backend}'. Supported backends: kokoro, faster_qwen3_tts, piper, chatterbox")

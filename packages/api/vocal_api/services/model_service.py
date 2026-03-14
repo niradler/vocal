@@ -1,6 +1,4 @@
-import json
 from collections.abc import AsyncIterator
-from pathlib import Path
 
 from vocal_core import ModelRegistry
 
@@ -14,54 +12,14 @@ class ModelService:
     def __init__(self, registry: ModelRegistry):
         self.registry = registry
         self._download_status: dict[str, ModelDownloadProgress] = {}
-        self._supported_models: list[ModelInfo] | None = None
 
-    def _load_supported_models_json(self) -> list[dict]:
-        supported_path = Path(__file__).parent.parent.parent.parent / "core" / "vocal_core" / "registry" / "supported_models.json"
-
-        if not supported_path.exists():
+    async def list_catalog(self, task: str | None = None) -> list[ModelInfo]:
+        """List all curated models from the catalog (downloaded or not)."""
+        hf_provider = self.registry.providers.get("huggingface")
+        if not hf_provider:
             return []
-
-        try:
-            with open(supported_path) as f:
-                data = json.load(f)
-            return data.get("models", [])
-        except Exception as e:
-            print(f"Error loading supported models: {e}")
-            return []
-
-    async def list_supported_models(self) -> list[ModelInfo]:
-        models_data = self._load_supported_models_json()
-        models = []
-
-        for model_dict in models_data:
-            models.append(
-                ModelInfo(
-                    id=model_dict["id"],
-                    name=model_dict["name"],
-                    provider=model_dict.get("provider", "huggingface"),
-                    description=model_dict.get("description"),
-                    size=model_dict.get("size", 0),
-                    size_readable=model_dict.get("size_readable", "Unknown"),
-                    parameters=model_dict.get("parameters", "Unknown"),
-                    languages=model_dict.get("languages", []),
-                    backend=model_dict.get("backend", "transformers"),
-                    status="not_downloaded",
-                    source_url=model_dict.get("source_url"),
-                    license=model_dict.get("license"),
-                    recommended_vram=model_dict.get("recommended_vram"),
-                    task=model_dict.get("task", "stt"),
-                    modified_at=model_dict.get("modified_at"),
-                    author=model_dict.get("author"),
-                    tags=model_dict.get("tags", []),
-                    downloads=model_dict.get("downloads"),
-                    likes=model_dict.get("likes"),
-                    sha=model_dict.get("sha"),
-                    files=model_dict.get("files"),
-                )
-            )
-
-        return models
+        models = await hf_provider.list_models(task=task)
+        return [self._convert_model_info(m) for m in models]
 
     async def show_model(self, model_or_alias: str) -> ModelInfo | None:
         model = await self.registry.get_model(model_or_alias)
@@ -95,7 +53,7 @@ class ModelService:
 
         try:
             async for downloaded, total, status in self.registry.download_model(model_id, quantization=quantization):
-                progress = (downloaded / total) if total > 0 else 0.0
+                progress = min(downloaded / total, 1.0) if total > 0 else 0.0
 
                 self._download_status[model_id] = ModelDownloadProgress(
                     model_id=model_id,
@@ -103,7 +61,7 @@ class ModelService:
                     progress=progress,
                     downloaded_bytes=downloaded,
                     total_bytes=total,
-                    message=f"Downloaded {downloaded}/{total} bytes",
+                    message=f"Downloading... {downloaded} bytes",
                 )
 
                 yield self._download_status[model_id]
@@ -153,4 +111,13 @@ class ModelService:
             likes=model.likes,
             sha=model.sha,
             files=model.files,
+            supports_streaming=model.supports_streaming,
+            supports_voice_list=model.supports_voice_list,
+            supports_voice_clone=model.supports_voice_clone,
+            supports_voice_design=model.supports_voice_design,
+            requires_gpu=model.requires_gpu,
+            voice_mode=model.voice_mode,
+            clone_mode=model.clone_mode,
+            reference_audio_min_seconds=model.reference_audio_min_seconds,
+            reference_audio_max_seconds=model.reference_audio_max_seconds,
         )

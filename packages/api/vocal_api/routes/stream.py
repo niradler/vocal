@@ -4,9 +4,9 @@ import tempfile
 import wave
 from pathlib import Path
 
-import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from vocal_core.adapters.vad import create_vad_adapter
 from vocal_core.config import vocal_settings
 
 from ..dependencies import get_transcription_service
@@ -14,16 +14,8 @@ from ..dependencies import get_transcription_service
 router = APIRouter(tags=["stream"])
 logger = logging.getLogger(__name__)
 
-_FRAME_DURATION_MS = 100
 _SILENCE_DURATION_S = vocal_settings.VAD_SILENCE_DURATION_S
 _MAX_CHUNK_DURATION_S = 10.0
-
-
-def _rms(pcm_bytes: bytes) -> float:
-    if not pcm_bytes:
-        return 0.0
-    arr = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32)
-    return float(np.sqrt(np.mean(arr**2))) if arr.size > 0 else 0.0
 
 
 def _estimate_frame_seconds(pcm_bytes: bytes, sample_rate: int) -> float:
@@ -64,13 +56,16 @@ async def audio_stream(
     model: str = vocal_settings.STT_DEFAULT_MODEL,
     language: str | None = vocal_settings.STT_DEFAULT_LANGUAGE,
     task: str = "transcribe",
-    threshold: float = 300.0,
     silence_duration: float = _SILENCE_DURATION_S,
     max_chunk_duration: float = _MAX_CHUNK_DURATION_S,
+    threshold: float | None = None,
 ) -> None:
     await websocket.accept()
     service = get_transcription_service()
     sample_rate = vocal_settings.STT_SAMPLE_RATE
+    speech_threshold = threshold if threshold is not None else vocal_settings.VAD_SPEECH_THRESHOLD
+
+    vad = create_vad_adapter()
 
     buffer: list[bytes] = []
     silence_count = 0
@@ -80,12 +75,11 @@ async def audio_stream(
     try:
         while True:
             data = await websocket.receive_bytes()
-            energy = _rms(data)
             frame_secs = _estimate_frame_seconds(data, sample_rate)
             buffer.append(data)
             total_duration += frame_secs
 
-            if energy >= threshold:
+            if vad.is_speech(data, sample_rate, speech_threshold):
                 has_speech = True
                 silence_count = 0
             else:
@@ -97,6 +91,7 @@ async def audio_stream(
             if should_flush:
                 if has_speech:
                     await _flush_pcm(websocket, buffer, model, language, task, sample_rate, service)
+                vad.reset()
                 buffer = []
                 silence_count = 0
                 has_speech = False

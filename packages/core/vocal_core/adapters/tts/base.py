@@ -1,9 +1,19 @@
 from abc import abstractmethod
 from collections.abc import AsyncGenerator
+from enum import Enum
 
 from pydantic import BaseModel
 
 from ..base import BaseAdapter
+
+
+class AudioFormat(str, Enum):
+    WAV = "wav"
+    MP3 = "mp3"
+    OPUS = "opus"
+    AAC = "aac"
+    FLAC = "flac"
+    PCM = "pcm"
 
 
 class Voice(BaseModel):
@@ -22,6 +32,27 @@ class TTSResult(BaseModel):
     sample_rate: int
     duration: float
     format: str
+
+
+class TTSCapabilities(BaseModel):
+    supports_streaming: bool = False
+    supports_voice_list: bool = False
+    supports_voice_clone: bool = False
+    supports_voice_design: bool = False
+    requires_gpu: bool = False
+    voice_mode: str | None = None
+    clone_mode: str | None = None
+    reference_audio_min_seconds: float | None = None
+    reference_audio_max_seconds: float | None = None
+
+
+class VoiceCloneRequest(BaseModel):
+    text: str
+    reference_audio_path: str
+    reference_text: str | None = None
+    language: str | None = None
+    speed: float = 1.0
+    output_format: str = "wav"
 
 
 class TTSAdapter(BaseAdapter):
@@ -81,6 +112,12 @@ class TTSAdapter(BaseAdapter):
         """
         result = await self.synthesize(text=text, voice=voice, speed=speed, pitch=pitch, output_format=output_format, **kwargs)
         yield result.audio_data
+
+    def get_capabilities(self) -> TTSCapabilities:
+        return TTSCapabilities()
+
+    async def clone_synthesize(self, request: VoiceCloneRequest) -> TTSResult:
+        raise NotImplementedError("This model/backend does not support voice cloning.")
 
     @abstractmethod
     async def get_voices(self) -> list[Voice]:
