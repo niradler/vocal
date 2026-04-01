@@ -1042,6 +1042,7 @@ _HAS_QWEN_ASR = importlib.util.find_spec("qwen_asr") is not None
 _HAS_WHISPERX = importlib.util.find_spec("whisperx") is not None
 _HAS_KOKORO = importlib.util.find_spec("kokoro") is not None
 _HAS_CHATTERBOX = importlib.util.find_spec("chatterbox") is not None
+_HAS_MISTRAL_COMMON = importlib.util.find_spec("mistral_common") is not None
 
 # NeMo's find_spec succeeds but import fails due to missing nv_one_logger;
 # check actual importability so we skip tests correctly.
@@ -1057,6 +1058,7 @@ _NEMO_STT_MODEL = "nvidia/parakeet-tdt-0.6b-v2"
 _WHISPERX_STT_MODEL = "whisperx/distil-large-v3"
 _KOKORO_TTS_MODEL = "hexgrad/Kokoro-82M"
 _CHATTERBOX_TTS_MODEL = "ResembleAI/chatterbox"
+_VOXTRAL_STT_MODEL = "mistralai/Voxtral-Mini-4B-Realtime-2602"
 
 
 def _ensure_model(client: VocalClient, model_id: str, max_wait: int = 600) -> None:
@@ -1256,6 +1258,40 @@ class TestChatterboxTTS:
         # Chatterbox may output IEEE float WAV (format 3) which Python's wave
         # module doesn't support. Just verify the RIFF header is valid.
         print(f"\n[OK] Chatterbox voice clone: {len(resp.content):,} bytes WAV")
+
+
+@pytest.mark.skipif(_IN_CI, reason="CI: Voxtral STT requires 16GB+ GPU and large download — skip in CI")
+@pytest.mark.skipif(not _HAS_MISTRAL_COMMON, reason="mistral_common not installed — run: uv pip install mistral-common")
+@pytest.mark.skipif(not _HAS_CUDA, reason="Voxtral STT requires CUDA GPU")
+class TestVoxtralSTT:
+    """E2E: Voxtral-Mini-4B-Realtime STT backend — requires 16GB+ GPU"""
+
+    def test_voxtral_stt_transcribe(self, client, test_assets):
+        audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
+        assert audio_file.exists(), f"Test asset not found: {audio_file}"
+
+        _ensure_model(client, _VOXTRAL_STT_MODEL, max_wait=900)
+
+        result = _transcribe(client, audio_file, _VOXTRAL_STT_MODEL, language="en")
+
+        assert result is not None, "Result should not be None"
+        assert isinstance(result.text, str), "Text should be a string"
+        assert len(result.text.strip()) > 0, "Transcription should not be empty"
+
+        print(f"\n[OK] Voxtral STT: '{result.text.strip()}'")
+
+    def test_voxtral_stt_transcribe_m4a(self, client, test_assets):
+        audio_file = test_assets["audio_dir"] / "Recording.m4a"
+        assert audio_file.exists(), f"Test asset not found: {audio_file}"
+
+        _ensure_model(client, _VOXTRAL_STT_MODEL, max_wait=900)
+
+        result = _transcribe(client, audio_file, _VOXTRAL_STT_MODEL)
+
+        assert result is not None
+        assert isinstance(result.text, str) and len(result.text.strip()) > 0
+
+        print(f"\n[OK] Voxtral STT (m4a): '{result.text.strip()}'")
 
 
 if __name__ == "__main__":

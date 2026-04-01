@@ -8,6 +8,7 @@ from vocal_core.adapters.tts import (
     CHATTERBOX_AVAILABLE,
     FASTER_QWEN3_TTS_AVAILABLE,
     KOKORO_AVAILABLE,
+    VOXTRAL_TTS_AVAILABLE,
     ChatterboxTTSAdapter,
     FasterQwen3TTSAdapter,
     KokoroTTSAdapter,
@@ -18,6 +19,7 @@ from vocal_core.adapters.tts import (
     TTSResult,
     Voice,
     VoiceCloneRequest,
+    VoxtralTTSAdapter,
 )
 from vocal_core.config import optional_dependency_install_hint
 
@@ -278,4 +280,8 @@ class TTSService:
             if not CHATTERBOX_AVAILABLE:
                 raise ImportError(optional_dependency_install_hint("chatterbox", "chatterbox-tts"))
             return ChatterboxTTSAdapter()
-        raise ValueError(f"Unsupported TTS backend: '{backend}'. Supported backends: kokoro, faster_qwen3_tts, piper, chatterbox")
+        if backend == "voxtral_tts":
+            if not VOXTRAL_TTS_AVAILABLE:
+                raise ImportError(optional_dependency_install_hint("voxtral", "httpx"))
+            return VoxtralTTSAdapter()
+        raise ValueError(f"Unsupported TTS backend: '{backend}'. Supported backends: kokoro, faster_qwen3_tts, piper, chatterbox, voxtral_tts")

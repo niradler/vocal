@@ -29,6 +29,8 @@ class ModelBackend(str, Enum):
     FISH_SPEECH = "fish_speech"
     ORPHEUS = "orpheus"
     DIA = "dia"
+    VOXTRAL_STT = "voxtral_stt"
+    VOXTRAL_TTS = "voxtral_tts"
     CUSTOM = "custom"
 
 

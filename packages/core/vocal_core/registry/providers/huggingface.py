@@ -4,6 +4,8 @@ from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
 
+from .base import WEIGHT_NAMES, WEIGHT_SUFFIXES
+
 from huggingface_hub import (
     ModelCard,
     get_safetensors_metadata,
@@ -287,6 +289,5 @@ class HuggingFaceProvider(BaseProvider):
         if any(".incomplete" in f.name or f.suffix == ".lock" for f in all_files):
             return False
 
-        weight_names = {"model.safetensors", "pytorch_model.bin", "model.bin", "model.gguf", "model.pt"}
-        has_weights = any(f.name in weight_names or (f.name.startswith("model-") and f.suffix == ".safetensors") for f in all_files)
+        has_weights = any(f.name in WEIGHT_NAMES or f.suffix in WEIGHT_SUFFIXES for f in all_files)
         return has_weights

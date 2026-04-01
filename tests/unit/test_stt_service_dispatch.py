@@ -61,3 +61,15 @@ def test_unknown_backend_raises_value_error():
     svc = _make_service()
     with pytest.raises(ValueError, match="Unsupported STT backend"):
         svc._create_adapter("totally_unknown_backend")
+
+
+def test_voxtral_stt_dispatch_returns_voxtral_or_import_error():
+    from vocal_core.adapters.stt import VOXTRAL_STT_AVAILABLE, VoxtralSTTAdapter
+
+    svc = _make_service()
+    if VOXTRAL_STT_AVAILABLE:
+        adapter = svc._create_adapter("voxtral_stt")
+        assert isinstance(adapter, VoxtralSTTAdapter)
+    else:
+        with pytest.raises(ImportError, match="mistral-common"):
+            svc._create_adapter("voxtral_stt")

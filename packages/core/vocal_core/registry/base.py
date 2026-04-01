@@ -1,4 +1,5 @@
 import logging
+import os
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -7,6 +8,7 @@ from pydantic import ValidationError
 from .capabilities import infer_model_capabilities, model_record_from_mapping
 from .metadata_cache import ModelMetadataCache
 from .model_info import ModelBackend, ModelInfo, ModelProvider, ModelStatus, ModelTask, format_bytes
+from .providers.base import WEIGHT_NAMES, WEIGHT_SUFFIXES
 from .providers.base import ModelProvider as BaseModelProvider
 from .providers.huggingface import HuggingFaceProvider
 
@@ -168,6 +170,9 @@ class ModelRegistry:
                 except Exception:
                     model = None
 
+            if not self._has_model_weights(model_dir):
+                continue
+
             if model:
                 model.status = ModelStatus.AVAILABLE
                 model.local_path = str(model_dir)
@@ -191,7 +196,7 @@ class ModelRegistry:
                 model = await provider.get_model_info(canonical_id)
                 if model:
                     model_path = self._get_model_path(model.id)
-                    if model_path.exists():
+                    if model_path.exists() and self._has_model_weights(model_path):
                         model.status = ModelStatus.AVAILABLE
                         model.local_path = str(model_path)
 
@@ -295,8 +300,19 @@ class ModelRegistry:
         safe_id = model_id.replace("/", "--")
         return self.storage_path / safe_id
 
+    @staticmethod
+    def _has_model_weights(path: Path) -> bool:
+        """Return True if path contains actual model weight files (not just configs)."""
+        for _root, _dirs, files in os.walk(path):
+            for name in files:
+                if name in WEIGHT_NAMES or Path(name).suffix in WEIGHT_SUFFIXES:
+                    return True
+        return False
+
     def get_model_path(self, model_id: str) -> Path | None:
-        """Get path to downloaded model, or None if not downloaded"""
+        """Get path to downloaded model, or None if not downloaded or weights missing"""
         canonical_id = self._resolve_model_id(model_id)
         path = self._get_model_path(canonical_id)
-        return path if path.exists() else None
+        if not path.exists():
+            return None
+        return path if self._has_model_weights(path) else None

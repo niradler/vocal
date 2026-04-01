@@ -16,6 +16,8 @@ class ModelBackend(str, Enum):
     PIPER = "piper"
     TRANSFORMERS = "transformers"
     WHISPERX = "whisperx"
+    VOXTRAL_STT = "voxtral_stt"
+    VOXTRAL_TTS = "voxtral_tts"
     XTTS = "xtts"
 
     def __str__(self) -> str:

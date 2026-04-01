@@ -11,11 +11,13 @@ from vocal_core import ModelRegistry, TranscriptionResult
 from vocal_core.adapters.stt import (
     NEMO_AVAILABLE,
     TRANSFORMERS_AVAILABLE,
+    VOXTRAL_STT_AVAILABLE,
     WHISPERX_AVAILABLE,
     FasterWhisperAdapter,
     NemoSTTAdapter,
     STTAdapter,
     TransformersSTTAdapter,
+    VoxtralSTTAdapter,
     WhisperXSTTAdapter,
 )
 from vocal_core.adapters.stt import (
@@ -162,7 +164,11 @@ class TranscriptionService:
             if not WHISPERX_AVAILABLE:
                 raise ImportError(optional_dependency_install_hint("whisperx", "whisperx"))
             return WhisperXSTTAdapter()
-        raise ValueError(f"Unsupported STT backend: '{backend}'. Supported backends: faster_whisper, transformers, nemo, whisperx")
+        if backend == "voxtral_stt":
+            if not VOXTRAL_STT_AVAILABLE:
+                raise ImportError(optional_dependency_install_hint("voxtral", "mistral-common"))
+            return VoxtralSTTAdapter()
+        raise ValueError(f"Unsupported STT backend: '{backend}'. Supported backends: faster_whisper, transformers, nemo, whisperx, voxtral_stt")
 
     async def _get_or_create_adapter(self, model_id: str, model_path: Path, backend: str) -> STTAdapter:
         """Get or create adapter for model, dispatching by backend."""

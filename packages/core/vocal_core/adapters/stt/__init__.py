@@ -7,6 +7,7 @@ from .base import (
 from .faster_whisper import FasterWhisperAdapter
 from .nemo_adapter import NEMO_AVAILABLE, NemoSTTAdapter
 from .transformers_adapter import TRANSFORMERS_AVAILABLE, TransformersSTTAdapter
+from .voxtral import VOXTRAL_STT_AVAILABLE, VoxtralSTTAdapter
 from .whisperx_adapter import WHISPERX_AVAILABLE, WhisperXSTTAdapter
 
 __all__ = [
@@ -21,4 +22,6 @@ __all__ = [
     "NEMO_AVAILABLE",
     "WhisperXSTTAdapter",
     "WHISPERX_AVAILABLE",
+    "VoxtralSTTAdapter",
+    "VOXTRAL_STT_AVAILABLE",
 ]

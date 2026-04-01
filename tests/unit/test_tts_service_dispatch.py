@@ -45,3 +45,15 @@ def test_unsupported_backend_raises_value_error(backend):
     svc = _make_service()
     with pytest.raises(ValueError, match="Unsupported TTS backend"):
         svc._create_adapter(backend)
+
+
+def test_voxtral_tts_dispatch_returns_voxtral_or_import_error():
+    from vocal_core.adapters.tts import VOXTRAL_TTS_AVAILABLE, VoxtralTTSAdapter
+
+    svc = _make_service()
+    if VOXTRAL_TTS_AVAILABLE:
+        adapter = svc._create_adapter("voxtral_tts")
+        assert isinstance(adapter, VoxtralTTSAdapter)
+    else:
+        with pytest.raises(ImportError, match="httpx"):
+            svc._create_adapter("voxtral_tts")
