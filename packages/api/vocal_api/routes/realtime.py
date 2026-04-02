@@ -118,9 +118,7 @@ async def _transcribe_buffer(ws: WebSocket, session: _Session, transcription_ser
 
     try:
         full_parts: list[str] = []
-        async for seg in transcription_service.transcribe_live_stream(
-            _single_chunk_gen(), session.model, _STT_SAMPLE_RATE, session.language
-        ):
+        async for seg in transcription_service.transcribe_live_stream(_single_chunk_gen(), session.model, _STT_SAMPLE_RATE, session.language):
             text = seg.text.strip()
             if text:
                 ok = await _safe_send(

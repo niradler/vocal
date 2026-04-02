@@ -11,11 +11,7 @@ from .base import STTAdapter, TranscriptionResult, TranscriptionSegment
 
 logger = logging.getLogger(__name__)
 
-VOXTRAL_STT_AVAILABLE = (
-    importlib.util.find_spec("mistral_common") is not None
-    and importlib.util.find_spec("transformers") is not None
-    and importlib.util.find_spec("torch") is not None
-)
+VOXTRAL_STT_AVAILABLE = importlib.util.find_spec("mistral_common") is not None and importlib.util.find_spec("transformers") is not None and importlib.util.find_spec("torch") is not None
 
 
 class VoxtralSTTAdapter(STTAdapter):
@@ -37,10 +33,7 @@ class VoxtralSTTAdapter(STTAdapter):
 
     async def load_model(self, model_path: Path, device: str = "auto", **kwargs) -> None:
         if not VOXTRAL_STT_AVAILABLE:
-            raise ImportError(
-                "mistral_common, transformers, and torch are required for Voxtral STT. "
-                "Install with: uv pip install mistral-common"
-            )
+            raise ImportError("mistral_common, transformers, and torch are required for Voxtral STT. Install with: uv pip install mistral-common")
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._load_sync, model_path, device)
 
@@ -162,7 +155,9 @@ class VoxtralSTTAdapter(STTAdapter):
 
                 first_inputs = self.processor(
                     audio[:first_n],
-                    is_streaming=True, is_first_audio_chunk=True, return_tensors="pt",
+                    is_streaming=True,
+                    is_first_audio_chunk=True,
+                    return_tensors="pt",
                 )
                 first_inputs = first_inputs.to(device=self.device, dtype=self._dtype)
 
@@ -171,7 +166,9 @@ class VoxtralSTTAdapter(STTAdapter):
                 while (end := start + chunk_n) <= len(audio):
                     fi = self.processor(
                         audio[start:end],
-                        is_streaming=True, is_first_audio_chunk=False, return_tensors="pt",
+                        is_streaming=True,
+                        is_first_audio_chunk=False,
+                        return_tensors="pt",
                     )
                     chunk_features.append(fi.input_features.to(device=self.device, dtype=self._dtype))
                     start = end - win
@@ -269,6 +266,7 @@ class VoxtralSTTAdapter(STTAdapter):
         if suffix in {".wav", ".flac", ".ogg", ".aiff", ".aif"}:
             return audio_path, False
         import subprocess
+
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
         tmp.close()
         subprocess.run(

@@ -134,9 +134,7 @@ async def audio_stream(
                     # Start a new utterance session if none active
                     if chunk_q is None:
                         chunk_q = asyncio.Queue()
-                        transcribe_task = asyncio.create_task(
-                            _live_stream_utterance(websocket, chunk_q, model, language, sample_rate, service)
-                        )
+                        transcribe_task = asyncio.create_task(_live_stream_utterance(websocket, chunk_q, model, language, sample_rate, service))
                     await chunk_q.put(data)
                 else:
                     silence_count += 1

@@ -908,12 +908,14 @@ class TestRealtimeOAI:
         assert audio_file.exists()
 
         import subprocess, tempfile, os as _os
+
         with tempfile.NamedTemporaryFile(suffix=".raw", delete=False) as tmp:
             tmp_path = tmp.name
         try:
             subprocess.run(
                 ["ffmpeg", "-y", "-i", str(audio_file), "-ar", "16000", "-ac", "1", "-f", "s16le", tmp_path],
-                check=True, capture_output=True,
+                check=True,
+                capture_output=True,
             )
             with open(tmp_path, "rb") as f:
                 pcm = f.read()
@@ -945,18 +947,26 @@ class TestRealtimeOAI:
                 await asyncio.wait_for(ws.recv(), timeout=10.0)  # session.created
 
                 # Match exact CLI session.update format (16kHz, transcription mode)
-                await ws.send(json.dumps({
-                    "type": "session.update",
-                    "session": {"model": test_model, "input_sample_rate": 16000},
-                }))
+                await ws.send(
+                    json.dumps(
+                        {
+                            "type": "session.update",
+                            "session": {"model": test_model, "input_sample_rate": 16000},
+                        }
+                    )
+                )
                 await asyncio.wait_for(ws.recv(), timeout=5.0)  # session.updated
 
                 # Send real speech audio — VAD detects onset and starts utterance
                 for i in range(0, len(pcm), frame_size):
-                    await ws.send(json.dumps({
-                        "type": "input_audio_buffer.append",
-                        "audio": base64.b64encode(pcm[i : i + frame_size]).decode(),
-                    }))
+                    await ws.send(
+                        json.dumps(
+                            {
+                                "type": "input_audio_buffer.append",
+                                "audio": base64.b64encode(pcm[i : i + frame_size]).decode(),
+                            }
+                        )
+                    )
 
                 # 20 zero-energy silence frames (2.0s) — VAD_SILENCE_FRAMES=15 fires the commit
                 silence_b64 = base64.b64encode(bytes(frame_size)).decode()
@@ -981,12 +991,14 @@ class TestRealtimeOAI:
         assert audio_file.exists()
 
         import subprocess, tempfile, os as _os
+
         with tempfile.NamedTemporaryFile(suffix=".raw", delete=False) as tmp:
             tmp_path = tmp.name
         try:
             subprocess.run(
                 ["ffmpeg", "-y", "-i", str(audio_file), "-ar", "16000", "-ac", "1", "-f", "s16le", tmp_path],
-                check=True, capture_output=True,
+                check=True,
+                capture_output=True,
             )
             with open(tmp_path, "rb") as f:
                 pcm = f.read()
@@ -1017,18 +1029,26 @@ class TestRealtimeOAI:
 
             async with websockets.connect(uri, open_timeout=60) as ws:
                 await asyncio.wait_for(ws.recv(), timeout=10.0)
-                await ws.send(json.dumps({
-                    "type": "session.update",
-                    "session": {"model": test_model, "input_sample_rate": 16000},
-                }))
+                await ws.send(
+                    json.dumps(
+                        {
+                            "type": "session.update",
+                            "session": {"model": test_model, "input_sample_rate": 16000},
+                        }
+                    )
+                )
                 await asyncio.wait_for(ws.recv(), timeout=5.0)
 
                 for utterance_num in range(1, 3):
                     for i in range(0, len(pcm), frame_size):
-                        await ws.send(json.dumps({
-                            "type": "input_audio_buffer.append",
-                            "audio": base64.b64encode(pcm[i : i + frame_size]).decode(),
-                        }))
+                        await ws.send(
+                            json.dumps(
+                                {
+                                    "type": "input_audio_buffer.append",
+                                    "audio": base64.b64encode(pcm[i : i + frame_size]).decode(),
+                                }
+                            )
+                        )
                     for _ in range(20):
                         await ws.send(json.dumps({"type": "input_audio_buffer.append", "audio": silence_b64}))
 
@@ -1433,12 +1453,14 @@ class TestVoxtralSTT:
     def _pcm_from_file(self, audio_file) -> bytes:
         """Convert an audio file to raw PCM16 mono 16kHz via ffmpeg."""
         import subprocess, tempfile, os
+
         with tempfile.NamedTemporaryFile(suffix=".raw", delete=False) as tmp:
             tmp_path = tmp.name
         try:
             subprocess.run(
                 ["ffmpeg", "-y", "-i", str(audio_file), "-ar", "16000", "-ac", "1", "-f", "s16le", tmp_path],
-                check=True, capture_output=True,
+                check=True,
+                capture_output=True,
             )
             with open(tmp_path, "rb") as f:
                 return f.read()
