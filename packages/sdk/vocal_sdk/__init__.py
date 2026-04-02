@@ -1,4 +1,4 @@
-__version__ = "0.3.6"
+__version__ = "0.3.7"
 """Vocal SDK — Python client for the Vocal Speech AI Platform.
 
 Auto-generated from the Vocal OpenAPI specification using openapi-python-client.

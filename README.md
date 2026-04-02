@@ -50,6 +50,7 @@ vocal chat    # requires Ollama running locally
 | `whisperx` | WhisperX — word-level timestamps + diarization | `pip install "vocal-ai[whisperx]"` |
 | `nemo` | NVIDIA NeMo STT (Parakeet-TDT, Canary-Qwen) | `pip install "vocal-ai[nemo]"` |
 | `chatterbox` | Chatterbox voice cloning TTS | `pip install "vocal-ai[chatterbox]"` |
+| `voxtral` | Voxtral-Mini-4B STT + TTS (CUDA, 16 GB+) | `pip install "vocal-ai[voxtral]"` |
 
 Missing a backend? The error message will tell you exactly which command to run.
 
