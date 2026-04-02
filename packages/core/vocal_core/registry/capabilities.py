@@ -141,6 +141,7 @@ def model_record_from_mapping(
         "actual_parameter_count",
         "hf_repo_id",
         "supports_streaming",
+        "supports_live_streaming",
         "supports_voice_list",
         "supports_voice_clone",
         "supports_voice_design",

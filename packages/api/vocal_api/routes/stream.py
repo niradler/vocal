@@ -135,6 +135,7 @@ async def audio_stream(
                     if chunk_q is None:
                         chunk_q = asyncio.Queue()
                         transcribe_task = asyncio.create_task(_live_stream_utterance(websocket, chunk_q, model, language, sample_rate, service))
+                        transcribe_task.add_done_callback(lambda t: logger.error("Live stream task failed: %s", t.exception()) if not t.cancelled() and t.exception() else None)
                     await chunk_q.put(data)
                 else:
                     silence_count += 1

@@ -18,6 +18,7 @@ import io
 import json
 import os
 import subprocess
+import tempfile
 import time
 import wave
 from pathlib import Path
@@ -761,6 +762,25 @@ def _ws_run(coro):
     return asyncio.run(coro)
 
 
+async def _collect_until(ws, stop_type: str, timeout_s: float = 90.0) -> list[dict]:
+    """Drain WebSocket messages until stop_type is received or timeout expires."""
+    events: list[dict] = []
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        remaining = deadline - time.monotonic()
+        try:
+            msg = await asyncio.wait_for(ws.recv(), timeout=min(5.0, remaining))
+        except TimeoutError:
+            continue
+        event = json.loads(msg)
+        events.append(event)
+        if event.get("type") == "error":
+            raise RuntimeError(f"Server error: {event.get('error')}")
+        if event.get("type") == stop_type:
+            return events
+    raise TimeoutError(f"{stop_type} not received within {timeout_s}s. Got: {[e['type'] for e in events]}")
+
+
 class TestRealtimeStream:
     """Test /v1/audio/stream WebSocket endpoint"""
 
@@ -907,8 +927,6 @@ class TestRealtimeOAI:
         audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
         assert audio_file.exists()
 
-        import subprocess, tempfile, os as _os
-
         with tempfile.NamedTemporaryFile(suffix=".raw", delete=False) as tmp:
             tmp_path = tmp.name
         try:
@@ -920,24 +938,7 @@ class TestRealtimeOAI:
             with open(tmp_path, "rb") as f:
                 pcm = f.read()
         finally:
-            _os.unlink(tmp_path)
-
-        async def _collect_realtime(ws, stop_type: str, timeout_s: float = 90.0) -> list[dict]:
-            events: list[dict] = []
-            deadline = time.monotonic() + timeout_s
-            while time.monotonic() < deadline:
-                remaining = deadline - time.monotonic()
-                try:
-                    msg = await asyncio.wait_for(ws.recv(), timeout=min(5.0, remaining))
-                except TimeoutError:
-                    continue
-                event = json.loads(msg)
-                events.append(event)
-                if event.get("type") == "error":
-                    raise RuntimeError(f"Server error: {event.get('error')}")
-                if event.get("type") == stop_type:
-                    return events
-            raise TimeoutError(f"{stop_type} not received within {timeout_s}s. Got: {[e['type'] for e in events]}")
+            os.unlink(tmp_path)
 
         async def _test():
             uri = f"{api_server.replace('http://', 'ws://')}/v1/realtime"
@@ -973,7 +974,7 @@ class TestRealtimeOAI:
                 for _ in range(20):
                     await ws.send(json.dumps({"type": "input_audio_buffer.append", "audio": silence_b64}))
 
-                events = await _collect_realtime(ws, "conversation.item.input_audio_transcription.completed")
+                events = await _collect_until(ws, "conversation.item.input_audio_transcription.completed")
 
             types = {e["type"] for e in events}
             assert "input_audio_buffer.speech_started" in types, f"VAD never detected speech: {types}"
@@ -990,8 +991,6 @@ class TestRealtimeOAI:
         audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
         assert audio_file.exists()
 
-        import subprocess, tempfile, os as _os
-
         with tempfile.NamedTemporaryFile(suffix=".raw", delete=False) as tmp:
             tmp_path = tmp.name
         try:
@@ -1003,24 +1002,7 @@ class TestRealtimeOAI:
             with open(tmp_path, "rb") as f:
                 pcm = f.read()
         finally:
-            _os.unlink(tmp_path)
-
-        async def _collect_until(ws, stop_type: str, timeout_s: float = 90.0) -> list[dict]:
-            events: list[dict] = []
-            deadline = time.monotonic() + timeout_s
-            while time.monotonic() < deadline:
-                remaining = deadline - time.monotonic()
-                try:
-                    msg = await asyncio.wait_for(ws.recv(), timeout=min(5.0, remaining))
-                except TimeoutError:
-                    continue
-                event = json.loads(msg)
-                events.append(event)
-                if event.get("type") == "error":
-                    raise RuntimeError(f"Server error: {event.get('error')}")
-                if event.get("type") == stop_type:
-                    return events
-            raise TimeoutError(f"{stop_type} not received. Got: {[e['type'] for e in events]}")
+            os.unlink(tmp_path)
 
         async def _test():
             uri = f"{api_server.replace('http://', 'ws://')}/v1/realtime"
@@ -1452,8 +1434,6 @@ class TestVoxtralSTT:
 
     def _pcm_from_file(self, audio_file) -> bytes:
         """Convert an audio file to raw PCM16 mono 16kHz via ffmpeg."""
-        import subprocess, tempfile, os
-
         with tempfile.NamedTemporaryFile(suffix=".raw", delete=False) as tmp:
             tmp_path = tmp.name
         try:

@@ -383,7 +383,8 @@ async def realtime_endpoint(
                 # spinning. The pipeline takes 15–45 s; awaiting it inline stalls
                 # Starlette's receive loop and lets the client's ping_timeout fire
                 # → "no close frame received or sent".
-                asyncio.create_task(_commit_and_process(websocket, session, transcription_service, tts_service))
+                _task = asyncio.create_task(_commit_and_process(websocket, session, transcription_service, tts_service))
+                _task.add_done_callback(lambda t: logger.error("Commit pipeline failed: %s", t.exception()) if not t.cancelled() and t.exception() else None)
 
     except WebSocketDisconnect:
         pass

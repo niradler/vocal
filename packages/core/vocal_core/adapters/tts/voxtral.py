@@ -3,6 +3,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from .base import TTSAdapter, TTSCapabilities, TTSResult, Voice
 
 logger = logging.getLogger(__name__)
@@ -94,8 +96,6 @@ class VoxtralTTSAdapter(TTSAdapter):
     ) -> TTSResult:
         if not self._loaded:
             raise RuntimeError("Adapter not loaded. Call load_model() first.")
-
-        import httpx
 
         selected_voice = voice or _DEFAULT_VOICE
         payload = {

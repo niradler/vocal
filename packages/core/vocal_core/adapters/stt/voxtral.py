@@ -2,10 +2,9 @@ import asyncio
 import importlib.util
 import logging
 import tempfile
+from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any, BinaryIO
-
-from collections.abc import AsyncGenerator
 
 from .base import STTAdapter, TranscriptionResult, TranscriptionSegment
 
@@ -43,9 +42,8 @@ class VoxtralSTTAdapter(STTAdapter):
         apply_transformers_shims()
 
         import torch
-        from transformers import AutoProcessor, VoxtralRealtimeForConditionalGeneration
-
         from mistral_common.tokens.tokenizers.audio import Audio
+        from transformers import AutoProcessor, VoxtralRealtimeForConditionalGeneration
 
         resolved = "cuda" if device == "auto" and torch.cuda.is_available() else ("cpu" if device == "auto" else device)
         dtype = torch.bfloat16 if resolved == "cuda" else torch.float32
@@ -129,8 +127,9 @@ class VoxtralSTTAdapter(STTAdapter):
         **kwargs,
     ) -> AsyncGenerator[TranscriptionSegment, None]:
         """Collect utterance PCM, slice into correctly-sized overlapping chunks, stream tokens."""
-        import numpy as np
         from threading import Thread
+
+        import numpy as np
         from transformers import TextIteratorStreamer
 
         pcm_buf = bytearray()
@@ -273,6 +272,7 @@ class VoxtralSTTAdapter(STTAdapter):
             ["ffmpeg", "-y", "-i", audio_path, "-ar", "16000", "-ac", "1", tmp.name],
             check=True,
             capture_output=True,
+            timeout=60,
         )
         return tmp.name, True
 
@@ -282,10 +282,10 @@ class VoxtralSTTAdapter(STTAdapter):
         wav_path, is_temp = self._ensure_wav(audio_path)
         try:
             audio = self._audio_cls.from_file(wav_path, strict=False)
+            audio.resample(self.processor.feature_extractor.sampling_rate)
         finally:
             if is_temp:
                 Path(wav_path).unlink(missing_ok=True)
-        audio.resample(self.processor.feature_extractor.sampling_rate)
 
         inputs = self.processor(audio.audio_array, return_tensors="pt")
         inputs = {k: v.to(device=self.device, dtype=self._dtype if v.is_floating_point() else None) for k, v in inputs.items()}

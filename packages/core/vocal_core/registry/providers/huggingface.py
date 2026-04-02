@@ -4,8 +4,6 @@ from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
 
-from .base import WEIGHT_NAMES, WEIGHT_SUFFIXES
-
 from huggingface_hub import (
     ModelCard,
     get_safetensors_metadata,
@@ -34,6 +32,7 @@ from ..model_info import (
     ModelTask,
     format_bytes,
 )
+from .base import WEIGHT_NAMES, WEIGHT_SUFFIXES
 from .base import ModelProvider as BaseProvider
 
 
