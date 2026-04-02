@@ -328,7 +328,7 @@ async def _dispatch_event(ws: WebSocket, session: _Session, event: dict) -> bool
 
 
 @router.websocket("/v1/realtime")
-async def realtime_endpoint(
+async def realtime_endpoint(  # noqa: C901
     websocket: WebSocket,
     model: str | None = None,
     session_id: str | None = None,

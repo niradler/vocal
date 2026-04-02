@@ -1,16 +1,22 @@
 import asyncio
 import importlib.util
 import logging
+import subprocess
 import tempfile
 from collections.abc import AsyncGenerator
 from pathlib import Path
+from threading import Thread
 from typing import Any, BinaryIO
 
 from .base import STTAdapter, TranscriptionResult, TranscriptionSegment
 
 logger = logging.getLogger(__name__)
 
-VOXTRAL_STT_AVAILABLE = importlib.util.find_spec("mistral_common") is not None and importlib.util.find_spec("transformers") is not None and importlib.util.find_spec("torch") is not None
+VOXTRAL_STT_AVAILABLE = (
+    importlib.util.find_spec("mistral_common") is not None
+    and importlib.util.find_spec("transformers") is not None
+    and importlib.util.find_spec("torch") is not None
+)
 
 
 class VoxtralSTTAdapter(STTAdapter):
@@ -127,11 +133,6 @@ class VoxtralSTTAdapter(STTAdapter):
         **kwargs,
     ) -> AsyncGenerator[TranscriptionSegment, None]:
         """Collect utterance PCM, slice into correctly-sized overlapping chunks, stream tokens."""
-        from threading import Thread
-
-        import numpy as np
-        from transformers import TextIteratorStreamer
-
         pcm_buf = bytearray()
         async for raw in audio_chunks:
             pcm_buf.extend(raw)
@@ -141,77 +142,7 @@ class VoxtralSTTAdapter(STTAdapter):
         loop = asyncio.get_running_loop()
         text_q: asyncio.Queue = asyncio.Queue()
 
-        def _stream_thread() -> None:
-            try:
-                audio = np.frombuffer(pcm_buf, dtype=np.int16).astype(np.float32) / 32768.0
-
-                pad_samples = self.processor.num_right_pad_tokens() * self.processor.raw_audio_length_per_tok
-                audio = np.pad(audio, (0, pad_samples))
-
-                first_n = self.processor.num_samples_first_audio_chunk
-                chunk_n = self.processor.num_samples_per_audio_chunk
-                win = self.processor.feature_extractor.win_length
-
-                first_inputs = self.processor(
-                    audio[:first_n],
-                    is_streaming=True,
-                    is_first_audio_chunk=True,
-                    return_tensors="pt",
-                )
-                first_inputs = first_inputs.to(device=self.device, dtype=self._dtype)
-
-                chunk_features = []
-                start = first_n
-                while (end := start + chunk_n) <= len(audio):
-                    fi = self.processor(
-                        audio[start:end],
-                        is_streaming=True,
-                        is_first_audio_chunk=False,
-                        return_tensors="pt",
-                    )
-                    chunk_features.append(fi.input_features.to(device=self.device, dtype=self._dtype))
-                    start = end - win
-
-                def _gen():
-                    yield first_inputs.input_features
-                    yield from chunk_features
-
-                import torch
-
-                streamer = TextIteratorStreamer(self.processor, skip_special_tokens=True, timeout=300.0)
-                generate_errors: list[BaseException] = []
-
-                def _generate() -> None:
-                    try:
-                        with torch.no_grad():
-                            self.model.generate(
-                                input_features=_gen(),
-                                input_ids=first_inputs.input_ids,
-                                attention_mask=first_inputs.attention_mask,
-                                num_delay_tokens=first_inputs.num_delay_tokens,
-                                streamer=streamer,
-                            )
-                    except Exception as exc:
-                        generate_errors.append(exc)
-                        logger.exception("Voxtral model.generate failed")
-                        try:
-                            streamer.end()
-                        except Exception:
-                            pass
-
-                Thread(target=_generate, daemon=True).start()
-
-                for token in streamer:
-                    loop.call_soon_threadsafe(text_q.put_nowait, token)
-
-                if generate_errors:
-                    raise generate_errors[0]
-            except Exception as exc:
-                loop.call_soon_threadsafe(text_q.put_nowait, exc)
-            finally:
-                loop.call_soon_threadsafe(text_q.put_nowait, None)
-
-        Thread(target=_stream_thread, daemon=True).start()
+        Thread(target=self._run_streaming_inference, args=(bytes(pcm_buf), text_q, loop), daemon=True).start()
 
         seg_id = 0
         while True:
@@ -223,6 +154,79 @@ class VoxtralSTTAdapter(STTAdapter):
             if item.strip():
                 yield TranscriptionSegment(id=seg_id, start=0.0, end=0.0, text=item.strip())
                 seg_id += 1
+
+    def _run_streaming_inference(self, pcm_bytes: bytes, text_q: asyncio.Queue, loop: asyncio.AbstractEventLoop) -> None:
+        """Run Voxtral streaming inference in a thread, posting tokens to text_q."""
+        import numpy as np
+        import torch
+        from transformers import TextIteratorStreamer
+
+        try:
+            audio = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+
+            pad_samples = self.processor.num_right_pad_tokens() * self.processor.raw_audio_length_per_tok
+            audio = np.pad(audio, (0, pad_samples))
+
+            first_n = self.processor.num_samples_first_audio_chunk
+            chunk_n = self.processor.num_samples_per_audio_chunk
+            win = self.processor.feature_extractor.win_length
+
+            first_inputs = self.processor(
+                audio[:first_n],
+                is_streaming=True,
+                is_first_audio_chunk=True,
+                return_tensors="pt",
+            )
+            first_inputs = first_inputs.to(device=self.device, dtype=self._dtype)
+
+            chunk_features = []
+            start = first_n
+            while (end := start + chunk_n) <= len(audio):
+                fi = self.processor(
+                    audio[start:end],
+                    is_streaming=True,
+                    is_first_audio_chunk=False,
+                    return_tensors="pt",
+                )
+                chunk_features.append(fi.input_features.to(device=self.device, dtype=self._dtype))
+                start = end - win
+
+            def _gen():
+                yield first_inputs.input_features
+                yield from chunk_features
+
+            streamer = TextIteratorStreamer(self.processor, skip_special_tokens=True, timeout=300.0)
+            generate_errors: list[BaseException] = []
+
+            def _generate() -> None:
+                try:
+                    with torch.no_grad():
+                        self.model.generate(
+                            input_features=_gen(),
+                            input_ids=first_inputs.input_ids,
+                            attention_mask=first_inputs.attention_mask,
+                            num_delay_tokens=first_inputs.num_delay_tokens,
+                            streamer=streamer,
+                        )
+                except Exception as exc:
+                    generate_errors.append(exc)
+                    logger.exception("Voxtral model.generate failed")
+                    try:
+                        streamer.end()
+                    except Exception:
+                        pass
+
+            Thread(target=_generate, daemon=True).start()
+
+            for token in streamer:
+                loop.call_soon_threadsafe(text_q.put_nowait, token)
+
+            if generate_errors:
+                raise generate_errors[0]
+        except Exception as exc:
+            loop.call_soon_threadsafe(text_q.put_nowait, exc)
+        finally:
+            loop.call_soon_threadsafe(text_q.put_nowait, None)
 
     async def transcribe_stream(self, audio, language=None, task="transcribe", **kwargs):
         loop = asyncio.get_running_loop()
@@ -264,7 +268,6 @@ class VoxtralSTTAdapter(STTAdapter):
         suffix = Path(audio_path).suffix.lower()
         if suffix in {".wav", ".flac", ".ogg", ".aiff", ".aif"}:
             return audio_path, False
-        import subprocess
 
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
         tmp.close()

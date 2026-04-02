@@ -215,7 +215,7 @@ def huggingface_snapshot_from_info(info: Any) -> HuggingFaceSnapshot:
     return HuggingFaceSnapshot.model_validate(payload)
 
 
-def infer_model_capabilities(
+def infer_model_capabilities(  # noqa: C901
     *,
     task: str,
     backend: str,

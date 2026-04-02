@@ -84,6 +84,104 @@ async def _live_stream_utterance(
             pass
 
 
+async def _run_live_stream_loop(
+    websocket: WebSocket,
+    service,
+    model: str,
+    language: str | None,
+    sample_rate: int,
+    vad,
+    silence_duration: float,
+    max_chunk_duration: float,
+    speech_threshold: float,
+) -> None:
+    """Receive loop for models that support native live streaming (e.g. Voxtral)."""
+    chunk_q: asyncio.Queue | None = None
+    silence_count = 0
+    has_speech = False
+    total_duration = 0.0
+
+    while True:
+        data = await websocket.receive_bytes()
+        frame_secs = _estimate_frame_seconds(data, sample_rate)
+        total_duration += frame_secs
+        is_speech = vad.is_speech(data, sample_rate, speech_threshold)
+
+        if is_speech:
+            has_speech = True
+            silence_count = 0
+            if chunk_q is None:
+                chunk_q = asyncio.Queue()
+                task = asyncio.create_task(_live_stream_utterance(websocket, chunk_q, model, language, sample_rate, service))
+                task.add_done_callback(
+                    lambda t: logger.error("Live stream task failed: %s", t.exception())
+                    if not t.cancelled() and t.exception()
+                    else None
+                )
+            await chunk_q.put(data)
+        else:
+            silence_count += 1
+
+        silence_secs = silence_count * frame_secs
+        should_flush = (has_speech and silence_secs >= silence_duration) or total_duration >= max_chunk_duration
+
+        if should_flush and chunk_q is not None:
+            await chunk_q.put(None)  # sentinel → chunk_gen stops → adapter finishes
+            # Do NOT await the task here — that would block receive_bytes(),
+            # starving Starlette of the receive() calls it needs to respond to WebSocket
+            # pings. Model load + inference can take >20 s, exceeding the client's
+            # ping_timeout and dropping the connection with "no close frame received".
+            vad.reset()
+            chunk_q = None
+            silence_count = 0
+            has_speech = False
+            total_duration = 0.0
+
+
+async def _run_buffered_loop(
+    websocket: WebSocket,
+    service,
+    model: str,
+    language: str | None,
+    task: str,
+    sample_rate: int,
+    vad,
+    silence_duration: float,
+    max_chunk_duration: float,
+    speech_threshold: float,
+) -> None:
+    """Receive loop for models that buffer audio and transcribe on silence."""
+    buffer: list[bytes] = []
+    silence_count = 0
+    has_speech = False
+    total_duration = 0.0
+
+    while True:
+        data = await websocket.receive_bytes()
+        frame_secs = _estimate_frame_seconds(data, sample_rate)
+        total_duration += frame_secs
+        is_speech = vad.is_speech(data, sample_rate, speech_threshold)
+
+        buffer.append(data)
+        if is_speech:
+            has_speech = True
+            silence_count = 0
+        else:
+            silence_count += 1
+
+        silence_secs = silence_count * frame_secs
+        should_flush = (has_speech and silence_secs >= silence_duration) or total_duration >= max_chunk_duration
+
+        if should_flush:
+            if has_speech:
+                await _flush_pcm(websocket, buffer, model, language, task, sample_rate, service)
+            vad.reset()
+            buffer = []
+            silence_count = 0
+            has_speech = False
+            total_duration = 0.0
+
+
 @router.websocket("/v1/audio/stream")
 async def audio_stream(
     websocket: WebSocket,
@@ -98,10 +196,8 @@ async def audio_stream(
     service = get_transcription_service()
     sample_rate = vocal_settings.STT_SAMPLE_RATE
     speech_threshold = threshold if threshold is not None else vocal_settings.VAD_SPEECH_THRESHOLD
-
     vad = create_vad_adapter()
 
-    # Check whether the selected model supports native live streaming
     try:
         model_info = await service.registry.get_model(model)
         use_live_streaming = bool(model_info and model_info.supports_live_streaming)
@@ -109,77 +205,13 @@ async def audio_stream(
         logger.warning("Failed to check supports_live_streaming for model %s", model, exc_info=True)
         use_live_streaming = False
 
-    # State shared by both paths
-    buffer: list[bytes] = []
-    silence_count = 0
-    has_speech = False
-    total_duration = 0.0
-
-    # Live-streaming path state
-    chunk_q: asyncio.Queue | None = None
-    transcribe_task: asyncio.Task | None = None
-
     try:
-        while True:
-            data = await websocket.receive_bytes()
-            frame_secs = _estimate_frame_seconds(data, sample_rate)
-            total_duration += frame_secs
-
-            is_speech = vad.is_speech(data, sample_rate, speech_threshold)
-
-            if use_live_streaming:
-                if is_speech:
-                    has_speech = True
-                    silence_count = 0
-                    # Start a new utterance session if none active
-                    if chunk_q is None:
-                        chunk_q = asyncio.Queue()
-                        transcribe_task = asyncio.create_task(_live_stream_utterance(websocket, chunk_q, model, language, sample_rate, service))
-                        transcribe_task.add_done_callback(lambda t: logger.error("Live stream task failed: %s", t.exception()) if not t.cancelled() and t.exception() else None)
-                    await chunk_q.put(data)
-                else:
-                    silence_count += 1
-
-                silence_secs = silence_count * frame_secs
-                should_flush = (has_speech and silence_secs >= silence_duration) or total_duration >= max_chunk_duration
-
-                if should_flush and chunk_q is not None:
-                    await chunk_q.put(None)  # sentinel → chunk_gen stops → adapter finishes
-                    # Do NOT await transcribe_task here — that would block receive_bytes(),
-                    # starving Starlette of the receive() calls it needs to respond to WebSocket
-                    # pings. Model load + inference can take >20 s, exceeding the client's
-                    # ping_timeout and dropping the connection with "no close frame received".
-                    # The task runs in the background; the loop stays alive.
-                    vad.reset()
-                    chunk_q = None
-                    transcribe_task = None
-                    silence_count = 0
-                    has_speech = False
-                    total_duration = 0.0
-            else:
-                buffer.append(data)
-                if is_speech:
-                    has_speech = True
-                    silence_count = 0
-                else:
-                    silence_count += 1
-
-                silence_secs = silence_count * frame_secs
-                should_flush = (has_speech and silence_secs >= silence_duration) or total_duration >= max_chunk_duration
-
-                if should_flush:
-                    if has_speech:
-                        await _flush_pcm(websocket, buffer, model, language, task, sample_rate, service)
-                    vad.reset()
-                    buffer = []
-                    silence_count = 0
-                    has_speech = False
-                    total_duration = 0.0
-
+        if use_live_streaming:
+            await _run_live_stream_loop(websocket, service, model, language, sample_rate, vad, silence_duration, max_chunk_duration, speech_threshold)
+        else:
+            await _run_buffered_loop(websocket, service, model, language, task, sample_rate, vad, silence_duration, max_chunk_duration, speech_threshold)
     except WebSocketDisconnect:
-        if use_live_streaming and chunk_q is not None:
-            await chunk_q.put(None)
-            # transcribe_task will fail on the next websocket.send_text and exit cleanly
+        pass
     except Exception:
         logger.exception("WebSocket stream error")
         try:

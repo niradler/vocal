@@ -263,7 +263,7 @@ class TTSService:
 
         return self.adapters[model_id]
 
-    def _create_adapter(self, backend: str) -> TTSAdapter:
+    def _create_adapter(self, backend: str) -> TTSAdapter:  # noqa: C901
         if backend == "kokoro":
             if not KOKORO_AVAILABLE:
                 raise ImportError(optional_dependency_install_hint("kokoro"))

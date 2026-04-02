@@ -134,7 +134,7 @@ class ModelRegistry:
             **caps,
         )
 
-    async def list_models(
+    async def list_models(  # noqa: C901
         self,
         provider: str | None = None,
         task: str | None = None,
