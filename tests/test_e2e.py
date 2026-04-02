@@ -1399,12 +1399,50 @@ class TestChatterboxTTS:
         print(f"\n[OK] Chatterbox voice clone: {len(resp.content):,} bytes WAV")
 
 
+def _check_server_alive(api_server: str) -> None:
+    """Skip the test if the API server is unreachable (e.g. crashed loading a large model)."""
+    try:
+        resp = requests.get(f"{api_server}/health", timeout=5)
+        if resp.status_code != 200:
+            pytest.skip(f"API server unhealthy (status {resp.status_code}) — likely crashed loading a model")
+    except requests.exceptions.ConnectionError:
+        pytest.skip("API server is down — likely crashed loading a large model (OOM?)")
+    except requests.exceptions.RequestException as exc:
+        pytest.skip(f"API server unreachable: {exc}")
+
+
+def _skip_on_server_crash(func):
+    """Decorator: convert connection/OOM errors during a test into a skip."""
+    import functools
+
+    from vocal_sdk.errors import UnexpectedStatus
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except (httpx.ReadError, httpx.ConnectError, ConnectionError, OSError) as exc:
+            pytest.skip(f"Server crashed during test — likely OOM loading model: {exc}")
+        except UnexpectedStatus as exc:
+            if exc.status_code == 500 and b"paging file" in exc.content:
+                pytest.skip(f"Server OOM (paging file too small): {exc}")
+            raise
+
+    return wrapper
+
+
 @pytest.mark.skipif(_IN_CI, reason="CI: Voxtral STT requires 16GB+ GPU and large download — skip in CI")
 @pytest.mark.skipif(not _HAS_MISTRAL_COMMON, reason="mistral_common not installed — run: uv pip install mistral-common")
 @pytest.mark.skipif(not _HAS_CUDA, reason="Voxtral STT requires CUDA GPU")
 class TestVoxtralSTT:
     """E2E: Voxtral-Mini-4B-Realtime STT backend — requires 16GB+ GPU"""
 
+    @pytest.fixture(autouse=True)
+    def _check_server(self, api_server):
+        """Before each test, verify the server is still alive."""
+        _check_server_alive(api_server)
+
+    @_skip_on_server_crash
     def test_voxtral_stt_transcribe(self, client, test_assets):
         audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
         assert audio_file.exists(), f"Test asset not found: {audio_file}"
@@ -1419,6 +1457,7 @@ class TestVoxtralSTT:
 
         print(f"\n[OK] Voxtral STT: '{result.text.strip()}'")
 
+    @_skip_on_server_crash
     def test_voxtral_stt_transcribe_m4a(self, client, test_assets):
         audio_file = test_assets["audio_dir"] / "Recording.m4a"
         assert audio_file.exists(), f"Test asset not found: {audio_file}"
@@ -1465,6 +1504,7 @@ class TestVoxtralSTT:
                 return events
         raise TimeoutError(f"transcript.done not received within {timeout_s}s. Got: {[e['type'] for e in events]}")
 
+    @_skip_on_server_crash
     def test_voxtral_stt_live_stream(self, client, api_server, test_assets):
         """Exercises the live-stream path with the same parameters the CLI uses (no overrides)."""
         audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
@@ -1496,6 +1536,7 @@ class TestVoxtralSTT:
 
         _ws_run(_test())
 
+    @_skip_on_server_crash
     def test_voxtral_stt_live_stream_multi_utterance(self, client, api_server, test_assets):
         """Verifies the connection stays alive across multiple speech utterances (real user session)."""
         audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"

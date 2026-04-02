@@ -12,11 +12,7 @@ from .base import STTAdapter, TranscriptionResult, TranscriptionSegment
 
 logger = logging.getLogger(__name__)
 
-VOXTRAL_STT_AVAILABLE = (
-    importlib.util.find_spec("mistral_common") is not None
-    and importlib.util.find_spec("transformers") is not None
-    and importlib.util.find_spec("torch") is not None
-)
+VOXTRAL_STT_AVAILABLE = importlib.util.find_spec("mistral_common") is not None and importlib.util.find_spec("transformers") is not None and importlib.util.find_spec("torch") is not None
 
 
 class VoxtralSTTAdapter(STTAdapter):
