@@ -1293,6 +1293,100 @@ class TestVoxtralSTT:
 
         print(f"\n[OK] Voxtral STT (m4a): '{result.text.strip()}'")
 
+    def _pcm_from_file(self, audio_file) -> bytes:
+        """Convert an audio file to raw PCM16 mono 16kHz via ffmpeg."""
+        import subprocess, tempfile, os
+        with tempfile.NamedTemporaryFile(suffix=".raw", delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", str(audio_file), "-ar", "16000", "-ac", "1", "-f", "s16le", tmp_path],
+                check=True, capture_output=True,
+            )
+            with open(tmp_path, "rb") as f:
+                return f.read()
+        finally:
+            os.unlink(tmp_path)
+
+    async def _collect_until_done(self, ws, timeout_s: float = 90.0) -> list[dict]:
+        """Receive WebSocket messages until transcript.done or timeout. Raises on error events."""
+        events: list[dict] = []
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            remaining = deadline - time.monotonic()
+            try:
+                msg = await asyncio.wait_for(ws.recv(), timeout=min(5.0, remaining))
+            except TimeoutError:
+                continue
+            event = json.loads(msg)
+            events.append(event)
+            if event.get("type") == "error":
+                raise RuntimeError(f"Server error: {event.get('message')}")
+            if event.get("type") == "transcript.done":
+                return events
+        raise TimeoutError(f"transcript.done not received within {timeout_s}s. Got: {[e['type'] for e in events]}")
+
+    def test_voxtral_stt_live_stream(self, client, api_server, test_assets):
+        """Exercises the live-stream path with the same parameters the CLI uses (no overrides)."""
+        audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
+        assert audio_file.exists(), f"Test asset not found: {audio_file}"
+
+        _ensure_model(client, _VOXTRAL_STT_MODEL, max_wait=900)
+        pcm = self._pcm_from_file(audio_file)
+
+        async def _test():
+            base_uri = api_server.replace("http://", "ws://")
+            # No threshold or max_chunk_duration overrides — use the same defaults the CLI sends
+            uri = f"{base_uri}/v1/audio/stream?model={_VOXTRAL_STT_MODEL}&language=en"
+            frame_size = 3200  # 100ms at 16kHz
+
+            async with websockets.connect(uri, open_timeout=60) as ws:
+                # Send speech frames; VAD (default threshold=0.5) classifies real audio as speech
+                for i in range(0, len(pcm), frame_size):
+                    await ws.send(pcm[i : i + frame_size])
+
+                # 20 frames of zero-energy silence (2.0s) — default silence_duration=1.5s fires the flush
+                for _ in range(20):
+                    await ws.send(bytes(frame_size))
+
+                events = await self._collect_until_done(ws)
+
+            full_text = " ".join(e["text"] for e in events if e.get("type") == "transcript.delta" and e.get("text"))
+            assert len(full_text.strip()) > 0, "No transcription text received from live stream"
+            print(f"\n[OK] Voxtral live stream (utterance 1): '{full_text.strip()}'")
+
+        _ws_run(_test())
+
+    def test_voxtral_stt_live_stream_multi_utterance(self, client, api_server, test_assets):
+        """Verifies the connection stays alive across multiple speech utterances (real user session)."""
+        audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
+        assert audio_file.exists(), f"Test asset not found: {audio_file}"
+
+        _ensure_model(client, _VOXTRAL_STT_MODEL, max_wait=900)
+        pcm = self._pcm_from_file(audio_file)
+
+        async def _test():
+            base_uri = api_server.replace("http://", "ws://")
+            uri = f"{base_uri}/v1/audio/stream?model={_VOXTRAL_STT_MODEL}&language=en"
+            frame_size = 3200  # 100ms at 16kHz
+            silence_frames = [bytes(frame_size)] * 20  # 2.0s silence → triggers flush
+
+            async with websockets.connect(uri, open_timeout=60) as ws:
+                for utterance_num in range(1, 3):
+                    # Send speech
+                    for i in range(0, len(pcm), frame_size):
+                        await ws.send(pcm[i : i + frame_size])
+                    # Send silence to trigger flush
+                    for frame in silence_frames:
+                        await ws.send(frame)
+
+                    events = await self._collect_until_done(ws)
+                    full_text = " ".join(e["text"] for e in events if e.get("type") == "transcript.delta" and e.get("text"))
+                    assert len(full_text.strip()) > 0, f"No text on utterance {utterance_num}"
+                    print(f"\n[OK] Voxtral live stream (utterance {utterance_num}): '{full_text.strip()}'")
+
+        _ws_run(_test())
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short", "-s"])

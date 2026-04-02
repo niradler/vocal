@@ -1,7 +1,7 @@
 from abc import abstractmethod
 from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import BinaryIO
+from typing import Any, BinaryIO
 
 from pydantic import BaseModel
 
@@ -77,5 +77,44 @@ class STTAdapter(BaseAdapter):
         task: str = "transcribe",
         **kwargs,
     ) -> AsyncGenerator["TranscriptionSegment", None]:
-        raise NotImplementedError("transcribe_stream not supported by this adapter")
-        yield
+        """Default: run full transcribe() and yield a single segment.
+        Override for adapters that can produce progressive segments."""
+        result = await self.transcribe(audio, language=language, task=task, **kwargs)
+        yield TranscriptionSegment(
+            id=0,
+            start=0.0,
+            end=result.duration,
+            text=result.text,
+            avg_logprob=0.0,
+            no_speech_prob=0.0,
+        )
+
+    async def transcribe_live(
+        self,
+        audio_chunks: AsyncGenerator[bytes, Any],
+        sample_rate: int = 16000,
+        language: str | None = None,
+        **kwargs,
+    ) -> AsyncGenerator["TranscriptionSegment", None]:
+        """Stream raw PCM16 audio chunks → progressive TranscriptionSegments.
+
+        Default: buffer all chunks into an in-memory WAV, then delegate to
+        transcribe_stream. Override for adapters with native chunk-by-chunk support.
+        """
+        import io
+        import wave
+
+        pcm = bytearray()
+        async for chunk in audio_chunks:
+            pcm.extend(chunk)
+        if not pcm:
+            return
+        wav_buf = io.BytesIO()
+        with wave.open(wav_buf, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(sample_rate)
+            wf.writeframes(bytes(pcm))
+        wav_buf.seek(0)
+        async for seg in self.transcribe_stream(wav_buf, language=language, **kwargs):
+            yield seg

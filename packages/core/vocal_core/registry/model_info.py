@@ -76,6 +76,7 @@ class ModelInfo(BaseModel):
     sha: str | None = Field(None, description="Git commit SHA on HuggingFace")
     files: list[dict] | None = Field(None, description="List of model files")
     supports_streaming: bool = Field(False, description="Whether the model supports true streaming output")
+    supports_live_streaming: bool = Field(False, description="Whether the model supports true chunk-by-chunk live audio streaming")
     supports_voice_list: bool = Field(False, description="Whether the model exposes selectable voices")
     supports_voice_clone: bool = Field(False, description="Whether the model supports reference-audio voice cloning")
     supports_voice_design: bool = Field(False, description="Whether the model supports prompt/instruction-based voice design")
