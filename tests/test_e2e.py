@@ -18,6 +18,7 @@ import io
 import json
 import os
 import subprocess
+import tempfile
 import time
 import wave
 from pathlib import Path
@@ -761,6 +762,25 @@ def _ws_run(coro):
     return asyncio.run(coro)
 
 
+async def _collect_until(ws, stop_type: str, timeout_s: float = 90.0) -> list[dict]:
+    """Drain WebSocket messages until stop_type is received or timeout expires."""
+    events: list[dict] = []
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        remaining = deadline - time.monotonic()
+        try:
+            msg = await asyncio.wait_for(ws.recv(), timeout=min(5.0, remaining))
+        except TimeoutError:
+            continue
+        event = json.loads(msg)
+        events.append(event)
+        if event.get("type") == "error":
+            raise RuntimeError(f"Server error: {event.get('error')}")
+        if event.get("type") == stop_type:
+            return events
+    raise TimeoutError(f"{stop_type} not received within {timeout_s}s. Got: {[e['type'] for e in events]}")
+
+
 class TestRealtimeStream:
     """Test /v1/audio/stream WebSocket endpoint"""
 
@@ -902,6 +922,125 @@ class TestRealtimeOAI:
         assert event["type"] == "error" and event["error"]["code"] == "unknown_event"
         print(f"\n[OK] /v1/realtime: unknown event -> error({event['error']['code']})")
 
+    def test_realtime_vad_pipeline(self, api_server, test_model, ensure_stt_model, test_assets):
+        """Real CLI flow: VAD auto-detects speech→silence and commits without manual commit."""
+        audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
+        assert audio_file.exists()
+
+        with tempfile.NamedTemporaryFile(suffix=".raw", delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", str(audio_file), "-ar", "16000", "-ac", "1", "-f", "s16le", tmp_path],
+                check=True,
+                capture_output=True,
+            )
+            with open(tmp_path, "rb") as f:
+                pcm = f.read()
+        finally:
+            os.unlink(tmp_path)
+
+        async def _test():
+            uri = f"{api_server.replace('http://', 'ws://')}/v1/realtime"
+            frame_size = 3200  # 100ms at 16kHz — same as CLI
+
+            async with websockets.connect(uri, open_timeout=60) as ws:
+                await asyncio.wait_for(ws.recv(), timeout=10.0)  # session.created
+
+                # Match exact CLI session.update format (16kHz, transcription mode)
+                await ws.send(
+                    json.dumps(
+                        {
+                            "type": "session.update",
+                            "session": {"model": test_model, "input_sample_rate": 16000},
+                        }
+                    )
+                )
+                await asyncio.wait_for(ws.recv(), timeout=5.0)  # session.updated
+
+                # Send real speech audio — VAD detects onset and starts utterance
+                for i in range(0, len(pcm), frame_size):
+                    await ws.send(
+                        json.dumps(
+                            {
+                                "type": "input_audio_buffer.append",
+                                "audio": base64.b64encode(pcm[i : i + frame_size]).decode(),
+                            }
+                        )
+                    )
+
+                # 20 zero-energy silence frames (2.0s) — VAD_SILENCE_FRAMES=15 fires the commit
+                silence_b64 = base64.b64encode(bytes(frame_size)).decode()
+                for _ in range(20):
+                    await ws.send(json.dumps({"type": "input_audio_buffer.append", "audio": silence_b64}))
+
+                events = await _collect_until(ws, "conversation.item.input_audio_transcription.completed")
+
+            types = {e["type"] for e in events}
+            assert "input_audio_buffer.speech_started" in types, f"VAD never detected speech: {types}"
+            assert "input_audio_buffer.speech_stopped" in types, f"VAD never detected silence: {types}"
+            assert "input_audio_buffer.committed" in types, f"Buffer never auto-committed: {types}"
+            completed = next(e for e in events if e["type"] == "conversation.item.input_audio_transcription.completed")
+            assert completed["transcript"].strip(), "Empty transcript"
+            print(f"\n[OK] /v1/realtime VAD pipeline: '{completed['transcript']}'")
+
+        _ws_run(_test())
+
+    def test_realtime_vad_pipeline_multi_utterance(self, api_server, test_model, ensure_stt_model, test_assets):
+        """Verifies the connection stays alive across two consecutive VAD-triggered utterances."""
+        audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
+        assert audio_file.exists()
+
+        with tempfile.NamedTemporaryFile(suffix=".raw", delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", str(audio_file), "-ar", "16000", "-ac", "1", "-f", "s16le", tmp_path],
+                check=True,
+                capture_output=True,
+            )
+            with open(tmp_path, "rb") as f:
+                pcm = f.read()
+        finally:
+            os.unlink(tmp_path)
+
+        async def _test():
+            uri = f"{api_server.replace('http://', 'ws://')}/v1/realtime"
+            frame_size = 3200
+            silence_b64 = base64.b64encode(bytes(frame_size)).decode()
+
+            async with websockets.connect(uri, open_timeout=60) as ws:
+                await asyncio.wait_for(ws.recv(), timeout=10.0)
+                await ws.send(
+                    json.dumps(
+                        {
+                            "type": "session.update",
+                            "session": {"model": test_model, "input_sample_rate": 16000},
+                        }
+                    )
+                )
+                await asyncio.wait_for(ws.recv(), timeout=5.0)
+
+                for utterance_num in range(1, 3):
+                    for i in range(0, len(pcm), frame_size):
+                        await ws.send(
+                            json.dumps(
+                                {
+                                    "type": "input_audio_buffer.append",
+                                    "audio": base64.b64encode(pcm[i : i + frame_size]).decode(),
+                                }
+                            )
+                        )
+                    for _ in range(20):
+                        await ws.send(json.dumps({"type": "input_audio_buffer.append", "audio": silence_b64}))
+
+                    events = await _collect_until(ws, "conversation.item.input_audio_transcription.completed")
+                    completed = next(e for e in events if e["type"] == "conversation.item.input_audio_transcription.completed")
+                    assert completed["transcript"].strip(), f"Empty transcript on utterance {utterance_num}"
+                    print(f"\n[OK] /v1/realtime multi-utterance {utterance_num}: '{completed['transcript']}'")
+
+        _ws_run(_test())
+
 
 _IN_CI = os.environ.get("CI") == "true" or os.environ.get("GITHUB_ACTIONS") == "true"
 
@@ -1042,6 +1181,7 @@ _HAS_QWEN_ASR = importlib.util.find_spec("qwen_asr") is not None
 _HAS_WHISPERX = importlib.util.find_spec("whisperx") is not None
 _HAS_KOKORO = importlib.util.find_spec("kokoro") is not None
 _HAS_CHATTERBOX = importlib.util.find_spec("chatterbox") is not None
+_HAS_MISTRAL_COMMON = importlib.util.find_spec("mistral_common") is not None
 
 # NeMo's find_spec succeeds but import fails due to missing nv_one_logger;
 # check actual importability so we skip tests correctly.
@@ -1057,6 +1197,7 @@ _NEMO_STT_MODEL = "nvidia/parakeet-tdt-0.6b-v2"
 _WHISPERX_STT_MODEL = "whisperx/distil-large-v3"
 _KOKORO_TTS_MODEL = "hexgrad/Kokoro-82M"
 _CHATTERBOX_TTS_MODEL = "ResembleAI/chatterbox"
+_VOXTRAL_STT_MODEL = "mistralai/Voxtral-Mini-4B-Realtime-2602"
 
 
 def _ensure_model(client: VocalClient, model_id: str, max_wait: int = 600) -> None:
@@ -1256,6 +1397,175 @@ class TestChatterboxTTS:
         # Chatterbox may output IEEE float WAV (format 3) which Python's wave
         # module doesn't support. Just verify the RIFF header is valid.
         print(f"\n[OK] Chatterbox voice clone: {len(resp.content):,} bytes WAV")
+
+
+def _check_server_alive(api_server: str) -> None:
+    """Skip the test if the API server is unreachable (e.g. crashed loading a large model)."""
+    try:
+        resp = requests.get(f"{api_server}/health", timeout=5)
+        if resp.status_code != 200:
+            pytest.skip(f"API server unhealthy (status {resp.status_code}) — likely crashed loading a model")
+    except requests.exceptions.ConnectionError:
+        pytest.skip("API server is down — likely crashed loading a large model (OOM?)")
+    except requests.exceptions.RequestException as exc:
+        pytest.skip(f"API server unreachable: {exc}")
+
+
+def _skip_on_server_crash(func):
+    """Decorator: convert connection/OOM errors during a test into a skip."""
+    import functools
+
+    from vocal_sdk.errors import UnexpectedStatus
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except (httpx.ReadError, httpx.ConnectError, ConnectionError, OSError) as exc:
+            pytest.skip(f"Server crashed during test — likely OOM loading model: {exc}")
+        except UnexpectedStatus as exc:
+            if exc.status_code == 500 and b"paging file" in exc.content:
+                pytest.skip(f"Server OOM (paging file too small): {exc}")
+            raise
+
+    return wrapper
+
+
+@pytest.mark.skipif(_IN_CI, reason="CI: Voxtral STT requires 16GB+ GPU and large download — skip in CI")
+@pytest.mark.skipif(not _HAS_MISTRAL_COMMON, reason="mistral_common not installed — run: uv pip install mistral-common")
+@pytest.mark.skipif(not _HAS_CUDA, reason="Voxtral STT requires CUDA GPU")
+class TestVoxtralSTT:
+    """E2E: Voxtral-Mini-4B-Realtime STT backend — requires 16GB+ GPU"""
+
+    @pytest.fixture(autouse=True)
+    def _check_server(self, api_server):
+        """Before each test, verify the server is still alive."""
+        _check_server_alive(api_server)
+
+    @_skip_on_server_crash
+    def test_voxtral_stt_transcribe(self, client, test_assets):
+        audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
+        assert audio_file.exists(), f"Test asset not found: {audio_file}"
+
+        _ensure_model(client, _VOXTRAL_STT_MODEL, max_wait=900)
+
+        result = _transcribe(client, audio_file, _VOXTRAL_STT_MODEL, language="en")
+
+        assert result is not None, "Result should not be None"
+        assert isinstance(result.text, str), "Text should be a string"
+        assert len(result.text.strip()) > 0, "Transcription should not be empty"
+
+        print(f"\n[OK] Voxtral STT: '{result.text.strip()}'")
+
+    @_skip_on_server_crash
+    def test_voxtral_stt_transcribe_m4a(self, client, test_assets):
+        audio_file = test_assets["audio_dir"] / "Recording.m4a"
+        assert audio_file.exists(), f"Test asset not found: {audio_file}"
+
+        _ensure_model(client, _VOXTRAL_STT_MODEL, max_wait=900)
+
+        result = _transcribe(client, audio_file, _VOXTRAL_STT_MODEL)
+
+        assert result is not None
+        assert isinstance(result.text, str) and len(result.text.strip()) > 0
+
+        print(f"\n[OK] Voxtral STT (m4a): '{result.text.strip()}'")
+
+    def _pcm_from_file(self, audio_file) -> bytes:
+        """Convert an audio file to raw PCM16 mono 16kHz via ffmpeg."""
+        with tempfile.NamedTemporaryFile(suffix=".raw", delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", str(audio_file), "-ar", "16000", "-ac", "1", "-f", "s16le", tmp_path],
+                check=True,
+                capture_output=True,
+            )
+            with open(tmp_path, "rb") as f:
+                return f.read()
+        finally:
+            os.unlink(tmp_path)
+
+    async def _collect_until_done(self, ws, timeout_s: float = 90.0) -> list[dict]:
+        """Receive WebSocket messages until transcript.done or timeout. Raises on error events."""
+        events: list[dict] = []
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            remaining = deadline - time.monotonic()
+            try:
+                msg = await asyncio.wait_for(ws.recv(), timeout=min(5.0, remaining))
+            except TimeoutError:
+                continue
+            event = json.loads(msg)
+            events.append(event)
+            if event.get("type") == "error":
+                raise RuntimeError(f"Server error: {event.get('message')}")
+            if event.get("type") == "transcript.done":
+                return events
+        raise TimeoutError(f"transcript.done not received within {timeout_s}s. Got: {[e['type'] for e in events]}")
+
+    @_skip_on_server_crash
+    def test_voxtral_stt_live_stream(self, client, api_server, test_assets):
+        """Exercises the live-stream path with the same parameters the CLI uses (no overrides)."""
+        audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
+        assert audio_file.exists(), f"Test asset not found: {audio_file}"
+
+        _ensure_model(client, _VOXTRAL_STT_MODEL, max_wait=900)
+        pcm = self._pcm_from_file(audio_file)
+
+        async def _test():
+            base_uri = api_server.replace("http://", "ws://")
+            # No threshold or max_chunk_duration overrides — use the same defaults the CLI sends
+            uri = f"{base_uri}/v1/audio/stream?model={_VOXTRAL_STT_MODEL}&language=en"
+            frame_size = 3200  # 100ms at 16kHz
+
+            async with websockets.connect(uri, open_timeout=60) as ws:
+                # Send speech frames; VAD (default threshold=0.5) classifies real audio as speech
+                for i in range(0, len(pcm), frame_size):
+                    await ws.send(pcm[i : i + frame_size])
+
+                # 20 frames of zero-energy silence (2.0s) — default silence_duration=1.5s fires the flush
+                for _ in range(20):
+                    await ws.send(bytes(frame_size))
+
+                events = await self._collect_until_done(ws)
+
+            full_text = " ".join(e["text"] for e in events if e.get("type") == "transcript.delta" and e.get("text"))
+            assert len(full_text.strip()) > 0, "No transcription text received from live stream"
+            print(f"\n[OK] Voxtral live stream (utterance 1): '{full_text.strip()}'")
+
+        _ws_run(_test())
+
+    @_skip_on_server_crash
+    def test_voxtral_stt_live_stream_multi_utterance(self, client, api_server, test_assets):
+        """Verifies the connection stays alive across multiple speech utterances (real user session)."""
+        audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
+        assert audio_file.exists(), f"Test asset not found: {audio_file}"
+
+        _ensure_model(client, _VOXTRAL_STT_MODEL, max_wait=900)
+        pcm = self._pcm_from_file(audio_file)
+
+        async def _test():
+            base_uri = api_server.replace("http://", "ws://")
+            uri = f"{base_uri}/v1/audio/stream?model={_VOXTRAL_STT_MODEL}&language=en"
+            frame_size = 3200  # 100ms at 16kHz
+            silence_frames = [bytes(frame_size)] * 20  # 2.0s silence → triggers flush
+
+            async with websockets.connect(uri, open_timeout=60) as ws:
+                for utterance_num in range(1, 3):
+                    # Send speech
+                    for i in range(0, len(pcm), frame_size):
+                        await ws.send(pcm[i : i + frame_size])
+                    # Send silence to trigger flush
+                    for frame in silence_frames:
+                        await ws.send(frame)
+
+                    events = await self._collect_until_done(ws)
+                    full_text = " ".join(e["text"] for e in events if e.get("type") == "transcript.delta" and e.get("text"))
+                    assert len(full_text.strip()) > 0, f"No text on utterance {utterance_num}"
+                    print(f"\n[OK] Voxtral live stream (utterance {utterance_num}): '{full_text.strip()}'")
+
+        _ws_run(_test())
 
 
 if __name__ == "__main__":

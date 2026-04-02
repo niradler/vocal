@@ -2452,6 +2452,46 @@
       "supports_voice_clone": true,
       "requires_gpu": true,
       "tags": ["text-to-speech", "dialogue", "streaming", "voice-cloning", "en", "license:apache-2.0"]
+    },
+    {
+      "id": "mistralai/Voxtral-Mini-4B-Realtime-2602",
+      "name": "Voxtral Mini Realtime",
+      "alias": "voxtral-mini",
+      "provider": "huggingface",
+      "task": "stt",
+      "backend": "voxtral_stt",
+      "parameters": "4B",
+      "size": 9000000000,
+      "size_readable": "~9 GB",
+      "languages": ["en", "fr", "de", "es", "it", "pt", "nl", "ru", "zh", "ja", "ko", "ar", "hi"],
+      "recommended_vram": "16GB+",
+      "source_url": "https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602",
+      "description": "Mistral Voxtral-Mini 4B real-time STT — 13 languages, <500ms latency. Requires: uv pip install mistral-common",
+      "license": "Apache 2.0",
+      "author": "mistralai",
+      "requires_gpu": true,
+      "tags": ["speech-to-text", "multilingual", "streaming", "license:apache-2.0"]
+    },
+    {
+      "id": "mistralai/Voxtral-4B-TTS-2603",
+      "name": "Voxtral TTS",
+      "alias": "voxtral-tts",
+      "provider": "huggingface",
+      "task": "tts",
+      "backend": "voxtral_tts",
+      "parameters": "4B",
+      "size": 8000000000,
+      "size_readable": "~8 GB",
+      "languages": ["en", "fr", "de", "es", "it", "pt", "nl", "ar", "hi"],
+      "recommended_vram": "16GB+",
+      "source_url": "https://huggingface.co/mistralai/Voxtral-4B-TTS-2603",
+      "description": "Mistral Voxtral 4B TTS — 20 preset voices, 9 languages, 24 kHz. Requires a running vLLM server: vllm serve mistralai/Voxtral-4B-TTS-2603 --omni. License: CC BY-NC 4.0 (non-commercial).",
+      "license": "CC BY-NC 4.0",
+      "author": "mistralai",
+      "requires_gpu": true,
+      "supports_voice_list": true,
+      "voice_mode": "voice_id",
+      "tags": ["text-to-speech", "multilingual", "vllm", "license:cc-by-nc-4.0"]
     }
   ]
 }

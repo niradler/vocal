@@ -830,7 +830,7 @@ def listen(
             raise typer.Exit(1)
         device = selected
     if models:
-        selected_model = _model_wizard(api_url, require_streaming=True)
+        selected_model = _model_wizard(api_url, require_streaming=stream)
         if selected_model is None:
             raise typer.Exit(1)
         model = selected_model
@@ -919,7 +919,7 @@ def chat(
             raise typer.Exit(1)
         output_device = selected_out
     if models:
-        selected_model = _model_wizard(api_url, require_streaming=True)
+        selected_model = _model_wizard(api_url, require_streaming=False)
         if selected_model is None:
             raise typer.Exit(1)
         model = selected_model

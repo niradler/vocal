@@ -43,8 +43,9 @@ All STT models support 99+ languages and auto-detect language by default.
 | `Systran/faster-whisper-large-v3` | ~3.1 GB | 1.5B | 10 GB | Best | GPU required |
 | `Qwen/Qwen3-ASR-0.6B` | ~1.5 GB | 600M | 4 GB | Good | Transformers backend |
 | `Qwen/Qwen3-ASR-1.7B` | ~3.5 GB | 1.7B | 8 GB | Better | Transformers backend |
+| `mistralai/Voxtral-Mini-4B-Realtime-2602` | ~9 GB | 4B | 16 GB | Good | Requires `[voxtral]` + CUDA |
 
-**Backend:** All `Systran/faster-whisper-*` models use CTranslate2 (optimized, quantized). Qwen3-ASR uses HuggingFace Transformers.
+**Backend:** All `Systran/faster-whisper-*` models use CTranslate2 (optimized, quantized). Qwen3-ASR uses HuggingFace Transformers. Voxtral uses `VoxtralRealtimeForConditionalGeneration` from transformers≥5.2.0.
 
 **Recommended starting point:** `Systran/faster-whisper-tiny` — runs on CPU, downloads in seconds.
 
@@ -112,6 +113,37 @@ Requires: `pip install "vocal-ai[qwen3-tts]"` + NVIDIA GPU
 
 Custom-voice variants support [voice cloning](getting-started.md) from a reference audio recording.
 
+### Voxtral-4B-TTS (CUDA + vLLM required)
+
+Requires: `pip install "vocal-ai[voxtral]"` + NVIDIA GPU (16 GB+ VRAM) + a running vLLM server
+
+| Model ID | Size | VRAM | Voices | License |
+|----------|------|------|--------|---------|
+| `mistralai/Voxtral-4B-TTS-2603` | ~8 GB | 16 GB+ | 20 preset | CC BY-NC 4.0 |
+
+Unlike other TTS models, Voxtral-TTS is **not loaded in-process**. It connects to a locally-running vLLM server:
+
+```bash
+# Start the vLLM server (requires vLLM installed)
+vllm serve mistralai/Voxtral-4B-TTS-2603 --omni
+
+# Point Vocal at it (default: http://localhost:8080)
+export VOXTRAL_TTS_URL=http://localhost:8080
+```
+
+```bash
+# List the 20 preset voices
+curl "http://localhost:8000/v1/audio/voices?model=mistralai/Voxtral-4B-TTS-2603"
+
+# Synthesize
+curl -X POST http://localhost:8000/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{"model":"mistralai/Voxtral-4B-TTS-2603","input":"Hello","voice":"calm_female"}' \
+  --output speech.mp3
+```
+
+**License:** CC BY-NC 4.0 — non-commercial use only.
+
 ---
 
 ## Model Capabilities
@@ -142,6 +174,7 @@ Key capability fields:
 | GPU 4–8 GB VRAM | `faster-whisper-small` | `hexgrad/Kokoro-82M` |
 | GPU 8+ GB VRAM | `faster-whisper-medium` | `Qwen3-TTS-0.6B` |
 | GPU 12+ GB VRAM | `faster-whisper-large-v3` | `Qwen3-TTS-1.7B` |
+| GPU 16+ GB VRAM | `Voxtral-Mini-4B-Realtime-2602` | `Voxtral-4B-TTS-2603` (via vLLM) |
 
 ---
 

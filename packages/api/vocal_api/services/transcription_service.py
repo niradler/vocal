@@ -11,11 +11,13 @@ from vocal_core import ModelRegistry, TranscriptionResult
 from vocal_core.adapters.stt import (
     NEMO_AVAILABLE,
     TRANSFORMERS_AVAILABLE,
+    VOXTRAL_STT_AVAILABLE,
     WHISPERX_AVAILABLE,
     FasterWhisperAdapter,
     NemoSTTAdapter,
     STTAdapter,
     TransformersSTTAdapter,
+    VoxtralSTTAdapter,
     WhisperXSTTAdapter,
 )
 from vocal_core.adapters.stt import (
@@ -146,6 +148,32 @@ class TranscriptionService:
         async for seg in adapter.transcribe_stream(audio_path, language=language, task=task):
             yield seg
 
+    async def transcribe_live_stream(
+        self,
+        audio_chunks: AsyncGenerator[bytes, None],
+        model_id: str,
+        sample_rate: int = 16000,
+        language: str | None = None,
+    ) -> AsyncGenerator[CoreTranscriptionSegment, None]:
+        """Stream raw PCM16 chunks through the adapter and yield segments progressively.
+
+        Adapters with native live streaming (voxtral_stt) decode chunk-by-chunk.
+        All other adapters buffer internally and transcribe as one file.
+        """
+        model_info = await self.registry.get_model(model_id)
+        if not model_info:
+            raise ValueError(f"Model {model_id} not found in registry")
+
+        model_path = self.registry.get_model_path(model_id)
+        if not model_path:
+            raise ValueError(f"Model {model_id} not downloaded. Download it first: POST /v1/models/{model_id}/download")
+
+        adapter = await self._get_or_create_adapter(model_id, model_path, model_info.backend.value)
+        self.last_used[model_id] = time.time()
+
+        async for seg in adapter.transcribe_live(audio_chunks, sample_rate=sample_rate, language=language):
+            yield seg
+
     def _create_adapter(self, backend: str) -> STTAdapter:
         """Instantiate the correct STT adapter for a given backend."""
         if backend == "faster_whisper":
@@ -162,7 +190,11 @@ class TranscriptionService:
             if not WHISPERX_AVAILABLE:
                 raise ImportError(optional_dependency_install_hint("whisperx", "whisperx"))
             return WhisperXSTTAdapter()
-        raise ValueError(f"Unsupported STT backend: '{backend}'. Supported backends: faster_whisper, transformers, nemo, whisperx")
+        if backend == "voxtral_stt":
+            if not VOXTRAL_STT_AVAILABLE:
+                raise ImportError(optional_dependency_install_hint("voxtral", "mistral-common"))
+            return VoxtralSTTAdapter()
+        raise ValueError(f"Unsupported STT backend: '{backend}'. Supported backends: faster_whisper, transformers, nemo, whisperx, voxtral_stt")
 
     async def _get_or_create_adapter(self, model_id: str, model_path: Path, backend: str) -> STTAdapter:
         """Get or create adapter for model, dispatching by backend."""

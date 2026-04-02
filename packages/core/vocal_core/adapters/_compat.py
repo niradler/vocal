@@ -63,3 +63,22 @@ def apply_transformers_shims() -> None:
             logger.debug("Patched ROPE_INIT_FUNCTIONS['default']")
     except (ImportError, AttributeError):
         pass
+
+    # --- fix_mistral_regex kwarg consumed twice (transformers 5.3.0 bug) -----
+    # TokenizersBackend.__init__ uses kwargs.get() instead of kwargs.pop(),
+    # so the key remains and triggers "unexpected keyword argument" downstream.
+    try:
+        from transformers.tokenization_utils_tokenizers import TokenizersBackend
+
+        _orig_init = TokenizersBackend.__init__
+
+        def _patched_init(self, *args, **kwargs):
+            kwargs.pop("fix_mistral_regex", None)
+            _orig_init(self, *args, **kwargs)
+
+        if not getattr(TokenizersBackend.__init__, "_vocal_patched", False):
+            _patched_init._vocal_patched = True
+            TokenizersBackend.__init__ = _patched_init
+            logger.debug("Patched TokenizersBackend.__init__ (fix_mistral_regex)")
+    except (ImportError, AttributeError):
+        pass

@@ -3,6 +3,7 @@ from .chatterbox import CHATTERBOX_AVAILABLE, ChatterboxTTSAdapter
 from .faster_qwen3_tts import FASTER_QWEN3_TTS_AVAILABLE, FasterQwen3TTSAdapter
 from .kokoro import KOKORO_AVAILABLE, KokoroTTSAdapter
 from .piper import SUPPORTED_FORMATS, PiperTTSAdapter, SimpleTTSAdapter
+from .voxtral import VOXTRAL_TTS_AVAILABLE, VoxtralTTSAdapter
 
 __all__ = [
     "TTSAdapter",
@@ -19,4 +20,6 @@ __all__ = [
     "SUPPORTED_FORMATS",
     "ChatterboxTTSAdapter",
     "CHATTERBOX_AVAILABLE",
+    "VoxtralTTSAdapter",
+    "VOXTRAL_TTS_AVAILABLE",
 ]

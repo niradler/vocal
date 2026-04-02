@@ -200,7 +200,7 @@ def test_infer_nemo_capabilities():
         backend="nemo",
         model_id="nvidia/parakeet-tdt-1.1b",
     )
-    assert capabilities["supports_streaming"] is False
+    assert capabilities["supports_streaming"] is True
 
 
 def test_infer_whisperx_capabilities():
@@ -209,7 +209,7 @@ def test_infer_whisperx_capabilities():
         backend="whisperx",
         model_id="whisperx/large-v3",
     )
-    assert capabilities["supports_streaming"] is False
+    assert capabilities["supports_streaming"] is True
 
 
 def test_infer_chatterbox_capabilities():

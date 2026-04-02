@@ -64,6 +64,9 @@ whisperx = [
 chatterbox = [
     "chatterbox-tts>=0.1.6",
 ]
+voxtral = [
+    "mistral-common>=1.9.0",
+]
 
 [build-system]
 requires = ["hatchling"]

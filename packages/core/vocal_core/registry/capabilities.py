@@ -11,6 +11,7 @@ class CapabilityOverrides(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     supports_streaming: bool | None = None
+    supports_live_streaming: bool | None = None
     supports_voice_list: bool | None = None
     supports_voice_clone: bool | None = None
     supports_voice_design: bool | None = None
@@ -140,6 +141,7 @@ def model_record_from_mapping(
         "actual_parameter_count",
         "hf_repo_id",
         "supports_streaming",
+        "supports_live_streaming",
         "supports_voice_list",
         "supports_voice_clone",
         "supports_voice_design",
@@ -213,7 +215,7 @@ def huggingface_snapshot_from_info(info: Any) -> HuggingFaceSnapshot:
     return HuggingFaceSnapshot.model_validate(payload)
 
 
-def infer_model_capabilities(
+def infer_model_capabilities(  # noqa: C901
     *,
     task: str,
     backend: str,
@@ -228,14 +230,20 @@ def infer_model_capabilities(
     overrides = overrides or CapabilityOverrides()
     inferred_voice_mode = overrides.voice_mode
     inferred_clone_mode = overrides.clone_mode
-    _streaming_default = backend in {"faster_whisper"}
+    _streaming_default = task == "stt"  # all STT adapters support streaming via base fallback
     inferred_supports_streaming = overrides.supports_streaming if overrides.supports_streaming is not None else _streaming_default
+    inferred_supports_live_streaming = overrides.supports_live_streaming if overrides.supports_live_streaming is not None else False
     inferred_supports_voice_list = overrides.supports_voice_list if overrides.supports_voice_list is not None else False
     inferred_supports_voice_clone = overrides.supports_voice_clone if overrides.supports_voice_clone is not None else False
     inferred_supports_voice_design = overrides.supports_voice_design if overrides.supports_voice_design is not None else False
     inferred_requires_gpu = overrides.requires_gpu if overrides.requires_gpu is not None else False
     inferred_min_seconds = overrides.reference_audio_min_seconds
     inferred_max_seconds = overrides.reference_audio_max_seconds
+
+    if task == "stt":
+        if backend == "voxtral_stt":
+            inferred_requires_gpu = overrides.requires_gpu if overrides.requires_gpu is not None else True
+            inferred_supports_live_streaming = overrides.supports_live_streaming if overrides.supports_live_streaming is not None else True
 
     if task == "tts":
         if backend == "kokoro":
@@ -268,9 +276,14 @@ def infer_model_capabilities(
             inferred_clone_mode = overrides.clone_mode or "reference_audio"
             inferred_min_seconds = overrides.reference_audio_min_seconds if overrides.reference_audio_min_seconds is not None else 3.0
             inferred_max_seconds = overrides.reference_audio_max_seconds if overrides.reference_audio_max_seconds is not None else 30.0
+        elif backend == "voxtral_tts":
+            inferred_requires_gpu = overrides.requires_gpu if overrides.requires_gpu is not None else True
+            inferred_supports_voice_list = overrides.supports_voice_list if overrides.supports_voice_list is not None else True
+            inferred_voice_mode = overrides.voice_mode or "voice_id"
 
     return {
         "supports_streaming": inferred_supports_streaming,
+        "supports_live_streaming": inferred_supports_live_streaming,
         "supports_voice_list": inferred_supports_voice_list,
         "supports_voice_clone": inferred_supports_voice_clone,
         "supports_voice_design": inferred_supports_voice_design,
