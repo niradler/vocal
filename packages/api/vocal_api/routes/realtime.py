@@ -2,12 +2,9 @@ import asyncio
 import base64
 import json
 import logging
-import tempfile
 import time
 import uuid
-import wave
 from dataclasses import dataclass, field
-from pathlib import Path
 
 import httpx
 import numpy as np
@@ -115,18 +112,15 @@ def _resample_pcm16(pcm_bytes: bytes | bytearray, from_rate: int, to_rate: int) 
 async def _transcribe_buffer(ws: WebSocket, session: _Session, transcription_service) -> str:
     item_id = session.current_item_id
     resampled = _resample_pcm16(session.audio_buffer, session.input_sample_rate, _STT_SAMPLE_RATE)
-    tmp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            tmp_path = tmp.name
-        with wave.open(tmp_path, "wb") as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(_STT_SAMPLE_RATE)
-            wf.writeframes(resampled)
 
+    async def _single_chunk_gen():
+        yield resampled
+
+    try:
         full_parts: list[str] = []
-        async for seg in transcription_service.transcribe_stream_path(tmp_path, session.model, session.language):
+        async for seg in transcription_service.transcribe_live_stream(
+            _single_chunk_gen(), session.model, _STT_SAMPLE_RATE, session.language
+        ):
             text = seg.text.strip()
             if text:
                 ok = await _safe_send(
@@ -157,9 +151,6 @@ async def _transcribe_buffer(ws: WebSocket, session: _Session, transcription_ser
         logger.exception("Transcription error in realtime handler")
         await _safe_send(ws, _make_event("error", error={"code": "transcription_failed", "message": str(exc)}))
         return ""
-    finally:
-        if tmp_path:
-            Path(tmp_path).unlink(missing_ok=True)
 
 
 async def _stream_llm(ws: WebSocket, messages: list, response_id: str, item_id: str) -> str:
@@ -261,13 +252,14 @@ async def _handle_session_update(ws: WebSocket, session: _Session, event: dict, 
     await _safe_send(ws, _make_event(ack_type, session=_session_config(session)))
 
 
-async def _handle_audio_append(ws: WebSocket, session: _Session, event: dict, transcription_service, tts_service) -> None:
+async def _handle_audio_append(ws: WebSocket, session: _Session, event: dict) -> bool:
+    """Process one audio chunk. Returns True when an utterance is ready to commit+process."""
     audio_b64 = event.get("audio", "")
     try:
         pcm_bytes = base64.b64decode(audio_b64)
     except Exception:
         await _safe_send(ws, _make_event("error", error={"code": "invalid_audio", "message": "Failed to decode base64 audio"}))
-        return
+        return False
 
     session.audio_buffer.extend(pcm_bytes)
     frame_count = len(session.audio_buffer) // 2
@@ -300,28 +292,30 @@ async def _handle_audio_append(ws: WebSocket, session: _Session, event: dict, tr
                     await _safe_send(ws, _make_event("input_audio_buffer.speech_stopped", audio_end_ms=audio_end_ms, item_id=session.current_item_id))
                     session.speech_started = False
                     session.vad.reset()
-                    await _commit_and_process(ws, session, transcription_service, tts_service)
+                    return True
                 else:
                     session.speech_started = False
                     session.speech_frames_count = 0
                     session.silence_count = 0
                     session.audio_buffer = bytearray()
                     session.vad.reset()
+    return False
 
 
-async def _dispatch_event(ws: WebSocket, session: _Session, event: dict, transcription_service, tts_service) -> None:
+async def _dispatch_event(ws: WebSocket, session: _Session, event: dict) -> bool:
+    """Handle one client event. Returns True when _commit_and_process should be scheduled."""
     event_type = event.get("type", "")
 
     if event_type in ("session.update", "transcription_session.update"):
         await _handle_session_update(ws, session, event, event_type)
     elif event_type == "input_audio_buffer.append":
-        await _handle_audio_append(ws, session, event, transcription_service, tts_service)
+        return await _handle_audio_append(ws, session, event)
     elif event_type == "input_audio_buffer.commit":
         if not session.audio_buffer:
             await ws.send_text(_make_event("error", error={"code": "buffer_empty", "message": "Input audio buffer is empty"}))
         else:
             session.speech_started = False
-            await _commit_and_process(ws, session, transcription_service, tts_service)
+            return True
     elif event_type == "input_audio_buffer.clear":
         session.audio_buffer = bytearray()
         session.speech_started = False
@@ -332,6 +326,7 @@ async def _dispatch_event(ws: WebSocket, session: _Session, event: dict, transcr
         await _safe_send(ws, _make_event("input_audio_buffer.cleared"))
     else:
         await _safe_send(ws, _make_event("error", error={"code": "unknown_event", "message": f"Unknown event type: {event_type}"}))
+    return False
 
 
 @router.websocket("/v1/realtime")
@@ -384,7 +379,13 @@ async def realtime_endpoint(
             if event.get("type") == "pong":
                 continue
 
-            await _dispatch_event(websocket, session, event, transcription_service, tts_service)
+            should_commit = await _dispatch_event(websocket, session, event)
+            if should_commit:
+                # Run STT→LLM→TTS as a background task so receive_text() keeps
+                # spinning. The pipeline takes 15–45 s; awaiting it inline stalls
+                # Starlette's receive loop and lets the client's ping_timeout fire
+                # → "no close frame received or sent".
+                asyncio.create_task(_commit_and_process(websocket, session, transcription_service, tts_service))
 
     except WebSocketDisconnect:
         pass

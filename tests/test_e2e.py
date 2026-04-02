@@ -902,6 +902,143 @@ class TestRealtimeOAI:
         assert event["type"] == "error" and event["error"]["code"] == "unknown_event"
         print(f"\n[OK] /v1/realtime: unknown event -> error({event['error']['code']})")
 
+    def test_realtime_vad_pipeline(self, api_server, test_model, ensure_stt_model, test_assets):
+        """Real CLI flow: VAD auto-detects speech→silence and commits without manual commit."""
+        audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
+        assert audio_file.exists()
+
+        import subprocess, tempfile, os as _os
+        with tempfile.NamedTemporaryFile(suffix=".raw", delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", str(audio_file), "-ar", "16000", "-ac", "1", "-f", "s16le", tmp_path],
+                check=True, capture_output=True,
+            )
+            with open(tmp_path, "rb") as f:
+                pcm = f.read()
+        finally:
+            _os.unlink(tmp_path)
+
+        async def _collect_realtime(ws, stop_type: str, timeout_s: float = 90.0) -> list[dict]:
+            events: list[dict] = []
+            deadline = time.monotonic() + timeout_s
+            while time.monotonic() < deadline:
+                remaining = deadline - time.monotonic()
+                try:
+                    msg = await asyncio.wait_for(ws.recv(), timeout=min(5.0, remaining))
+                except TimeoutError:
+                    continue
+                event = json.loads(msg)
+                events.append(event)
+                if event.get("type") == "error":
+                    raise RuntimeError(f"Server error: {event.get('error')}")
+                if event.get("type") == stop_type:
+                    return events
+            raise TimeoutError(f"{stop_type} not received within {timeout_s}s. Got: {[e['type'] for e in events]}")
+
+        async def _test():
+            uri = f"{api_server.replace('http://', 'ws://')}/v1/realtime"
+            frame_size = 3200  # 100ms at 16kHz — same as CLI
+
+            async with websockets.connect(uri, open_timeout=60) as ws:
+                await asyncio.wait_for(ws.recv(), timeout=10.0)  # session.created
+
+                # Match exact CLI session.update format (16kHz, transcription mode)
+                await ws.send(json.dumps({
+                    "type": "session.update",
+                    "session": {"model": test_model, "input_sample_rate": 16000},
+                }))
+                await asyncio.wait_for(ws.recv(), timeout=5.0)  # session.updated
+
+                # Send real speech audio — VAD detects onset and starts utterance
+                for i in range(0, len(pcm), frame_size):
+                    await ws.send(json.dumps({
+                        "type": "input_audio_buffer.append",
+                        "audio": base64.b64encode(pcm[i : i + frame_size]).decode(),
+                    }))
+
+                # 20 zero-energy silence frames (2.0s) — VAD_SILENCE_FRAMES=15 fires the commit
+                silence_b64 = base64.b64encode(bytes(frame_size)).decode()
+                for _ in range(20):
+                    await ws.send(json.dumps({"type": "input_audio_buffer.append", "audio": silence_b64}))
+
+                events = await _collect_realtime(ws, "conversation.item.input_audio_transcription.completed")
+
+            types = {e["type"] for e in events}
+            assert "input_audio_buffer.speech_started" in types, f"VAD never detected speech: {types}"
+            assert "input_audio_buffer.speech_stopped" in types, f"VAD never detected silence: {types}"
+            assert "input_audio_buffer.committed" in types, f"Buffer never auto-committed: {types}"
+            completed = next(e for e in events if e["type"] == "conversation.item.input_audio_transcription.completed")
+            assert completed["transcript"].strip(), "Empty transcript"
+            print(f"\n[OK] /v1/realtime VAD pipeline: '{completed['transcript']}'")
+
+        _ws_run(_test())
+
+    def test_realtime_vad_pipeline_multi_utterance(self, api_server, test_model, ensure_stt_model, test_assets):
+        """Verifies the connection stays alive across two consecutive VAD-triggered utterances."""
+        audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
+        assert audio_file.exists()
+
+        import subprocess, tempfile, os as _os
+        with tempfile.NamedTemporaryFile(suffix=".raw", delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", str(audio_file), "-ar", "16000", "-ac", "1", "-f", "s16le", tmp_path],
+                check=True, capture_output=True,
+            )
+            with open(tmp_path, "rb") as f:
+                pcm = f.read()
+        finally:
+            _os.unlink(tmp_path)
+
+        async def _collect_until(ws, stop_type: str, timeout_s: float = 90.0) -> list[dict]:
+            events: list[dict] = []
+            deadline = time.monotonic() + timeout_s
+            while time.monotonic() < deadline:
+                remaining = deadline - time.monotonic()
+                try:
+                    msg = await asyncio.wait_for(ws.recv(), timeout=min(5.0, remaining))
+                except TimeoutError:
+                    continue
+                event = json.loads(msg)
+                events.append(event)
+                if event.get("type") == "error":
+                    raise RuntimeError(f"Server error: {event.get('error')}")
+                if event.get("type") == stop_type:
+                    return events
+            raise TimeoutError(f"{stop_type} not received. Got: {[e['type'] for e in events]}")
+
+        async def _test():
+            uri = f"{api_server.replace('http://', 'ws://')}/v1/realtime"
+            frame_size = 3200
+            silence_b64 = base64.b64encode(bytes(frame_size)).decode()
+
+            async with websockets.connect(uri, open_timeout=60) as ws:
+                await asyncio.wait_for(ws.recv(), timeout=10.0)
+                await ws.send(json.dumps({
+                    "type": "session.update",
+                    "session": {"model": test_model, "input_sample_rate": 16000},
+                }))
+                await asyncio.wait_for(ws.recv(), timeout=5.0)
+
+                for utterance_num in range(1, 3):
+                    for i in range(0, len(pcm), frame_size):
+                        await ws.send(json.dumps({
+                            "type": "input_audio_buffer.append",
+                            "audio": base64.b64encode(pcm[i : i + frame_size]).decode(),
+                        }))
+                    for _ in range(20):
+                        await ws.send(json.dumps({"type": "input_audio_buffer.append", "audio": silence_b64}))
+
+                    events = await _collect_until(ws, "conversation.item.input_audio_transcription.completed")
+                    completed = next(e for e in events if e["type"] == "conversation.item.input_audio_transcription.completed")
+                    assert completed["transcript"].strip(), f"Empty transcript on utterance {utterance_num}"
+                    print(f"\n[OK] /v1/realtime multi-utterance {utterance_num}: '{completed['transcript']}'")
+
+        _ws_run(_test())
+
 
 _IN_CI = os.environ.get("CI") == "true" or os.environ.get("GITHUB_ACTIONS") == "true"
 
