@@ -18,6 +18,7 @@ class ModelBackend(str, Enum):
     WHISPERX = "whisperx"
     VOXTRAL_STT = "voxtral_stt"
     VOXTRAL_TTS = "voxtral_tts"
+    OMNIVOICE = "omnivoice"
     XTTS = "xtts"
 
     def __str__(self) -> str:

@@ -8,10 +8,12 @@ from vocal_core.adapters.tts import (
     CHATTERBOX_AVAILABLE,
     FASTER_QWEN3_TTS_AVAILABLE,
     KOKORO_AVAILABLE,
+    OMNIVOICE_AVAILABLE,
     VOXTRAL_TTS_AVAILABLE,
     ChatterboxTTSAdapter,
     FasterQwen3TTSAdapter,
     KokoroTTSAdapter,
+    OmniVoiceTTSAdapter,
     PiperTTSAdapter,
     SimpleTTSAdapter,
     TTSAdapter,
@@ -284,4 +286,8 @@ class TTSService:
             if not VOXTRAL_TTS_AVAILABLE:
                 raise ImportError(optional_dependency_install_hint("voxtral", "httpx"))
             return VoxtralTTSAdapter()
-        raise ValueError(f"Unsupported TTS backend: '{backend}'. Supported backends: kokoro, faster_qwen3_tts, piper, chatterbox, voxtral_tts")
+        if backend == "omnivoice":
+            if not OMNIVOICE_AVAILABLE:
+                raise ImportError(optional_dependency_install_hint("omnivoice"))
+            return OmniVoiceTTSAdapter()
+        raise ValueError(f"Unsupported TTS backend: '{backend}'. Supported backends: kokoro, faster_qwen3_tts, piper, chatterbox, voxtral_tts, omnivoice")

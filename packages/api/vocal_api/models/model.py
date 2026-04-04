@@ -31,6 +31,7 @@ class ModelBackend(str, Enum):
     DIA = "dia"
     VOXTRAL_STT = "voxtral_stt"
     VOXTRAL_TTS = "voxtral_tts"
+    OMNIVOICE = "omnivoice"
     CUSTOM = "custom"
 
 

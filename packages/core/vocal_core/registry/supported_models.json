@@ -2492,6 +2492,31 @@
       "supports_voice_list": true,
       "voice_mode": "voice_id",
       "tags": ["text-to-speech", "multilingual", "vllm", "license:cc-by-nc-4.0"]
+    },
+    {
+      "id": "k2-fsa/OmniVoice",
+      "name": "OmniVoice",
+      "alias": "omnivoice",
+      "provider": "huggingface",
+      "task": "tts",
+      "backend": "omnivoice",
+      "parameters": "Unknown",
+      "size": 0,
+      "size_readable": "Unknown",
+      "languages": ["en", "zh", "de", "es", "fr", "ja", "ko", "pt", "ru", "ar", "hi", "it", "nl", "pl", "sv", "tr"],
+      "recommended_vram": "8GB+",
+      "source_url": "https://huggingface.co/k2-fsa/OmniVoice",
+      "description": "OmniVoice — zero-shot voice cloning and voice design TTS for 600+ languages. RTF ~0.025 on GPU. Supports non-verbal symbols and pronunciation hints.",
+      "license": "Apache 2.0",
+      "author": "k2-fsa",
+      "requires_gpu": true,
+      "supports_voice_clone": true,
+      "supports_voice_design": true,
+      "clone_mode": "reference_audio",
+      "voice_mode": "instruction",
+      "reference_audio_min_seconds": 3.0,
+      "reference_audio_max_seconds": 30.0,
+      "tags": ["text-to-speech", "multilingual", "voice-cloning", "voice-design", "license:apache-2.0"]
     }
   ]
 }
