@@ -35,6 +35,10 @@ class OmniVoiceTTSAdapter(TTSAdapter):
         await loop.run_in_executor(None, self._load_sync, model_path, device)
 
     def _load_sync(self, model_path: Path, device: str) -> None:
+        from .._compat import apply_transformers_shims
+
+        apply_transformers_shims()
+
         import torch
         from omnivoice import OmniVoice
 

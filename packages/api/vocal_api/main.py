@@ -35,6 +35,10 @@ async def lifespan(app: FastAPI):
     """Initialize services and start background tasks"""
     setup_logging(level=vocal_settings.LOG_LEVEL, fmt=vocal_settings.LOG_FORMAT)
 
+    from vocal_core.adapters._compat import apply_transformers_shims
+
+    apply_transformers_shims()
+
     transcription_service = get_transcription_service()
     await transcription_service.start_cleanup_task()
 
@@ -67,7 +71,6 @@ app.include_router(tts_router)
 app.include_router(system_router)
 app.include_router(stream_router)
 app.include_router(realtime_router)
-
 
 
 @app.get("/", tags=["health"])

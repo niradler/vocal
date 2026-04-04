@@ -19,7 +19,7 @@ from rich.table import Table
 
 from vocal_core.config import vocal_settings
 from vocal_sdk import VocalClient
-from vocal_sdk.api.audio import voice_clone_v1_audio_clone_post
+from vocal_sdk.api.audio import text_to_speech_v1_audio_speech_post, voice_clone_v1_audio_clone_post
 from vocal_sdk.api.models import (
     delete_model_v1_models_model_id_delete,
     list_models_v1_models_get,
@@ -35,6 +35,8 @@ from vocal_sdk.models import (
     BodyVoiceCloneV1AudioClonePost,
     BodyVoiceCloneV1AudioClonePostResponseFormat,
     TranscriptionFormat,
+    TTSRequest,
+    TTSRequestResponseFormat,
 )
 from vocal_sdk.types import UNSET, File, Unset
 
@@ -293,6 +295,75 @@ def models_delete(
         console.print(f"[green]Successfully deleted:[/green] {model_id}")
     except Exception as e:
         console.print(f"[red]Error:[/red] {str(e)}")
+        raise typer.Exit(1)
+
+
+@app.command()
+def speak(
+    text: str = typer.Argument(..., help="Text to synthesize"),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output file path (default: play audio)"),
+    model: str = typer.Option(
+        vocal_settings.TTS_DEFAULT_MODEL,
+        "--model",
+        "-m",
+        help="TTS model to use (e.g. 'pyttsx3', 'k2-fsa/OmniVoice')",
+    ),
+    models: bool = typer.Option(False, "--models", help="Interactively select from downloaded TTS models"),
+    voice: str | None = typer.Option(None, "--voice", help="Voice ID or instruction (model-specific, e.g. 'female, young adult, american accent')"),
+    speed: float = typer.Option(1.0, "--speed", "-s", min=0.25, max=4.0, help="Speech speed multiplier"),
+    response_format: str = typer.Option("wav", "--format", "-f", help="Output audio format: wav, mp3, flac, pcm, aac, opus"),
+    api_url: str = typer.Option("http://localhost:8000", "--api-url", envvar="VOCAL_API_URL", help="Vocal API URL"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show synthesis timing and output size"),
+) -> None:
+    """Synthesize text to speech"""
+    if models:
+        selected_model = _model_wizard(api_url, task="tts")
+        if selected_model is None:
+            raise typer.Exit(1)
+        model = selected_model
+
+    try:
+        fmt = TTSRequestResponseFormat(response_format.lower())
+    except ValueError:
+        valid = ", ".join(f.value for f in TTSRequestResponseFormat)
+        console.print(f"[red]Error:[/red] Invalid format '{response_format}'. Valid options: {valid}")
+        raise typer.Exit(1)
+
+    if model != "pyttsx3":
+        _check_model_ready(api_url, model)
+
+    try:
+        vc = _make_client(api_url)
+        t0 = time.monotonic()
+
+        body = TTSRequest(
+            model=model,
+            input_=text,
+            voice=voice if voice is not None else UNSET,
+            speed=speed,
+            response_format=fmt,
+        )
+        resp = text_to_speech_v1_audio_speech_post.sync_detailed(client=vc, body=body)
+
+        elapsed = time.monotonic() - t0
+
+        if resp.status_code != 200:
+            _clone_error(resp.content, resp.status_code)
+            raise typer.Exit(1)
+
+        audio_bytes = resp.content
+        _speak_output(audio_bytes, response_format, output, elapsed, verbose)
+
+    except typer.Exit:
+        raise
+    except UnexpectedStatus as e:
+        msg = _api_error_message(e)
+        console.print(f"[red]Error:[/red] {msg}")
+        if e.status_code == 503:
+            console.print("[dim]The model or a required package is not available on the server.[/dim]")
+        raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
 
 
@@ -948,6 +1019,25 @@ def chat(
         raise typer.Exit(1)
 
 
+def _speak_output(audio_bytes: bytes, response_format: str, output: Path | None, elapsed: float, verbose: bool) -> None:
+    if output:
+        output.write_bytes(audio_bytes)
+        timing = f"  [dim]{elapsed:.1f}s[/dim]" if verbose else ""
+        console.print(f"[green]Saved[/green] {len(audio_bytes):,} bytes -> [cyan]{output}[/cyan]{timing}")
+    elif sys.stdout.isatty():
+        if response_format == "wav":
+            timing = f"  [dim]{elapsed:.1f}s[/dim]" if verbose else ""
+            console.print(f"[green]Playing[/green] {len(audio_bytes):,} bytes{timing}")
+            _play_wav_bytes(audio_bytes)
+        else:
+            console.print(f"[yellow]Tip:[/yellow] Use [cyan]--output file.{response_format}[/cyan] to save non-WAV audio, or omit [cyan]--format[/cyan] for auto-play.")
+            sys.stdout.buffer.write(audio_bytes)
+    else:
+        if verbose:
+            sys.stderr.write(f"  {len(audio_bytes):,} bytes ({response_format}) in {elapsed:.1f}s\n")
+        sys.stdout.buffer.write(audio_bytes)
+
+
 def _clone_error(content: bytes, status_code: int) -> None:
     try:
         detail = json.loads(content).get("detail", "")
@@ -963,7 +1053,7 @@ def _clone_output(audio_bytes: bytes, fmt: BodyVoiceCloneV1AudioClonePostRespons
     if output:
         output.write_bytes(audio_bytes)
         timing = f"  [dim]{elapsed:.1f}s[/dim]" if verbose else ""
-        console.print(f"[green]Saved[/green] {len(audio_bytes):,} bytes → [cyan]{output}[/cyan]{timing}")
+        console.print(f"[green]Saved[/green] {len(audio_bytes):,} bytes -> [cyan]{output}[/cyan]{timing}")
     elif sys.stdout.isatty():
         if fmt == BodyVoiceCloneV1AudioClonePostResponseFormat.WAV:
             timing = f"  [dim]{elapsed:.1f}s[/dim]" if verbose else ""
