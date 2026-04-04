@@ -107,7 +107,9 @@ def _shim_torchcodec_stub() -> None:
 
     try:
         import torchcodec  # noqa: F401
-    except (RuntimeError, OSError):
+    except ImportError:
+        return
+    except (RuntimeError, OSError) as exc:
         import importlib.util
         import types
 
@@ -125,7 +127,14 @@ def _shim_torchcodec_stub() -> None:
 
         sys.modules["torchcodec"] = _stub
         sys.modules["torchcodec.decoders"] = _decoders
-        logger.debug("Inserted torchcodec stub (FFmpeg DLLs not available)")
+        # Truncate the error — torchcodec dumps multi-KB tracebacks for
+        # every FFmpeg version it tries, which can fill subprocess PIPE
+        # buffers and hang the server.
+        short = str(exc).split("\n", 1)[0][:200]
+        logger.warning(
+            "torchcodec installed but broken (%s). Inserted stub; voice cloning uses standard audio path. Fix: install FFmpeg shared libs or pip uninstall torchcodec.",
+            short,
+        )
 
 
 def apply_transformers_shims() -> None:
@@ -144,7 +153,8 @@ def apply_transformers_shims() -> None:
     except ImportError:
         return
 
-    _shim_check_model_inputs()
-    _shim_rope_init_default()
-    _shim_fix_mistral_regex()
-    _shim_torchcodec_stub()
+    for shim_fn in (_shim_check_model_inputs, _shim_rope_init_default, _shim_fix_mistral_regex, _shim_torchcodec_stub):
+        try:
+            shim_fn()
+        except Exception as exc:
+            logger.warning("Shim %s failed: %s", shim_fn.__name__, exc)

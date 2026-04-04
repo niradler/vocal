@@ -69,8 +69,8 @@ class OmniVoiceTTSAdapter(TTSAdapter):
                     import torch
 
                     torch.cuda.empty_cache()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("Failed to clear CUDA cache during unload: %s", exc)
 
     def is_loaded(self) -> bool:
         return self.model is not None
