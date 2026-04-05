@@ -61,6 +61,8 @@ class _Session:
     speech_onset_count: int = 0
     speech_frames_count: int = 0
     current_item_id: str = field(default_factory=lambda: f"item_{uuid.uuid4().hex[:16]}")
+    tts_model: str = field(default_factory=lambda: vocal_settings.TTS_DEFAULT_MODEL)
+    tts_voice: str | None = field(default_factory=lambda: vocal_settings.TTS_DEFAULT_VOICE)
     system_prompt: str = field(default_factory=lambda: vocal_settings.CHAT_SYSTEM_PROMPT)
     conversation_history: list = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
@@ -178,9 +180,9 @@ async def _stream_llm(ws: WebSocket, messages: list, response_id: str, item_id: 
     return full_response
 
 
-async def _send_tts_audio(ws: WebSocket, tts_service, text: str, response_id: str, item_id: str) -> None:
+async def _send_tts_audio(ws: WebSocket, tts_service, text: str, response_id: str, item_id: str, tts_model: str | None = None, tts_voice: str | None = None) -> None:
     try:
-        tts_result = await tts_service.synthesize(vocal_settings.TTS_DEFAULT_MODEL, text, voice=vocal_settings.TTS_DEFAULT_VOICE, output_format="pcm")
+        tts_result = await tts_service.synthesize(tts_model or vocal_settings.TTS_DEFAULT_MODEL, text, voice=tts_voice or vocal_settings.TTS_DEFAULT_VOICE, output_format="pcm")
         pcm_bytes = tts_result.audio_data
         output_sample_rate = tts_result.sample_rate or 22050
         audio_24k = _resample_pcm16(pcm_bytes, output_sample_rate, 24000)
@@ -209,7 +211,7 @@ async def _run_voice_agent(ws: WebSocket, session: _Session, user_text: str, tts
         session.conversation_history.append({"role": "user", "content": user_text})
         session.conversation_history.append({"role": "assistant", "content": full_response})
 
-    await _send_tts_audio(ws, tts_service, full_response or "...", response_id, item_id)
+    await _send_tts_audio(ws, tts_service, full_response or "...", response_id, item_id, tts_model=session.tts_model, tts_voice=session.tts_voice)
     await _safe_send(ws, _make_event("response.output_audio_transcript.done", response_id=response_id, item_id=item_id, transcript=full_response))
     await _safe_send(ws, _make_event("response.output_audio.done", response_id=response_id, item_id=item_id))
     await _safe_send(ws, _make_event("response.done", response={"id": response_id, "status": "completed"}))
@@ -243,6 +245,10 @@ async def _handle_session_update(ws: WebSocket, session: _Session, event: dict, 
         session.input_sample_rate = int(sess_cfg["input_sample_rate"])
     if "system_prompt" in sess_cfg:
         session.system_prompt = sess_cfg["system_prompt"]
+    if "tts_model" in sess_cfg:
+        session.tts_model = sess_cfg["tts_model"]
+    if "tts_voice" in sess_cfg:
+        session.tts_voice = sess_cfg["tts_voice"] or None
     td = sess_cfg.get("turn_detection") or {}
     if "threshold" in td:
         session.speech_threshold = float(td["threshold"])

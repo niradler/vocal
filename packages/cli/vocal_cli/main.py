@@ -19,7 +19,7 @@ from rich.table import Table
 
 from vocal_core.config import vocal_settings
 from vocal_sdk import VocalClient
-from vocal_sdk.api.audio import voice_clone_v1_audio_clone_post
+from vocal_sdk.api.audio import text_to_speech_v1_audio_speech_post, voice_clone_v1_audio_clone_post
 from vocal_sdk.api.models import (
     delete_model_v1_models_model_id_delete,
     list_models_v1_models_get,
@@ -35,6 +35,8 @@ from vocal_sdk.models import (
     BodyVoiceCloneV1AudioClonePost,
     BodyVoiceCloneV1AudioClonePostResponseFormat,
     TranscriptionFormat,
+    TTSRequest,
+    TTSRequestResponseFormat,
 )
 from vocal_sdk.types import UNSET, File, Unset
 
@@ -293,6 +295,75 @@ def models_delete(
         console.print(f"[green]Successfully deleted:[/green] {model_id}")
     except Exception as e:
         console.print(f"[red]Error:[/red] {str(e)}")
+        raise typer.Exit(1)
+
+
+@app.command()
+def speak(
+    text: str = typer.Argument(..., help="Text to synthesize"),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output file path (default: play audio)"),
+    model: str = typer.Option(
+        vocal_settings.TTS_DEFAULT_MODEL,
+        "--model",
+        "-m",
+        help="TTS model to use (e.g. 'pyttsx3', 'k2-fsa/OmniVoice')",
+    ),
+    models: bool = typer.Option(False, "--models", help="Interactively select from downloaded TTS models"),
+    voice: str | None = typer.Option(None, "--voice", help="Voice ID or instruction (model-specific, e.g. 'female, young adult, american accent')"),
+    speed: float = typer.Option(1.0, "--speed", "-s", min=0.25, max=4.0, help="Speech speed multiplier"),
+    response_format: str = typer.Option("wav", "--format", "-f", help="Output audio format: wav, mp3, flac, pcm, aac, opus"),
+    api_url: str = typer.Option("http://localhost:8000", "--api-url", envvar="VOCAL_API_URL", help="Vocal API URL"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show synthesis timing and output size"),
+) -> None:
+    """Synthesize text to speech"""
+    if models:
+        selected_model = _model_wizard(api_url, task="tts")
+        if selected_model is None:
+            raise typer.Exit(1)
+        model = selected_model
+
+    try:
+        fmt = TTSRequestResponseFormat(response_format.lower())
+    except ValueError:
+        valid = ", ".join(f.value for f in TTSRequestResponseFormat)
+        console.print(f"[red]Error:[/red] Invalid format '{response_format}'. Valid options: {valid}")
+        raise typer.Exit(1)
+
+    if model != "pyttsx3":
+        _check_model_ready(api_url, model)
+
+    try:
+        vc = _make_client(api_url)
+        t0 = time.monotonic()
+
+        body = TTSRequest(
+            model=model,
+            input_=text,
+            voice=voice if voice is not None else UNSET,
+            speed=speed,
+            response_format=fmt,
+        )
+        resp = text_to_speech_v1_audio_speech_post.sync_detailed(client=vc, body=body)
+
+        elapsed = time.monotonic() - t0
+
+        if resp.status_code != 200:
+            _clone_error(resp.content, resp.status_code)
+            raise typer.Exit(1)
+
+        audio_bytes = resp.content
+        _speak_output(audio_bytes, response_format, output, elapsed, verbose)
+
+    except typer.Exit:
+        raise
+    except UnexpectedStatus as e:
+        msg = _api_error_message(e)
+        console.print(f"[red]Error:[/red] {msg}")
+        if e.status_code == 503:
+            console.print("[dim]The model or a required package is not available on the server.[/dim]")
+        raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
 
 
@@ -898,7 +969,9 @@ def _print_output_devices_table() -> None:
 @app.command()
 def chat(
     model: str = typer.Option(vocal_settings.STT_DEFAULT_MODEL, "--model", "-m", help="STT model to use"),
-    models: bool = typer.Option(False, "--models", help="Interactively select from downloaded STT models"),
+    models: bool = typer.Option(False, "--models", help="Interactively select from downloaded STT and TTS models"),
+    tts_model: str = typer.Option(vocal_settings.TTS_DEFAULT_MODEL, "--tts-model", help="TTS model to use for voice responses"),
+    tts_voice: str | None = typer.Option(None, "--tts-voice", help="TTS voice ID or instruction (model-specific)"),
     language: str | None = typer.Option(None, "--language", "-l", help="Language code (e.g. 'en'). Auto-detected if omitted."),
     device: str | None = typer.Option(None, "--device", "-d", help="Input device index or name (use --devices to pick interactively)"),
     output_device: str | None = typer.Option(None, "--output-device", "-o", help="Output device index or name (run `vocal devices --output` to list)"),
@@ -923,6 +996,10 @@ def chat(
         if selected_model is None:
             raise typer.Exit(1)
         model = selected_model
+        selected_tts = _model_wizard(api_url, task="tts")
+        if selected_tts is None:
+            raise typer.Exit(1)
+        tts_model = selected_tts
     try:
         device_idx = _resolve_device(device)
         output_device_idx = _resolve_output_device(output_device)
@@ -936,16 +1013,35 @@ def chat(
     device_label = f"[dim]{active_device['name']}[/dim]"
     threshold_hint = f"  vad=[cyan]{silence_threshold:.0f}[/cyan]" if silence_threshold is not None else ""
 
-    console.print(f"[green]Voice chat started[/green] model=[cyan]{model}[/cyan] device={device_label}{threshold_hint}  Ctrl+C to stop\n")
+    console.print(f"[green]Voice chat started[/green] stt=[cyan]{model}[/cyan] tts=[cyan]{tts_model}[/cyan] device={device_label}{threshold_hint}  Ctrl+C to stop\n")
     console.print("[dim]Speak — I'll transcribe, think, and respond with audio.[/dim]\n")
 
     try:
-        asyncio.run(_chat_async(ws_url, device_idx, output_device_idx, model, language, system_prompt, silence_threshold, verbose))
+        asyncio.run(_chat_async(ws_url, device_idx, output_device_idx, model, language, system_prompt, silence_threshold, verbose, tts_model=tts_model, tts_voice=tts_voice))
     except KeyboardInterrupt:
         console.print("\n[yellow]Stopped.[/yellow]")
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
+
+
+def _speak_output(audio_bytes: bytes, response_format: str, output: Path | None, elapsed: float, verbose: bool) -> None:
+    if output:
+        output.write_bytes(audio_bytes)
+        timing = f"  [dim]{elapsed:.1f}s[/dim]" if verbose else ""
+        console.print(f"[green]Saved[/green] {len(audio_bytes):,} bytes -> [cyan]{output}[/cyan]{timing}")
+    elif sys.stdout.isatty():
+        if response_format == "wav":
+            timing = f"  [dim]{elapsed:.1f}s[/dim]" if verbose else ""
+            console.print(f"[green]Playing[/green] {len(audio_bytes):,} bytes{timing}")
+            _play_wav_bytes(audio_bytes)
+        else:
+            console.print(f"[yellow]Tip:[/yellow] Use [cyan]--output file.{response_format}[/cyan] to save non-WAV audio, or omit [cyan]--format[/cyan] for auto-play.")
+            sys.stdout.buffer.write(audio_bytes)
+    else:
+        if verbose:
+            sys.stderr.write(f"  {len(audio_bytes):,} bytes ({response_format}) in {elapsed:.1f}s\n")
+        sys.stdout.buffer.write(audio_bytes)
 
 
 def _clone_error(content: bytes, status_code: int) -> None:
@@ -963,7 +1059,7 @@ def _clone_output(audio_bytes: bytes, fmt: BodyVoiceCloneV1AudioClonePostRespons
     if output:
         output.write_bytes(audio_bytes)
         timing = f"  [dim]{elapsed:.1f}s[/dim]" if verbose else ""
-        console.print(f"[green]Saved[/green] {len(audio_bytes):,} bytes → [cyan]{output}[/cyan]{timing}")
+        console.print(f"[green]Saved[/green] {len(audio_bytes):,} bytes -> [cyan]{output}[/cyan]{timing}")
     elif sys.stdout.isatty():
         if fmt == BodyVoiceCloneV1AudioClonePostResponseFormat.WAV:
             timing = f"  [dim]{elapsed:.1f}s[/dim]" if verbose else ""
@@ -1080,16 +1176,20 @@ async def _chat_receiver(ws, output_device_idx: int | None, verbose: bool, loop:
             console.print(f"\n[red]error:[/red] {event.get('error', {}).get('message', 'unknown')}")
 
 
-def _build_chat_session_cfg(model: str, language: str | None, system_prompt: str, vad_threshold: float | None) -> dict:
+def _build_chat_session_cfg(model: str, language: str | None, system_prompt: str, vad_threshold: float | None, tts_model: str | None = None, tts_voice: str | None = None) -> dict:
     cfg: dict = {"type": "realtime", "model": model, "input_sample_rate": _SAMPLE_RATE, "system_prompt": system_prompt}
     if language:
         cfg["language"] = language
     if vad_threshold is not None:
         cfg["turn_detection"] = {"threshold": vad_threshold / 32768.0}
+    if tts_model:
+        cfg["tts_model"] = tts_model
+    if tts_voice:
+        cfg["tts_voice"] = tts_voice
     return cfg
 
 
-async def _chat_async(ws_url: str, device_idx: int | None, output_device_idx: int | None, model: str, language: str | None, system_prompt: str, vad_threshold: float | None, verbose: bool) -> None:
+async def _chat_async(ws_url: str, device_idx: int | None, output_device_idx: int | None, model: str, language: str | None, system_prompt: str, vad_threshold: float | None, verbose: bool, tts_model: str | None = None, tts_voice: str | None = None) -> None:
     audio_q: queue.SimpleQueue = queue.SimpleQueue()
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
@@ -1116,7 +1216,7 @@ async def _chat_async(ws_url: str, device_idx: int | None, output_device_idx: in
     async with websockets.connect(f"{ws_url}/v1/realtime", open_timeout=10) as ws:
         await asyncio.wait_for(ws.recv(), timeout=5.0)
 
-        session_cfg = _build_chat_session_cfg(model, language, system_prompt, vad_threshold)
+        session_cfg = _build_chat_session_cfg(model, language, system_prompt, vad_threshold, tts_model=tts_model, tts_voice=tts_voice)
         await ws.send(json.dumps({"type": "session.update", "session": session_cfg}))
         await asyncio.wait_for(ws.recv(), timeout=5.0)
 

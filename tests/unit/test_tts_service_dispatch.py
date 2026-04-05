@@ -57,3 +57,15 @@ def test_voxtral_tts_dispatch_returns_voxtral_or_import_error():
     else:
         with pytest.raises(ImportError, match="httpx"):
             svc._create_adapter("voxtral_tts")
+
+
+def test_omnivoice_dispatch_returns_omnivoice_or_import_error():
+    from vocal_core.adapters.tts import OMNIVOICE_AVAILABLE, OmniVoiceTTSAdapter
+
+    svc = _make_service()
+    if OMNIVOICE_AVAILABLE:
+        adapter = svc._create_adapter("omnivoice")
+        assert isinstance(adapter, OmniVoiceTTSAdapter)
+    else:
+        with pytest.raises(ImportError, match="omnivoice"):
+            svc._create_adapter("omnivoice")

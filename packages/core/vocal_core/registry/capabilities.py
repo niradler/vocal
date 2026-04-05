@@ -280,6 +280,14 @@ def infer_model_capabilities(  # noqa: C901
             inferred_requires_gpu = overrides.requires_gpu if overrides.requires_gpu is not None else True
             inferred_supports_voice_list = overrides.supports_voice_list if overrides.supports_voice_list is not None else True
             inferred_voice_mode = overrides.voice_mode or "voice_id"
+        elif backend == "omnivoice":
+            inferred_requires_gpu = overrides.requires_gpu if overrides.requires_gpu is not None else True
+            inferred_supports_voice_clone = overrides.supports_voice_clone if overrides.supports_voice_clone is not None else True
+            inferred_supports_voice_design = overrides.supports_voice_design if overrides.supports_voice_design is not None else True
+            inferred_clone_mode = overrides.clone_mode or "reference_audio"
+            inferred_voice_mode = overrides.voice_mode or "instruction"
+            inferred_min_seconds = overrides.reference_audio_min_seconds if overrides.reference_audio_min_seconds is not None else 3.0
+            inferred_max_seconds = overrides.reference_audio_max_seconds if overrides.reference_audio_max_seconds is not None else 30.0
 
     return {
         "supports_streaming": inferred_supports_streaming,

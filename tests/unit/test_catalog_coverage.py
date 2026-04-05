@@ -117,7 +117,7 @@ def test_dia_models_present():
 
 def test_tts_models_have_task_tts():
     data = _load_catalog()
-    tts_backends = {"kokoro", "faster_qwen3_tts", "piper", "chatterbox", "xtts", "fish_speech", "orpheus", "dia"}
+    tts_backends = {"kokoro", "faster_qwen3_tts", "piper", "chatterbox", "xtts", "fish_speech", "orpheus", "dia", "omnivoice"}
     for m in data["models"]:
         if m.get("backend") in tts_backends:
             assert m.get("task") == "tts", f"Model {m['id']} has wrong task"
