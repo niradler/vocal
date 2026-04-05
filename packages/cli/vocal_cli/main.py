@@ -969,7 +969,9 @@ def _print_output_devices_table() -> None:
 @app.command()
 def chat(
     model: str = typer.Option(vocal_settings.STT_DEFAULT_MODEL, "--model", "-m", help="STT model to use"),
-    models: bool = typer.Option(False, "--models", help="Interactively select from downloaded STT models"),
+    models: bool = typer.Option(False, "--models", help="Interactively select from downloaded STT and TTS models"),
+    tts_model: str = typer.Option(vocal_settings.TTS_DEFAULT_MODEL, "--tts-model", help="TTS model to use for voice responses"),
+    tts_voice: str | None = typer.Option(None, "--tts-voice", help="TTS voice ID or instruction (model-specific)"),
     language: str | None = typer.Option(None, "--language", "-l", help="Language code (e.g. 'en'). Auto-detected if omitted."),
     device: str | None = typer.Option(None, "--device", "-d", help="Input device index or name (use --devices to pick interactively)"),
     output_device: str | None = typer.Option(None, "--output-device", "-o", help="Output device index or name (run `vocal devices --output` to list)"),
@@ -994,6 +996,10 @@ def chat(
         if selected_model is None:
             raise typer.Exit(1)
         model = selected_model
+        selected_tts = _model_wizard(api_url, task="tts")
+        if selected_tts is None:
+            raise typer.Exit(1)
+        tts_model = selected_tts
     try:
         device_idx = _resolve_device(device)
         output_device_idx = _resolve_output_device(output_device)
@@ -1007,11 +1013,11 @@ def chat(
     device_label = f"[dim]{active_device['name']}[/dim]"
     threshold_hint = f"  vad=[cyan]{silence_threshold:.0f}[/cyan]" if silence_threshold is not None else ""
 
-    console.print(f"[green]Voice chat started[/green] model=[cyan]{model}[/cyan] device={device_label}{threshold_hint}  Ctrl+C to stop\n")
+    console.print(f"[green]Voice chat started[/green] stt=[cyan]{model}[/cyan] tts=[cyan]{tts_model}[/cyan] device={device_label}{threshold_hint}  Ctrl+C to stop\n")
     console.print("[dim]Speak — I'll transcribe, think, and respond with audio.[/dim]\n")
 
     try:
-        asyncio.run(_chat_async(ws_url, device_idx, output_device_idx, model, language, system_prompt, silence_threshold, verbose))
+        asyncio.run(_chat_async(ws_url, device_idx, output_device_idx, model, language, system_prompt, silence_threshold, verbose, tts_model=tts_model, tts_voice=tts_voice))
     except KeyboardInterrupt:
         console.print("\n[yellow]Stopped.[/yellow]")
     except Exception as e:
@@ -1170,16 +1176,20 @@ async def _chat_receiver(ws, output_device_idx: int | None, verbose: bool, loop:
             console.print(f"\n[red]error:[/red] {event.get('error', {}).get('message', 'unknown')}")
 
 
-def _build_chat_session_cfg(model: str, language: str | None, system_prompt: str, vad_threshold: float | None) -> dict:
+def _build_chat_session_cfg(model: str, language: str | None, system_prompt: str, vad_threshold: float | None, tts_model: str | None = None, tts_voice: str | None = None) -> dict:
     cfg: dict = {"type": "realtime", "model": model, "input_sample_rate": _SAMPLE_RATE, "system_prompt": system_prompt}
     if language:
         cfg["language"] = language
     if vad_threshold is not None:
         cfg["turn_detection"] = {"threshold": vad_threshold / 32768.0}
+    if tts_model:
+        cfg["tts_model"] = tts_model
+    if tts_voice:
+        cfg["tts_voice"] = tts_voice
     return cfg
 
 
-async def _chat_async(ws_url: str, device_idx: int | None, output_device_idx: int | None, model: str, language: str | None, system_prompt: str, vad_threshold: float | None, verbose: bool) -> None:
+async def _chat_async(ws_url: str, device_idx: int | None, output_device_idx: int | None, model: str, language: str | None, system_prompt: str, vad_threshold: float | None, verbose: bool, tts_model: str | None = None, tts_voice: str | None = None) -> None:
     audio_q: queue.SimpleQueue = queue.SimpleQueue()
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
@@ -1206,7 +1216,7 @@ async def _chat_async(ws_url: str, device_idx: int | None, output_device_idx: in
     async with websockets.connect(f"{ws_url}/v1/realtime", open_timeout=10) as ws:
         await asyncio.wait_for(ws.recv(), timeout=5.0)
 
-        session_cfg = _build_chat_session_cfg(model, language, system_prompt, vad_threshold)
+        session_cfg = _build_chat_session_cfg(model, language, system_prompt, vad_threshold, tts_model=tts_model, tts_voice=tts_voice)
         await ws.send(json.dumps({"type": "session.update", "session": session_cfg}))
         await asyncio.wait_for(ws.recv(), timeout=5.0)
 
