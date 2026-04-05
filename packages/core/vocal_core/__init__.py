@@ -18,7 +18,7 @@ from .registry import (
     format_bytes,
 )
 
-__version__ = "0.3.7"
+__version__ = "0.3.8"
 
 __all__ = [
     "ModelRegistry",
