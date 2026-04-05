@@ -87,22 +87,8 @@ cd packages/sdk  && uv run python -m build && cd ../..
 cd packages/cli  && uv run python -m build && cd ../..
 uv run python -m build   # root vocal-ai meta-package
 
-# Publish in order (core first, meta-package last)
-uv run twine upload packages/core/dist/*
-uv run twine upload packages/api/dist/*
-uv run twine upload packages/sdk/dist/*
-uv run twine upload packages/cli/dist/*
-uv run twine upload dist/*
-```
-
-**PyPI credentials:**
-- Username: `__token__`
-- Password: Your PyPI API token from https://pypi.org/manage/account/token/
-
-Set as env vars to avoid repeated prompts:
-```bash
-export TWINE_USERNAME=__token__
-export TWINE_PASSWORD=pypi-...
+# Publish all (token from ~/.pypirc)
+UV_PUBLISH_TOKEN=pypi-... uv publish dist/*0.3.8*
 ```
 
 ## Post-release
