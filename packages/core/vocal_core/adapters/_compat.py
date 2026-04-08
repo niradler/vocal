@@ -137,6 +137,72 @@ def _shim_torchcodec_stub() -> None:
         )
 
 
+def _shim_qwen25_omni_talker() -> None:
+    """Fix Qwen2.5-Omni talker positional arg mismatch with transformers 5.x.
+
+    The talker's ``prepare_inputs_for_generation`` calls ``super()`` with
+    positional args that mapped to 4.x's signature. In 5.x,
+    ``next_sequence_length`` was inserted as the 2nd positional arg, so
+    ``past_key_values`` lands in the wrong slot. This patch rewrites the
+    super call to use keyword args.
+    """
+    try:
+        from transformers.models.qwen2_5_omni.modeling_qwen2_5_omni import Qwen2_5OmniTalkerForConditionalGeneration as _Talker
+    except ImportError:
+        return
+
+    if getattr(_Talker.prepare_inputs_for_generation, "_vocal_patched", False):
+        return
+
+    _orig = _Talker.prepare_inputs_for_generation
+
+    def _patched_prepare(
+        self,
+        input_ids,
+        input_text_ids=None,
+        past_key_values=None,
+        attention_mask=None,
+        inputs_embeds=None,
+        thinker_reply_part=None,
+        cache_position=None,
+        position_ids=None,
+        use_cache=True,
+        pixel_values=None,
+        pixel_values_videos=None,
+        image_grid_thw=None,
+        video_grid_thw=None,
+        input_audio_features=None,
+        audio_feature_attention_mask=None,
+        audio_feature_lengths=None,
+        use_audio_in_video=False,
+        video_second_per_grid=None,
+        **kwargs,
+    ):
+        # Call super with keyword args to avoid positional mismatch
+        model_inputs = super(_Talker, self).prepare_inputs_for_generation(
+            input_ids,
+            past_key_values=past_key_values,
+            attention_mask=attention_mask,
+            inputs_embeds=inputs_embeds,
+            cache_position=cache_position,
+            use_cache=use_cache,
+            thinker_reply_part=thinker_reply_part,
+            input_text_ids=input_text_ids,
+            image_grid_thw=image_grid_thw,
+            video_grid_thw=video_grid_thw,
+            use_audio_in_video=use_audio_in_video,
+            audio_feature_lengths=audio_feature_lengths,
+            video_second_per_grid=video_second_per_grid,
+            **kwargs,
+        )
+        model_inputs["position_ids"] = None
+        return model_inputs
+
+    _patched_prepare._vocal_patched = True
+    _Talker.prepare_inputs_for_generation = _patched_prepare
+    logger.debug("Patched Qwen2_5OmniTalkerForConditionalGeneration.prepare_inputs_for_generation")
+
+
 def apply_transformers_shims() -> None:
     """Patch transformers 5.x removals that qwen_asr / qwen_tts depend on.
 
@@ -153,7 +219,7 @@ def apply_transformers_shims() -> None:
     except ImportError:
         return
 
-    for shim_fn in (_shim_check_model_inputs, _shim_rope_init_default, _shim_fix_mistral_regex, _shim_torchcodec_stub):
+    for shim_fn in (_shim_check_model_inputs, _shim_rope_init_default, _shim_fix_mistral_regex, _shim_torchcodec_stub, _shim_qwen25_omni_talker):
         try:
             shim_fn()
         except Exception as exc:

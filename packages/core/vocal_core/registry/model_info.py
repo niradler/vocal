@@ -32,6 +32,8 @@ class ModelBackend(str, Enum):
     VOXTRAL_STT = "voxtral_stt"
     VOXTRAL_TTS = "voxtral_tts"
     OMNIVOICE = "omnivoice"
+    QWEN3_OMNI_STT = "qwen3_omni_stt"
+    QWEN3_OMNI_TTS = "qwen3_omni_tts"
     CUSTOM = "custom"
 
 
