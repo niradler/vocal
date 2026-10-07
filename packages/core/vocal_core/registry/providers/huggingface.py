@@ -53,6 +53,10 @@ class HuggingFaceProvider(BaseProvider):
         "Qwen/Qwen3-TTS-12Hz-1.7B-Base": "qwen3-tts-1.7b",
         "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice": "qwen3-tts-0.6b-custom",
         "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice": "qwen3-tts-1.7b-custom",
+        "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign": "qwen3-tts-1.7b-design",
+        "Supertone/supertonic-3": "supertonic-3",
+        "openbmb/VoxCPM2": "voxcpm2",
+        "ResembleAI/chatterbox-multilingual-v3": "chatterbox-multilingual-v3",
         "fishaudio/fish-speech-1.5": "fish-speech",
         "coqui/XTTS-v2": "xtts-v2",
         "myshell-ai/MeloTTS-English": "melotts-en",
@@ -280,13 +284,14 @@ class HuggingFaceProvider(BaseProvider):
         if not local_path.exists():
             return False
 
-        if not (local_path / "config.json").exists():
-            return False
-
         all_files = [f for f in local_path.rglob("*") if f.is_file()]
 
         if any(".incomplete" in f.name or f.suffix == ".lock" for f in all_files):
             return False
 
         has_weights = any(f.name in WEIGHT_NAMES or f.suffix in WEIGHT_SUFFIXES for f in all_files)
-        return has_weights
+        if not has_weights:
+            return False
+        if (local_path / "config.json").exists():
+            return True
+        return any(f.suffix == ".onnx" for f in all_files)

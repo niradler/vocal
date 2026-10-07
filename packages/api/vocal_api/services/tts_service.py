@@ -9,6 +9,8 @@ from vocal_core.adapters.tts import (
     FASTER_QWEN3_TTS_AVAILABLE,
     KOKORO_AVAILABLE,
     OMNIVOICE_AVAILABLE,
+    SUPERTONIC_AVAILABLE,
+    VOXCPM_AVAILABLE,
     VOXTRAL_TTS_AVAILABLE,
     ChatterboxTTSAdapter,
     FasterQwen3TTSAdapter,
@@ -16,11 +18,13 @@ from vocal_core.adapters.tts import (
     OmniVoiceTTSAdapter,
     PiperTTSAdapter,
     SimpleTTSAdapter,
+    SupertonicTTSAdapter,
     TTSAdapter,
     TTSCapabilities,
     TTSResult,
     Voice,
     VoiceCloneRequest,
+    VoxCPMTTSAdapter,
     VoxtralTTSAdapter,
 )
 from vocal_core.config import optional_dependency_install_hint
@@ -290,4 +294,12 @@ class TTSService:
             if not OMNIVOICE_AVAILABLE:
                 raise ImportError(optional_dependency_install_hint("omnivoice"))
             return OmniVoiceTTSAdapter()
-        raise ValueError(f"Unsupported TTS backend: '{backend}'. Supported backends: kokoro, faster_qwen3_tts, piper, chatterbox, voxtral_tts, omnivoice")
+        if backend == "supertonic":
+            if not SUPERTONIC_AVAILABLE:
+                raise ImportError(optional_dependency_install_hint("supertonic", "supertonic==1.3.1"))
+            return SupertonicTTSAdapter()
+        if backend == "voxcpm":
+            if not VOXCPM_AVAILABLE:
+                raise ImportError(optional_dependency_install_hint("voxcpm", "voxcpm"))
+            return VoxCPMTTSAdapter()
+        raise ValueError(f"Unsupported TTS backend: '{backend}'. Supported backends: kokoro, faster_qwen3_tts, piper, chatterbox, voxtral_tts, omnivoice, supertonic, voxcpm")
