@@ -22,6 +22,8 @@ def test_model_backend_values():
     assert ModelBackend.FISH_SPEECH == "fish_speech"
     assert ModelBackend.ORPHEUS == "orpheus"
     assert ModelBackend.DIA == "dia"
+    assert ModelBackend.SUPERTONIC == "supertonic"
+    assert ModelBackend.VOXCPM == "voxcpm"
 
 
 def test_model_task_values():
@@ -232,6 +234,43 @@ def test_infer_xtts_capabilities():
     )
     assert capabilities["supports_voice_clone"] is True
     assert capabilities["clone_mode"] == "reference_audio"
+
+
+def test_infer_qwen_voice_design_capabilities():
+    capabilities = infer_model_capabilities(
+        task="tts",
+        backend="faster_qwen3_tts",
+        model_id="Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+    )
+    assert capabilities["supports_voice_design"] is True
+    assert capabilities["supports_voice_clone"] is False
+    assert capabilities["voice_mode"] == "instruction"
+    assert capabilities["requires_gpu"] is True
+
+
+def test_infer_supertonic_capabilities():
+    capabilities = infer_model_capabilities(
+        task="tts",
+        backend="supertonic",
+        model_id="Supertone/supertonic-3",
+    )
+    assert capabilities["supports_voice_list"] is True
+    assert capabilities["supports_voice_clone"] is False
+    assert capabilities["requires_gpu"] is False
+    assert capabilities["voice_mode"] == "voice_id"
+
+
+def test_infer_voxcpm_capabilities():
+    capabilities = infer_model_capabilities(
+        task="tts",
+        backend="voxcpm",
+        model_id="openbmb/VoxCPM2",
+    )
+    assert capabilities["supports_voice_clone"] is True
+    assert capabilities["supports_voice_design"] is True
+    assert capabilities["clone_mode"] == "reference_audio"
+    assert capabilities["voice_mode"] == "instruction"
+    assert capabilities["requires_gpu"] is True
 
 
 def test_infer_dia_capabilities():

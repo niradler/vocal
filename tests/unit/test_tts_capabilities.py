@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from vocal_core.adapters.tts import (
@@ -8,7 +10,10 @@ from vocal_core.adapters.tts import (
     OmniVoiceTTSAdapter,
     PiperTTSAdapter,
     SimpleTTSAdapter,
+    SupertonicTTSAdapter,
+    VoxCPMTTSAdapter,
 )
+from vocal_core.adapters.tts.chatterbox import chatterbox_kind
 
 
 def test_simple_tts_capabilities():
@@ -83,6 +88,27 @@ async def test_chatterbox_synthesize_raises_when_not_loaded():
     adapter = ChatterboxTTSAdapter()
     with pytest.raises(RuntimeError, match="not loaded"):
         await adapter.synthesize("hello")
+
+
+def test_chatterbox_kind_selects_multilingual_v3():
+    assert chatterbox_kind(Path("ResembleAI--chatterbox-multilingual-v3")) == "multilingual_v3"
+    assert chatterbox_kind(Path("ResembleAI--chatterbox")) == "default"
+
+
+def test_supertonic_capabilities():
+    capabilities = SupertonicTTSAdapter().get_capabilities()
+    assert capabilities.supports_voice_list is True
+    assert capabilities.supports_voice_clone is False
+    assert capabilities.requires_gpu is False
+    assert capabilities.voice_mode == "voice_id"
+
+
+def test_voxcpm_capabilities():
+    capabilities = VoxCPMTTSAdapter().get_capabilities()
+    assert capabilities.supports_voice_clone is True
+    assert capabilities.supports_voice_design is True
+    assert capabilities.voice_mode == "instruction"
+    assert capabilities.requires_gpu is True
 
 
 def test_omnivoice_capabilities():

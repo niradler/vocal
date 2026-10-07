@@ -66,6 +66,10 @@ def test_all_catalog_backends_are_known_enum_values():
         "canary-qwen",
         "chatterbox",
         "chatterbox-turbo",
+        "chatterbox-multilingual-v3",
+        "qwen3-tts-1.7b-design",
+        "supertonic-3",
+        "voxcpm2",
         "xtts-v2",
         "fish-speech",
         "orpheus-3b",
@@ -117,10 +121,31 @@ def test_dia_models_present():
 
 def test_tts_models_have_task_tts():
     data = _load_catalog()
-    tts_backends = {"kokoro", "faster_qwen3_tts", "piper", "chatterbox", "xtts", "fish_speech", "orpheus", "dia", "omnivoice"}
+    tts_backends = {"kokoro", "faster_qwen3_tts", "piper", "chatterbox", "xtts", "fish_speech", "orpheus", "dia", "omnivoice", "supertonic", "voxcpm"}
     for m in data["models"]:
         if m.get("backend") in tts_backends:
             assert m.get("task") == "tts", f"Model {m['id']} has wrong task"
+
+
+@pytest.mark.asyncio
+async def test_onnx_directory_without_config_json_verifies(tmp_path):
+    from vocal_core.registry.providers.huggingface import HuggingFaceProvider
+
+    onnx_dir = tmp_path / "onnx"
+    onnx_dir.mkdir()
+    (onnx_dir / "vocoder.onnx").write_bytes(b"onnx")
+    provider = HuggingFaceProvider()
+    assert await provider.verify_model("Supertone/supertonic-3", tmp_path) is True
+
+
+@pytest.mark.asyncio
+async def test_incomplete_download_does_not_verify(tmp_path):
+    from vocal_core.registry.providers.huggingface import HuggingFaceProvider
+
+    (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "model.safetensors.incomplete").write_bytes(b"partial")
+    provider = HuggingFaceProvider()
+    assert await provider.verify_model("openbmb/VoxCPM2", tmp_path) is False
 
 
 def test_stt_models_have_task_stt():

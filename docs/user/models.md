@@ -110,8 +110,39 @@ Requires: `pip install "vocal-ai[qwen3-tts]"` + NVIDIA GPU
 |----------|------|--------|------|-----------|
 | `Qwen/Qwen3-TTS-12Hz-0.6B-Base` | ~2.3 GB | 0.6B | 8 GB+ | zh/en/ja/ko/de/fr/ru/pt/es/it |
 | `Qwen/Qwen3-TTS-12Hz-1.7B-Base` | ~4.2 GB | 1.7B | 8 GB+ | zh/en/ja/ko/de/fr/ru/pt/es/it |
+| `Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign` | ~4.2 GB | 1.7B | 8 GB+ | zh/en/ja/ko/de/fr/ru/pt/es/it |
 
-Custom-voice variants support [voice cloning](getting-started.md) from a reference audio recording.
+Base models clone a voice from reference audio. VoiceDesign creates a voice from a text description passed as `voice`. Custom-voice models use preset speaker ids.
+
+### Chatterbox Multilingual V3
+
+Requires: `pip install "vocal-ai[chatterbox]"`
+
+| Model ID | Size | Params | VRAM | Languages |
+|----------|------|--------|------|-----------|
+| `ResembleAI/chatterbox-multilingual-v3` | ~1 GB | 0.5B | 4 GB+ | 23 languages |
+
+Zero-shot cloning from reference audio. Pass `language` as an ISO code such as `en`, `zh`, or `ja`.
+
+### Supertonic 3 (CPU)
+
+Requires: `pip install "vocal-ai[supertonic]"`
+
+| Model ID | Size | Params | VRAM | Languages |
+|----------|------|--------|------|-----------|
+| `Supertone/supertonic-3` | ~400 MB | 99M | CPU | 31 languages |
+
+ONNX, so it does not use the GPU. Preset voices are `M1`–`M5` and `F1`–`F5`.
+
+### VoxCPM2 (CUDA)
+
+Requires: `pip install "vocal-ai[voxcpm]"` + NVIDIA GPU
+
+| Model ID | Size | Params | VRAM | Languages |
+|----------|------|--------|------|-----------|
+| `openbmb/VoxCPM2` | ~4 GB | 2B | 8 GB+ | 30 languages |
+
+48 kHz output. Pass a voice description as `voice`, or clone from reference audio.
 
 ### Voxtral-4B-TTS (CUDA + vLLM required)
 

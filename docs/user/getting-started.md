@@ -65,7 +65,10 @@ Optional TTS/STT backends are installed as extras:
 ```bash
 pip install "vocal-ai[kokoro]"     # Kokoro-82M neural TTS (CPU/GPU, 30+ voices)
 pip install "vocal-ai[piper]"      # Piper TTS (offline, fast, many languages)
-pip install "vocal-ai[qwen3-tts]"  # Qwen3-TTS 0.6B/1.7B (CUDA required)
+pip install "vocal-ai[qwen3-tts]"  # Qwen3-TTS 0.6B/1.7B, including VoiceDesign (CUDA required)
+pip install "vocal-ai[chatterbox]" # Chatterbox English and Multilingual V3
+pip install "vocal-ai[supertonic]" # Supertonic 3 ONNX TTS (CPU, 31 languages)
+pip install "vocal-ai[voxcpm]"     # VoxCPM2 (CUDA, voice design and cloning)
 
 # Or use uvx for one-off runs:
 uvx --from "vocal-ai[kokoro]" vocal serve
