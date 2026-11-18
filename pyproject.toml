@@ -105,8 +105,11 @@ override-dependencies = [
     "torchcodec>=0.17.0",
     "aiofiles>=25.1.0",
     "pydantic>=2.14.3",
+    "pillow>=13.0.0",
+    "starlette>=1.10.0",
     "websockets>=17.4",
-    "setuptools>=70.0.0,<85",
+    # setuptools 82 removed pkg_resources, which perth (chatterbox's watermarker) imports at runtime.
+    "setuptools>=70.0.0,<82",
     "safetensors>=0.8.0",
 ]
 
@@ -145,7 +148,7 @@ dev = [
     "mistral-common>=1.13.1",
     "omnivoice>=0.2.1",
     "ruff>=0.17.5",
-    "setuptools>=70.0.0,<85",
+    "setuptools>=70.0.0,<82",
 
     "websockets>=17.4",
     "whisperx>=3.8.6",

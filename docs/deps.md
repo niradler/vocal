@@ -42,7 +42,9 @@ Located in root `pyproject.toml` under `[tool.uv] override-dependencies`. These 
 | `ctranslate2>=4.9.0` | faster-whisper 1.2.x requires 4.9+ (`av.open`/quantization API changes) |
 | `av>=17,<19` | faster-whisper calls `av.open(metadata_errors=...)`, which PyAV 19 removed |
 | `transformers>=5.22,<5.23` | 5.23 registers native `qwen3_tts`/`qwen3_asr` configs that break `faster-qwen3-tts`; 5.22.x is the newest working minor (see below) |
-| `setuptools>=70.0.0,<85` | setuptools 82 removed `pkg_resources`, needed by `perth`/chatterbox; 80.10.2 is installed |
+| `setuptools>=70.0.0,<82` | setuptools 82 removed `pkg_resources`, needed by `perth`/chatterbox; 81.0.0 keeps it (with a deprecation warning) |
+| `pillow>=13.0.0` | pillow 12.3 has open advisories; gradio caps it at `<13` but the adapter never uses gradio's image path |
+| `starlette>=1.10.0` | starlette 0.52 has open advisories; FastAPI declares `starlette>=0.46.0` with no upper bound, gradio's `<1.0` cap does not apply to Vocal's runtime |
 | `numpy>=2.4.3` | chatterbox-tts pins `numpy>=1.24,<1.26`; numpy 2.x is backward compatible |
 | `huggingface-hub>=2.4.0` | whisperx declares `huggingface-hub<1.0.0`; transformers 5.x needs hub 2.x |
 | `torch>=2.15.0` | chatterbox-tts hard-pins `torch==2.6.0`; 2.15.0+cu132 is tested |
@@ -94,7 +96,8 @@ url = "https://download.pytorch.org/whl/cu132"
 - **`torchaudio.save` requires torchcodec on Windows** — torchaudio uses torchcodec as its default backend. Torchcodec needs FFmpeg shared DLLs (`full-shared` build). The standard static FFmpeg build (e.g. essentials from gyan.dev) does not provide these DLLs. Fix: use `soundfile` for WAV output in adapters, and decode inputs with `soundfile` (+ an `ffmpeg` fallback for containers) instead of `transformers.audio_utils.load_audio`.
 
 ### setuptools (82.x)
-- **`pkg_resources` removed in setuptools 82.0.0** (February 2026). `pkg_resources` was part of setuptools for decades and used by many older packages at runtime. Fix: pin `setuptools>=70.0.0,<85` via override. This restores `pkg_resources` and fixes `perth` (used by chatterbox-tts for audio watermarking), which silently set `PerthImplicitWatermarker = None` on import failure, causing `'NoneType' object is not callable` at synthesis time.
+- **`pkg_resources` removed in setuptools 82.0.0** (February 2026). `pkg_resources` was part of setuptools for decades and used by many older packages at runtime. Fix: pin `setuptools>=70.0.0,<82` via override (81.0.0 ships `pkg_resources`, 82+ does not). This fixes `perth` (used by chatterbox-tts for audio watermarking), which silently sets `PerthImplicitWatermarker = None` on import failure, causing `'NoneType' object is not callable` at synthesis time.
+- The audit job therefore ignores `PYSEC-2026-3447` / `GHSA-xmj3-9gf7-h52w` (build-time `MANIFEST.in` Unicode issue), plus `PYSEC-2026-4217` in `fsspec` (RCE in `ReferenceFileSystem`, which Vocal never instantiates; the version is capped by `datasets`/NeMo). See `.github/workflows/ci.yml`.
 
 ### kokoro
 - Latest available: 0.9.4 — no update available
@@ -179,7 +182,7 @@ Quick reference for the next bulk upgrade. Follow the step-by-step in "How to Up
 
 | Area | What to watch for |
 |---|---|
-| `setuptools<81` override | Remove once `perth` (chatterbox dep) drops `pkg_resources` usage |
+| `setuptools<82` override | Remove once `perth` (chatterbox dep) drops `pkg_resources` usage |
 | `chatterbox-tts` torch pin | Remove override once chatterbox unpins from `torch==2.6.0` |
 | `whisperx` huggingface-hub pin | Remove override once whisperx drops `huggingface-hub<1.0` constraint |
 | `gradio` pins (aiofiles, pydantic, websockets) | Remove overrides once chatterbox upgrades its gradio dep or drops it |
