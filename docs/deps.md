@@ -112,6 +112,10 @@ The override forces one transformers version for the whole environment, so some 
 
 `uv`'s override ignores these metadata conflicts at resolve time, so `make install-dev` installs a combination that cannot run in one process. Keep `qwen3-tts` out of the local environment while Qwen3-ASR is supported; its E2E tests skip with an explicit reason.
 
+### whisperx and torchvision
+
+`whisperx` 3.8.x pins `torch~=2.8.0` and `torchvision~=0.23.0`. With the workspace's torch 2.11 those wheels are ABI-incompatible (`operator torchvision::nms does not exist`), so the workspace override pins `torchvision>=0.26,<0.27` from the PyTorch index. That fix cannot ship in `packages/core` metadata: `pip install vocal-ai[whisperx]` would then fail to resolve against whisperx's own `torchvision~=0.23.0` pin. Install whisperx with the workspace (`uv sync --extra whisperx`), which applies the override, or wait for an upstream release that supports torch 2.11.
+
 ### Patch Maintenance
 
 **These patches are fragile.** Each one compensates for a specific API break between transformers 5.x and qwen_asr/qwen_tts. On future upgrades:
@@ -124,7 +128,7 @@ The override forces one transformers version for the whole environment, so some 
 | Patch | File | What changed in transformers 5.x |
 |---|---|---|
 | `check_model_inputs` wrapped to accept both `@decorator` and `@decorator()` use | `_compat.py` | Decorator was removed, and the 5.x replacement requires the function positionally |
-| `create_causal_mask` wrapped to accept `input_embeds=` / ignore `cache_position` | `_compat.py` | 5.2 renamed the keyword to `inputs_embeds`, 5.12 dropped `cache_position` |
+| `create_causal_mask` wrapped to accept `input_embeds=`, drop or synthesize `cache_position` | `_compat.py` | 5.2 renamed the keyword to `inputs_embeds`; 5.3.x requires `cache_position` (4.x callers omit it); 5.12 removed it |
 | `PretrainedConfig.validate_layer_type` added | `_compat.py` | Introduced in transformers 5.4; `qwen_tts` calls it from its talker config while loading |
 | `Qwen3ASRThinkerForConditionalGeneration.prepare_inputs_for_generation` wrapped | `transformers_adapter.py` | 5.9 stopped passing `cache_position` on prefill, but `qwen_asr` subscripts it |
 | `Qwen3ASRConfig.get_text_config` guarded during init | `transformers_adapter.py` | 5.9 validates token ids before `thinker_config` is assigned |

@@ -127,6 +127,10 @@ class TTSService:
 
         adapter = await self._get_or_create_adapter(model_id, model_path, model_info.backend.value)
         self.last_used[model_id] = time.time()
+        if voice:
+            # Reject unknown voices before synthesis (issue #13): otherwise the
+            # backend fails deep inside generation and the caller sees a 500.
+            adapter.validate_voice(voice)
 
         return await adapter.synthesize(text=text, voice=voice, speed=speed, output_format=output_format, **extra)
 
@@ -211,6 +215,9 @@ class TTSService:
 
         adapter = await self._get_or_create_adapter(model_id, model_path, model_info.backend.value)
         self.last_used[model_id] = time.time()
+        if voice:
+            # Fail with ValueError (-> 400) before any audio is generated.
+            adapter.validate_voice(voice)
 
         async for chunk in adapter.synthesize_stream(text=text, voice=voice, speed=speed, output_format=output_format):
             yield chunk

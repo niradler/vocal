@@ -122,8 +122,50 @@ def test_trailing_silence_is_trimmed_but_a_tail_remains():
 
     # 400 ms silence budget, keep at most 200 ms of it (one frame of rounding).
     assert stopped.audio_ms <= 31 * FRAME_MS + 200 + FRAME_MS
-    assert len(gate.utterance_pcm) == stopped.audio_ms * 2 * SR // 1000
+    pcm = gate.take_utterance()
+    assert len(pcm) == stopped.audio_ms * 2 * SR // 1000
     assert stopped.audio_ms >= 31 * FRAME_MS
+
+
+def test_commit_and_onset_in_one_chunk_keeps_both_turns():
+    """A big chunk can close one turn and open the next; neither may be lost."""
+    # 31 frames of speech, 20 of silence (commits), then speech again.
+    pattern = [0.9] * 31 + [0.0] * 20 + [0.9] * 31
+    gate = StreamingVADGate(scripted(pattern), onset_ms=180, silence_ms=320, preroll_ms=160)
+    chunk = FRAME * len(pattern)
+
+    events = gate.feed(chunk)
+
+    kinds = [event.kind for event in events]
+    assert kinds == ["speech_started", "speech_stopped", "speech_started"]
+    first = gate.take_utterance()
+    assert len(first) >= 31 * FRAME_MS * 2 * SR // 1000
+    # The new turn is still being collected, not mixed into the committed one.
+    assert gate.is_speaking is True
+    assert len(gate.utterance_pcm) < len(first) + 31 * FRAME_MS * 2 * SR // 1000
+
+
+def test_flush_includes_pending_sub_frame_audio():
+    gate = StreamingVADGate(scripted([], default=0.9), onset_ms=32, silence_ms=1000)
+    chunk = FRAME * 10
+    gate.feed(chunk)
+    # 700 bytes is shorter than a frame, so it stays pending.
+    assert gate.feed(b"\x01\x00" * 350) == []
+
+    events = gate.flush()
+    assert [event.kind for event in events] == ["speech_stopped"]
+    pcm = gate.take_utterance()
+    # The sub-frame tail must survive into the utterance (rounding in audio_ms).
+    assert pcm.endswith(b"\x01\x00" * 350)
+    assert len(pcm) >= len(chunk) + 700
+
+
+def test_configure_preroll_keeps_constructor_invariants():
+    gate = StreamingVADGate(scripted([], default=0.9), onset_ms=180, min_speech_ms=180)
+    gate.configure(preroll_ms=0)
+    assert gate._preroll_frames == 0
+    gate.configure(onset_ms=0)
+    assert gate.onset_ms == 180  # never below min_speech_ms
 
 
 def test_flush_closes_open_turn():

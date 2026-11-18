@@ -42,6 +42,17 @@ class TranscriptionService:
         self.last_used: dict[str, float] = {}
         self.keep_alive_seconds = keep_alive_seconds
         self._cleanup_task = None
+        # One loader per model (concurrent first requests must not double-load)
+        # and one inference lock per model: the adapters hold a single model
+        # instance, and transformers/qwen_asr generate() is not re-entrant.
+        self._load_locks: dict[str, asyncio.Lock] = {}
+        self._inference_locks: dict[str, asyncio.Lock] = {}
+
+    def _load_lock(self, model_id: str) -> asyncio.Lock:
+        return self._load_locks.setdefault(model_id, asyncio.Lock())
+
+    def _inference_lock(self, model_id: str) -> asyncio.Lock:
+        return self._inference_locks.setdefault(model_id, asyncio.Lock())
 
     async def start_cleanup_task(self):
         """Start background task to cleanup unused models"""
@@ -57,9 +68,12 @@ class TranscriptionService:
                 models_to_unload = [m for m, t in self.last_used.items() if current_time - t > self.keep_alive_seconds]
                 for model_id in models_to_unload:
                     if model_id in self.adapters:
-                        await self.adapters[model_id].unload_model()
-                        del self.adapters[model_id]
-                        del self.last_used[model_id]
+                        # Never unload while a request is decoding.
+                        async with self._load_lock(model_id), self._inference_lock(model_id):
+                            adapter = self.adapters.pop(model_id, None)
+                            self.last_used.pop(model_id, None)
+                            if adapter is not None:
+                                await adapter.unload_model()
             except Exception:
                 pass
 
@@ -88,13 +102,14 @@ class TranscriptionService:
                 await f.write(content)
 
             word_timestamps = "word" in request.timestamp_granularities
-            result = await adapter.transcribe(
-                audio=temp_path,
-                language=request.language,
-                task="transcribe",
-                temperature=request.temperature,
-                word_timestamps=word_timestamps,
-            )
+            async with self._inference_lock(model_id):
+                result = await adapter.transcribe(
+                    audio=temp_path,
+                    language=request.language,
+                    task="transcribe",
+                    temperature=request.temperature,
+                    word_timestamps=word_timestamps,
+                )
             return self._convert_result(result)
         finally:
             if temp_path and Path(temp_path).exists():
@@ -121,7 +136,8 @@ class TranscriptionService:
             async with aiofiles.open(temp_path, "wb") as f:
                 await f.write(content)
 
-            result = await adapter.transcribe(audio=temp_path, task="translate")
+            async with self._inference_lock(model_id):
+                result = await adapter.transcribe(audio=temp_path, task="translate")
             return self._convert_result(result)
         finally:
             if temp_path and Path(temp_path).exists():
@@ -145,8 +161,9 @@ class TranscriptionService:
         adapter = await self._get_or_create_adapter(model_id, model_path, model_info.backend.value)
         self.last_used[model_id] = time.time()
 
-        async for seg in adapter.transcribe_stream(audio_path, language=language, task=task):
-            yield seg
+        async with self._inference_lock(model_id):
+            async for seg in adapter.transcribe_stream(audio_path, language=language, task=task):
+                yield seg
 
     async def transcribe_live_stream(
         self,
@@ -171,8 +188,9 @@ class TranscriptionService:
         adapter = await self._get_or_create_adapter(model_id, model_path, model_info.backend.value)
         self.last_used[model_id] = time.time()
 
-        async for seg in adapter.transcribe_live(audio_chunks, sample_rate=sample_rate, language=language):
-            yield seg
+        async with self._inference_lock(model_id):
+            async for seg in adapter.transcribe_live(audio_chunks, sample_rate=sample_rate, language=language):
+                yield seg
 
     def _create_adapter(self, backend: str) -> STTAdapter:
         """Instantiate the correct STT adapter for a given backend."""
@@ -198,11 +216,14 @@ class TranscriptionService:
 
     async def _get_or_create_adapter(self, model_id: str, model_path: Path, backend: str) -> STTAdapter:
         """Get or create adapter for model, dispatching by backend."""
-        if model_id not in self.adapters:
-            adapter = self._create_adapter(backend)
-            await adapter.load_model(model_path)
-            self.adapters[model_id] = adapter
-        return self.adapters[model_id]
+        if model_id in self.adapters:
+            return self.adapters[model_id]
+        async with self._load_lock(model_id):
+            if model_id not in self.adapters:
+                adapter = self._create_adapter(backend)
+                await adapter.load_model(model_path)
+                self.adapters[model_id] = adapter
+            return self.adapters[model_id]
 
     def _convert_result(self, result: TranscriptionResult) -> TranscriptionResponse:
         """Convert core TranscriptionResult to API TranscriptionResponse"""

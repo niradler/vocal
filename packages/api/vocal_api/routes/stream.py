@@ -166,19 +166,27 @@ async def _run_live_stream_loop(
     chunk_q: asyncio.Queue | None = None
     stream_task: asyncio.Task | None = None
 
-    while True:
-        data = await websocket.receive_bytes()
-        for boundary in gate.feed(data):
-            if boundary.kind == "speech_started" and chunk_q is None:
-                chunk_q = asyncio.Queue()
-                stream_task = asyncio.create_task(_live_stream_utterance(websocket, chunk_q, model, language, sample_rate, service))
-                stream_task.add_done_callback(lambda t: logger.error("Live stream task failed: %s", t.exception()) if not t.cancelled() and t.exception() else None)
-            elif boundary.kind == "speech_stopped" and chunk_q is not None:
-                await chunk_q.put(None)  # sentinel -> generator ends -> adapter finishes
-                chunk_q = None
-                gate.reset()
+    try:
+        while True:
+            data = await websocket.receive_bytes()
+            for boundary in gate.feed(data):
+                if boundary.kind == "speech_started" and chunk_q is None:
+                    chunk_q = asyncio.Queue()
+                    stream_task = asyncio.create_task(_live_stream_utterance(websocket, chunk_q, model, language, sample_rate, service))
+                    stream_task.add_done_callback(lambda t: logger.error("Live stream task failed: %s", t.exception()) if not t.cancelled() and t.exception() else None)
+                elif boundary.kind == "speech_stopped" and chunk_q is not None:
+                    await chunk_q.put(None)  # sentinel -> generator ends -> adapter finishes
+                    chunk_q = None
+                    gate.reset()
+            if chunk_q is not None:
+                await chunk_q.put(data)
+    finally:
+        # An interrupted utterance must not leave the adapter's generator
+        # blocked on the queue forever.
         if chunk_q is not None:
-            await chunk_q.put(data)
+            await chunk_q.put(None)
+        if stream_task is not None and not stream_task.done():
+            stream_task.cancel()
 
 
 async def _run_buffered_loop(  # noqa: C901
@@ -222,7 +230,6 @@ async def _run_buffered_loop(  # noqa: C901
                     partial_task = asyncio.create_task(_partial_loop(websocket, gate, model, language, task, sample_rate, service, state))
             elif boundary.kind == "speech_stopped":
                 pcm = gate.take_utterance()
-                gate.reset()
                 if partial_task is not None and not partial_task.done():
                     partial_task.cancel()
                 partial_task = None
@@ -241,7 +248,6 @@ async def _run_buffered_loop(  # noqa: C901
             if gate.is_active:
                 # Force-commit an open turn that the VAD refuses to close.
                 pcm = gate.take_utterance()
-                gate.reset()
                 if partial_task is not None and not partial_task.done():
                     partial_task.cancel()
                 partial_task = None

@@ -1269,7 +1269,10 @@ async def _chat_receiver(ws, output_device_idx: int | None, verbose: bool, loop:
         if etype == "response.output_audio.delta":
             if state.get("player") is None:
                 state["player"] = _StreamingPlayback(output_device_idx)
-        if "delta" in etype:
+        if etype in ("response.cancelled", "response.metrics"):
+            # Neither name contains "done"/"completed", so route them explicitly.
+            await _chat_handle_done(etype, event, state, verbose, loop, output_device_idx, playing)
+        elif "delta" in etype:
             await _chat_handle_delta(etype, event, state, verbose, playing, state.get("player"))
         elif "done" in etype or "completed" in etype:
             await _chat_handle_done(etype, event, state, verbose, loop, output_device_idx, playing)

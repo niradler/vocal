@@ -4,9 +4,9 @@ import asyncio
 import importlib.util
 import logging
 import os
-import re
 import struct
 import tempfile
+import threading
 import wave
 from collections.abc import AsyncGenerator
 from concurrent.futures import ThreadPoolExecutor
@@ -40,8 +40,6 @@ OPENAI_VOICE_ALIASES: dict[str, str] = {
     "nova": "af_nova",
     "shimmer": "af_sky",
 }
-
-_VOICE_ID_PATTERN = re.compile(r"^[a-z]{1,2}_[a-z0-9_]+$")
 
 
 def _as_float_numpy(audio) -> np.ndarray:
@@ -314,6 +312,13 @@ class KokoroTTSAdapter(TTSAdapter):
         loop = asyncio.get_running_loop()
         # (bytes | None for end-of-stream | Exception to re-raise)
         queue: asyncio.Queue = asyncio.Queue()
+        cancelled = threading.Event()
+
+        def _push(item) -> None:
+            try:
+                loop.call_soon_threadsafe(queue.put_nowait, item)
+            except RuntimeError:  # loop already closed (client went away)
+                pass
 
         def _run() -> None:
             try:
@@ -322,15 +327,17 @@ class KokoroTTSAdapter(TTSAdapter):
                 # Split on sentence boundaries as well as newlines so a single
                 # paragraph streams per sentence instead of one silent blob.
                 for _, _, audio_chunk in pipeline(text, voice=loaded_voice, speed=speed, split_pattern=r"\n+|(?<=[.!?])\s+"):
+                    if cancelled.is_set():
+                        return
                     samples = _as_float_numpy(audio_chunk)
                     if samples.size == 0:
                         continue
                     pcm_bytes = (samples * 32767).astype(np.int16).tobytes()
-                    loop.call_soon_threadsafe(queue.put_nowait, pcm_bytes)
+                    _push(pcm_bytes)
             except Exception as exc:  # surface thread failures instead of silence
-                loop.call_soon_threadsafe(queue.put_nowait, exc)
+                _push(exc)
             finally:
-                loop.call_soon_threadsafe(queue.put_nowait, None)
+                _push(None)
 
         if output_format == "wav":
             yield _wav_header_open_ended(KOKORO_SAMPLE_RATE)
@@ -347,7 +354,10 @@ class KokoroTTSAdapter(TTSAdapter):
                     raise chunk
                 yield chunk
         finally:
-            executor.shutdown(wait=False)
+            # A barge-in or a closed connection must stop synthesis instead of
+            # burning CPU for a sentence nobody will hear.
+            cancelled.set()
+            executor.shutdown(wait=False, cancel_futures=True)
 
     def _load_single_voice(self, voice_id: str) -> torch.Tensor | str:
         import torch
@@ -372,9 +382,6 @@ class KokoroTTSAdapter(TTSAdapter):
             if resolved in KOKORO_VOICE_DATA:
                 continue
             if self.model_path and (self.model_path / "voices" / f"{resolved}.pt").exists():
-                continue
-            # Kokoro can pull arbitrary voice ids from the Hub (af_bella, ...).
-            if _VOICE_ID_PATTERN.match(resolved):
                 continue
             valid = ", ".join(sorted(KOKORO_VOICE_DATA))
             raise ValueError(f"Unknown voice '{candidate}'. Available voices: {valid}")

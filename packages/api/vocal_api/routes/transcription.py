@@ -56,6 +56,16 @@ def _render_subtitles(result: TranscriptionResponse, fmt: TranscriptionFormat) -
 @router.post(
     "/transcriptions",
     response_model=TranscriptionResponse,
+    responses={
+        200: {
+            "description": "JSON, plain text or subtitles, depending on `response_format`",
+            "content": {
+                "application/json": {"schema": {"$ref": "#/components/schemas/TranscriptionResponse"}},
+                "text/plain": {"schema": {"type": "string"}},
+                "text/vtt": {"schema": {"type": "string"}},
+            },
+        }
+    },
     summary="Transcribe audio",
     description="Transcribe audio file to text using specified model",
 )

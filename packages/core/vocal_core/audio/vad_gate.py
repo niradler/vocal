@@ -90,6 +90,10 @@ class StreamingVADGate:
         self._preroll: deque[bytes] = deque(maxlen=self._preroll_frames or 1)
         self._onset_frames: list[bytes] = []
         self._utterance = bytearray()
+        # A single chunk can contain the end of one turn and the start of the
+        # next. Committed audio is queued here so the caller can still fetch it
+        # after the gate has begun collecting the following turn.
+        self._committed: deque[bytes] = deque()
         self._speech_ms = 0
         self._silence_ms = 0
         self._utterance_ms = 0
@@ -117,7 +121,13 @@ class StreamingVADGate:
         return bytes(self._utterance)
 
     def take_utterance(self) -> bytes:
-        """Return the utterance audio and clear it (call after speech_stopped)."""
+        """Return the oldest committed utterance, or the in-progress audio.
+
+        A chunk may close one turn and open the next; the committed audio is
+        queued at commit time so it cannot be overwritten by the new onset.
+        """
+        if self._committed:
+            return self._committed.popleft()
         pcm = bytes(self._utterance)
         self._utterance.clear()
         self._utterance_ms = 0
@@ -133,6 +143,7 @@ class StreamingVADGate:
         self._preroll.clear()
         self._onset_frames.clear()
         self._utterance.clear()
+        self._committed.clear()
         self._speech_ms = 0
         self._silence_ms = 0
         self._utterance_ms = 0
@@ -160,14 +171,17 @@ class StreamingVADGate:
             self.continue_threshold = self.threshold * 0.6
         if onset_ms is not None:
             self.onset_ms = max(0, int(onset_ms))
+            # Keep the same invariant as the constructor: a turn needs at
+            # least `min_speech_ms` of speech to open.
+            self.onset_ms = max(self.onset_ms, self.min_speech_ms)
         if silence_ms is not None:
             self.silence_ms = max(0, int(silence_ms))
         if min_speech_ms is not None:
             self.min_speech_ms = max(0, int(min_speech_ms))
             self.onset_ms = max(self.onset_ms, self.min_speech_ms)
         if preroll_ms is not None:
-            self._preroll_frames = max(1, int(round(int(preroll_ms) / self.frame_ms)))
-            self._preroll = deque(maxlen=self._preroll_frames)
+            self._preroll_frames = max(1, int(round(int(preroll_ms) / self.frame_ms))) if preroll_ms else 0
+            self._preroll = deque(maxlen=self._preroll_frames or 1)
         if commit_grace_ms is not None:
             self.commit_grace_ms = max(0, int(commit_grace_ms))
 
@@ -187,12 +201,18 @@ class StreamingVADGate:
         return events
 
     def flush(self) -> list[VADEvent]:
-        """Close an open turn at end-of-stream."""
+        """Close an open turn at end-of-stream.
+
+        Trailing sub-frame audio is folded into the utterance first; otherwise
+        ``take_utterance()`` would silently lose the last few milliseconds.
+        """
         if self._state == "idle":
             return []
-        self._state = "idle"
-        audio_ms = self._utterance_ms + len(self._pending) // 2 * 1000 // self.sample_rate
-        return [VADEvent("speech_stopped", audio_ms, self._last_probability)]
+        if self._pending:
+            self._utterance.extend(self._pending)
+            self._utterance_ms += len(self._pending) // 2 * 1000 // self.sample_rate
+            self._pending.clear()
+        return [self._commit(self._last_probability)]
 
     def _process_frame(self, frame: bytes) -> VADEvent | None:  # noqa: C901
         try:
@@ -259,14 +279,22 @@ class StreamingVADGate:
         return self._commit(probability)
 
     def _commit(self, probability: float) -> VADEvent:
-        """End the turn, trimming most of the hangover silence."""
+        """End the turn, trim most of the hangover silence, queue the audio."""
         self._state = "idle"
         keep_ms = min(self.silence_ms, 200)
         drop_bytes = max(0, int((self._silence_ms - keep_ms) / self.frame_ms) * self._frame_bytes)
         if drop_bytes and drop_bytes < len(self._utterance):
             del self._utterance[-drop_bytes:]
             self._utterance_ms -= int(drop_bytes / 2 / self.sample_rate * 1000)
-        return VADEvent("speech_stopped", self._utterance_ms, probability)
+        audio_ms = self._utterance_ms
+        if self._utterance:
+            self._committed.append(bytes(self._utterance))
+        self._utterance.clear()
+        self._utterance_ms = 0
+        self._speech_ms = 0
+        self._silence_ms = 0
+        self._grace_started_ms = 0
+        return VADEvent("speech_stopped", audio_ms, probability)
 
 
 class SyntheticVAD:

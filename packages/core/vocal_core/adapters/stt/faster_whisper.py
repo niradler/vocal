@@ -305,6 +305,13 @@ class FasterWhisperAdapter(STTAdapter):
 
         import numpy as np
 
+        if sample_rate and sample_rate != 16000:
+            # faster-whisper's array path assumes 16 kHz; resampling here keeps
+            # callers from having to remember it.
+            from vocal_core.audio.resample import resample_pcm16
+
+            pcm = resample_pcm16(pcm, sample_rate, 16000)
+
         audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
         loop = asyncio.get_running_loop()
         kwargs = {

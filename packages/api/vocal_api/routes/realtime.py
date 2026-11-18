@@ -60,6 +60,8 @@ class _Session:
     partial_task: asyncio.Task | None = None
     response_task: asyncio.Task | None = None
     response_cancel: asyncio.Event | None = None
+    turn_tasks: set = field(default_factory=set)
+    owner: int | None = None
     last_partial_text: str = ""
     last_stt_ms: float = 0.0
     manual_buffer: bytearray = field(default_factory=bytearray)
@@ -259,6 +261,11 @@ async def _stream_llm(session: _Session, cancel: asyncio.Event):
             headers={"Authorization": f"Bearer {vocal_settings.LLM_API_KEY}", "Content-Type": "application/json"},
             json={"model": vocal_settings.LLM_MODEL, "messages": messages, "stream": True},
         ) as resp:
+            if resp.status_code != 200:
+                body = (await resp.aread()).decode("utf-8", "replace")[:300]
+                logger.warning("LLM request failed (%s): %s", resp.status_code, body)
+                yield ""  # surface the failure as an empty (spoken) response
+                return
             async for line in resp.aiter_lines():
                 if cancel.is_set():
                     return
@@ -404,6 +411,9 @@ async def _run_voice_agent(  # noqa: C901
         timings.setdefault("tts_first_chunk_ms", -1)
         timings["ttfa_ms"] = timings["tts_first_chunk_ms"]
         timings["response_total_ms"] = round((time.perf_counter() - speech_end) * 1000, 1)
+        # `speech_end` is a process-relative perf_counter anchor, not useful (or
+        # meaningful) to clients, so keep it internal.
+        timings.pop("speech_end", None)
         await _emit(ws, session, "response.metrics", response_id=response_id, metrics=timings)
         await _emit(ws, session, "response.done", response={"id": response_id, "status": "completed"})
     except asyncio.CancelledError:
@@ -425,20 +435,25 @@ async def _process_utterance(  # noqa: C901
     tts_service,
     speech_end: float | None = None,
 ) -> None:
-    speech_end = speech_end if speech_end is not None else time.time()
+    speech_end = speech_end if speech_end is not None else time.perf_counter()
 
-    if session.partial_task is not None and not session.partial_task.done():
+    # Pin the partial loop that belongs to *this* turn: another utterance may
+    # already have replaced session.partial_task, and cancelling that one would
+    # kill the next turn's live transcript.
+    partial = session.partial_task
+    if partial is not None and not partial.done():
         # Let an in-flight decode finish rather than cancelling the thread mid
         # inference; the final pass would just contend for the same GPU.
         try:
-            await asyncio.wait_for(session.partial_task, timeout=2.0)
+            await asyncio.wait_for(partial, timeout=2.0)
         except (TimeoutError, asyncio.CancelledError):
-            session.partial_task.cancel()
+            partial.cancel()
         except Exception:
             pass
-        if not session.partial_task.done():
-            session.partial_task.cancel()
-    session.partial_task = None
+        if not partial.done():
+            partial.cancel()
+    if session.partial_task is partial:
+        session.partial_task = None
 
     if not await _emit(ws, session, "input_audio_buffer.committed", item_id=item_id, previous_item_id=None):
         return
@@ -555,9 +570,7 @@ async def _handle_audio_append(ws: WebSocket, session: _Session, event: dict, tr
     gate = session.gate
     if gate is None:
         return
-    turn_stopped = False
-    stop_pcm = b""
-    stop_item = ""
+    turn_stopped: list[tuple[str, bytes]] = []
     for boundary in gate.feed(pcm_bytes):
         if boundary.kind == "speech_started":
             if session.is_responding:
@@ -576,12 +589,11 @@ async def _handle_audio_append(ws: WebSocket, session: _Session, event: dict, tr
             if _PARTIAL_INTERVAL_S > 0 and (session.partial_task is None or session.partial_task.done()):
                 session.partial_task = asyncio.create_task(_partial_transcription_loop(ws, session, transcription_service))
         elif boundary.kind == "speech_stopped":
-            turn_stopped = True
-            # Snapshot and reset inline: the task may not run before the next
-            # microphone frames arrive, and they must not join this utterance.
+            # Snapshot inline: the task may not run before the next microphone
+            # frames arrive, and they must not join this utterance. The gate
+            # queues committed audio, so several stops in one chunk all survive.
             stop_item = session.current_item_id
-            stop_pcm = gate.take_utterance()
-            gate.reset()
+            turn_stopped.append((stop_item, gate.take_utterance()))
             session.manual_buffer.clear()
             await _emit(
                 ws,
@@ -591,9 +603,11 @@ async def _handle_audio_append(ws: WebSocket, session: _Session, event: dict, tr
                 item_id=stop_item,
             )
 
-    if turn_stopped:
+    for stop_item, stop_pcm in turn_stopped:
         # Run the turn as a task so microphone ingest keeps flowing.
-        asyncio.create_task(_process_utterance(ws, session, stop_pcm, stop_item, transcription_service, tts_service, time.time()))
+        task = asyncio.create_task(_process_utterance(ws, session, stop_pcm, stop_item, transcription_service, tts_service, time.perf_counter()))
+        session.turn_tasks.add(task)
+        task.add_done_callback(session.turn_tasks.discard)
 
 
 async def _dispatch_event(ws: WebSocket, session: _Session, event: dict, transcription_service, tts_service) -> None:
@@ -642,6 +656,17 @@ async def realtime_endpoint(  # noqa: C901
     resumed = bool(session_id and session_id in _session_store)
     if resumed and session_id is not None:
         session = _session_store[session_id]
+        if session.owner is not None:
+            # Another live socket owns this session; sharing the gate and its
+            # task set would corrupt both connections.
+            await _emit(
+                websocket,
+                session,
+                "error",
+                error={"code": "session_in_use", "message": "Session is already attached to another connection"},
+            )
+            await websocket.close()
+            return
         session.touch()
         logger.info("Resumed session %s", session.session_id)
     else:
@@ -649,6 +674,9 @@ async def realtime_endpoint(  # noqa: C901
         if model:
             session.model = model
         _session_store[session.session_id] = session
+
+    socket_key = id(websocket)
+    session.owner = socket_key
 
     transcription_service = get_transcription_service()
     tts_service = get_tts_service()
@@ -689,9 +717,12 @@ async def realtime_endpoint(  # noqa: C901
         logger.exception("Realtime WebSocket error")
         await _emit(websocket, session, "error", error={"code": "server_error", "message": "Internal server error"})
     finally:
-        for task in (session.partial_task, session.response_task, *session.tts_warm_tasks.values()):
+        if session.owner == socket_key:
+            session.owner = None
+        for task in (*session.turn_tasks, session.partial_task, session.response_task, *session.tts_warm_tasks.values()):
             if task is not None and not task.done():
                 task.cancel()
+        session.turn_tasks.clear()
         session.partial_task = None
         session.response_task = None
         session.tts_warm_tasks.clear()

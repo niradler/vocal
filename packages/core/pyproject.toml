@@ -20,6 +20,8 @@ classifiers = [
 ]
 dependencies = [
     "faster-whisper>=1.2.1",
+    # ctranslate2 < 4.7.1 ships CUDA kernels that fault on newer drivers.
+    "ctranslate2>=4.7.1",
     # av 19 dropped the `metadata_errors` kwarg faster-whisper 1.2.1 passes to
     # av.open(); without this pin a fresh install 500s on every transcription.
     "av>=14.0.0,<17.0.0",
