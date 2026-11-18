@@ -63,6 +63,25 @@ def _patch_static_layer() -> None:
         pass
 
 
+def _patch_mimi_deprecated_properties() -> None:
+    """Drop deprecated read-only properties that ``qwen_tts`` assigns.
+
+    transformers 5.x turned the old ``MimiModel`` attributes into read-only deprecated
+    properties (``upsample``, ``decoder_transformer``), but
+    ``Qwen3TTSTokenizerV2Encoder.__init__`` still does ``self.upsample = None`` ->
+    ``property 'upsample' ... has no setter``. Removing the class-level properties restores
+    plain instance-attribute assignment; the deprecated accessors are unused inside transformers.
+    """
+    try:
+        from transformers.models.mimi.modeling_mimi import MimiModel as _MimiModel
+    except (ImportError, AttributeError):
+        return
+
+    for name in ("upsample", "decoder_transformer"):
+        if isinstance(_MimiModel.__dict__.get(name), property):
+            delattr(_MimiModel, name)
+
+
 def _patch_dynamic_cache() -> None:
     try:
         from transformers.cache_utils import DynamicCache as _DC
@@ -90,6 +109,7 @@ def _apply_qwen3_patches() -> None:
     _patch_talker_config()
     _patch_tokenizers_backend()
     _patch_static_layer()
+    _patch_mimi_deprecated_properties()
     _patch_dynamic_cache()
 
     _QWEN3_PATCHES_APPLIED = True

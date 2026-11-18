@@ -42,6 +42,12 @@ class TestTTSSpeech:
         raw = client.get_httpx_client().post("/v1/audio/speech", json={"model": "pyttsx3", "input": ""})
         assert raw.status_code in (200, 400, 422)
 
+    def test_external_runtime_model_rejected_with_hint(self, client):
+        raw = client.get_httpx_client().post("/v1/audio/speech", json={"model": "fishaudio/drama-3", "input": "hello"})
+        assert raw.status_code in (400, 422, 500)
+        detail = str(raw.json())
+        assert "external inference engine" in detail
+
 
 class TestVoices:
     def test_list_voices_pyttsx3(self, client):

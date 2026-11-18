@@ -1,27 +1,24 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class ModelBackend(str, Enum):
+class ModelBackend(StrEnum):
     CHATTERBOX = "chatterbox"
     CTRANSLATE2 = "ctranslate2"
     CUSTOM = "custom"
-    DIA = "dia"
     FASTER_QWEN3_TTS = "faster_qwen3_tts"
     FASTER_WHISPER = "faster_whisper"
-    FISH_SPEECH = "fish_speech"
     KOKORO = "kokoro"
     NEMO = "nemo"
+    OMNIVOICE = "omnivoice"
     ONNX = "onnx"
-    ORPHEUS = "orpheus"
+    PHONON = "phonon"
     PIPER = "piper"
+    SUPERTONIC = "supertonic"
     TRANSFORMERS = "transformers"
-    WHISPERX = "whisperx"
+    VOXCPM = "voxcpm"
     VOXTRAL_STT = "voxtral_stt"
     VOXTRAL_TTS = "voxtral_tts"
-    OMNIVOICE = "omnivoice"
-    SUPERTONIC = "supertonic"
-    VOXCPM = "voxcpm"
-    XTTS = "xtts"
+    WHISPERX = "whisperx"
 
     def __str__(self) -> str:
         return str(self.value)

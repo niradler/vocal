@@ -56,7 +56,7 @@ install:
 
 install-dev:
 	@echo "Installing ALL optional backends for full local testing..."
-	uv sync --extra kokoro --extra qwen3-tts --extra nemo --extra whisperx --extra chatterbox --extra supertonic --extra voxcpm
+	uv sync --extra kokoro --extra qwen3-tts --extra nemo --extra whisperx --extra chatterbox --extra supertonic --extra voxcpm --extra phonon
 	@echo ""
 	@echo "✓ Full dev environment ready"
 	@echo "Run 'make test-unit' to verify"

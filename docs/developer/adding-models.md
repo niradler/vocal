@@ -25,7 +25,11 @@ If the model uses an **existing backend** (e.g. another HuggingFace Whisper vari
 }
 ```
 
-Valid `backend` values: `ctranslate2`, `transformers`, `piper`, `kokoro`, `qwen3-tts`, `simple`
+Valid `backend` values: `faster_whisper`, `whisperx`, `transformers`, `nemo`, `voxtral_stt`, `kokoro`, `faster_qwen3_tts`, `piper`, `chatterbox`, `omnivoice`, `supertonic`, `voxcpm`, `phonon`.
+
+Models that need an out-of-process engine (vLLM-Omni, SGLang-Omni, a vendored runtime) must also set `"runtime": "external"` plus a `"runtime_note"`. Never add a catalog entry whose `runtime` is `in_process` unless a working adapter exists — `tests/unit/test_catalog_coverage.py` enforces this.
+
+Every entry also needs `"license"` (SPDX id) and `"commercial_use"` (bool), and should set `"maintenance_status"` (`active`/`retired`/`deprecated`) when upstream stops maintaining it.
 
 After adding, verify:
 ```bash
@@ -61,7 +65,7 @@ class MySTTAdapter(STTAdapter):
     def _load_sync(self, model_path: Path, device: str) -> None:
         # Load your model here
         logger.info("Loading MySTT from %s on %s", model_path, device)
-        self.model = ...   # your model load
+        self.model = ...  # your model load
         self.model_path = model_path
 
     async def unload_model(self) -> None:
@@ -114,13 +118,14 @@ class ModelBackend(str, Enum):
 ```python
 from vocal_core.adapters.stt import MySTTAdapter
 
+
 def _create_adapter(self, model: ModelInfo) -> STTAdapter:
     match model.backend:
         case ModelBackend.CTRANSLATE2:
             return FasterWhisperAdapter()
         case ModelBackend.TRANSFORMERS:
             return TransformersSTTAdapter()
-        case ModelBackend.MY_BACKEND:         # ← add this
+        case ModelBackend.MY_BACKEND:  # ← add this
             return MySTTAdapter()
         case _:
             raise ValueError(f"Unsupported STT backend: {model.backend}")

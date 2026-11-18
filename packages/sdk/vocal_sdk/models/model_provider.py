@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class ModelProvider(str, Enum):
+class ModelProvider(StrEnum):
     CUSTOM = "custom"
     HUGGINGFACE = "huggingface"
     LOCAL = "local"

@@ -3,12 +3,13 @@ import time
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
-from vocal_core import ModelRegistry
+from vocal_core import ModelRegistry, assert_in_process_runtime
 from vocal_core.adapters.tts import (
     CHATTERBOX_AVAILABLE,
     FASTER_QWEN3_TTS_AVAILABLE,
     KOKORO_AVAILABLE,
     OMNIVOICE_AVAILABLE,
+    PHONON_AVAILABLE,
     SUPERTONIC_AVAILABLE,
     VOXCPM_AVAILABLE,
     VOXTRAL_TTS_AVAILABLE,
@@ -16,6 +17,7 @@ from vocal_core.adapters.tts import (
     FasterQwen3TTSAdapter,
     KokoroTTSAdapter,
     OmniVoiceTTSAdapter,
+    PhononTTSAdapter,
     PiperTTSAdapter,
     SimpleTTSAdapter,
     SupertonicTTSAdapter,
@@ -112,6 +114,8 @@ class TTSService:
         if model_info.task.value != "tts":
             raise ValueError(f"Model {model_id} is not a TTS model (task: {model_info.task})")
 
+        assert_in_process_runtime(model_info)
+
         model_path = self.registry.get_model_path(model_id)
 
         if not model_path:
@@ -141,6 +145,8 @@ class TTSService:
 
         if model_info.task.value != "tts":
             raise ValueError(f"Model {model_id} is not a TTS model (task: {model_info.task})")
+
+        assert_in_process_runtime(model_info)
 
         model_path = self.registry.get_model_path(model_id)
         if not model_path:
@@ -196,6 +202,8 @@ class TTSService:
 
         if model_info.task.value != "tts":
             raise ValueError(f"Model {model_id} is not a TTS model (task: {model_info.task})")
+
+        assert_in_process_runtime(model_info)
 
         model_path = self.registry.get_model_path(model_id)
         if not model_path:
@@ -302,4 +310,8 @@ class TTSService:
             if not VOXCPM_AVAILABLE:
                 raise ImportError(optional_dependency_install_hint("voxcpm", "voxcpm"))
             return VoxCPMTTSAdapter()
-        raise ValueError(f"Unsupported TTS backend: '{backend}'. Supported backends: kokoro, faster_qwen3_tts, piper, chatterbox, voxtral_tts, omnivoice, supertonic, voxcpm")
+        if backend == "phonon":
+            if not PHONON_AVAILABLE:
+                raise ImportError(optional_dependency_install_hint("phonon", "ptts"))
+            return PhononTTSAdapter()
+        raise ValueError(f"Unsupported TTS backend: '{backend}'. Supported backends: kokoro, faster_qwen3_tts, piper, chatterbox, voxtral_tts, omnivoice, supertonic, voxcpm, phonon")

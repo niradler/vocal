@@ -11,11 +11,42 @@ Usage:
 """
 
 import argparse
+import json
 import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.request
 from pathlib import Path
+
+
+def _normalize_binary_schemas(node):
+    """Rewrite ``contentMediaType: application/octet-stream`` to ``format: binary``.
+
+    FastAPI >= 0.16x renders ``UploadFile`` as a JSON-Schema-2020-12 ``contentMediaType``
+    string. openapi-python-client only treats ``format: binary`` as a file upload, so without
+    this rewrite every upload field (transcription, translation, voice clone) is generated as a
+    plain ``str`` and requests fail validation.
+    """
+    if isinstance(node, dict):
+        if node.get("contentMediaType") == "application/octet-stream" and node.get("type") == "string":
+            node.pop("contentMediaType", None)
+            node["format"] = "binary"
+        for value in node.values():
+            _normalize_binary_schemas(value)
+    elif isinstance(node, list):
+        for item in node:
+            _normalize_binary_schemas(item)
+    return node
+
+
+def fetch_and_normalize_spec(url: str, destination: Path) -> Path:
+    with urllib.request.urlopen(url, timeout=60) as response:
+        spec = json.loads(response.read().decode("utf-8"))
+    _normalize_binary_schemas(spec)
+    destination.write_text(json.dumps(spec, indent=2), encoding="utf-8")
+    return destination
+
 
 SDK_DIR = Path(__file__).parent.parent
 VOCAL_SDK_DIR = SDK_DIR / "vocal_sdk"
@@ -287,10 +318,14 @@ def main() -> None:
         source_flag, source_value = "--path", str(Path(args.path).resolve())
         print(f"Generating SDK from local file: {source_value}")
     else:
-        source_flag, source_value = "--url", args.url
-        print(f"Generating SDK from: {source_value}")
+        source_flag = "--path"
 
     with tempfile.TemporaryDirectory() as tmp:
+        if not args.path:
+            print(f"Fetching OpenAPI spec from: {args.url}")
+            normalized = fetch_and_normalize_spec(args.url, Path(tmp) / "openapi.json")
+            source_value = str(normalized)
+            shutil.copyfile(normalized, Path(__file__).parent.parent.parent.parent / "live_openapi.json")
         out_dir = Path(tmp) / "vocal_sdk"
         run_generator(source_flag, source_value, out_dir)
         sync_generated(out_dir)

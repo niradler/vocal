@@ -1,8 +1,7 @@
 """Shared compatibility shims for transformers 5.x API breaks.
 
 These monkey-patches bridge gaps between transformers 5.x and downstream
-packages (qwen_asr, faster_qwen3_tts, qwen_tts) that were written against
-transformers 4.x.  Each shim is guarded so it only applies when the target
+packages (faster_qwen3_tts, qwen_tts) that were written against transformers 4.x.  Each shim is guarded so it only applies when the target
 is actually missing — once upstream fixes land the shim becomes a no-op.
 
 See docs/deps.md "Runtime Patches" for the full table of what changed.
@@ -18,16 +17,23 @@ _shims_applied = False
 
 
 def _shim_check_model_inputs() -> None:
-    """Restore ``check_model_inputs`` decorator (removed in transformers 5.x)."""
+    """Make ``check_model_inputs`` tolerate both decorator call styles.
+
+    transformers 5.x turned the old decorator factory into ``check_model_inputs(func)``.
+    Downstream packages (qwen_tts) still write ``@check_model_inputs()``, which now raises
+    ``TypeError: missing 1 required positional argument: 'func'``.  Accept both forms and
+    return the wrapped callable unchanged - the decorator only forwarded defaults.
+    """
     import transformers.utils.generic as _tug
 
-    if not hasattr(_tug, "check_model_inputs"):
+    def _shim(func=None, **_kw):
+        if callable(func):
+            return func
+        return lambda inner: inner
 
-        def _shim(func=None, **kw):  # noqa: ARG001
-            return (lambda f: f) if func is None else func
-
-        _tug.check_model_inputs = _shim
-        logger.debug("Patched transformers.utils.generic.check_model_inputs")
+    _shim._vocal_patched = True
+    _tug.check_model_inputs = _shim
+    logger.debug("Patched transformers.utils.generic.check_model_inputs")
 
 
 def _shim_rope_init_default() -> None:
@@ -81,64 +87,8 @@ def _shim_fix_mistral_regex() -> None:
     logger.debug("Patched TokenizersBackend.__init__ (fix_mistral_regex)")
 
 
-def _shim_torchcodec_stub() -> None:
-    """Insert a ``torchcodec`` stub when the package is installed but broken.
-
-    On Windows without FFmpeg "full-shared" DLLs, ``torchcodec`` is importable
-    as a package but crashes at load time with ``RuntimeError``.  The
-    transformers ASR pipeline unconditionally does ``import torchcodec`` when
-    ``is_torchcodec_available()`` returns ``True`` (which only checks the
-    package exists, not that it loads).  This crashes voice-cloning flows
-    that auto-transcribe reference audio.
-
-    The stub satisfies the ``isinstance(x, torchcodec.decoders.AudioDecoder)``
-    guard so the pipeline falls through to the normal dict/array path.
-    """
-    import sys
-
-    # Check if torchcodec is already usable (fully loaded or already stubbed).
-    _existing = sys.modules.get("torchcodec")
-    if _existing is not None and hasattr(_existing, "decoders"):
-        return
-
-    # Remove any partially-loaded remnants from a prior failed import.
-    for key in [k for k in sys.modules if k == "torchcodec" or k.startswith("torchcodec.")]:
-        del sys.modules[key]
-
-    try:
-        import torchcodec  # noqa: F401
-    except ImportError:
-        return
-    except (RuntimeError, OSError) as exc:
-        import importlib.util
-        import types
-
-        # Clean up any new partial entries left by the failed import.
-        for key in [k for k in sys.modules if k == "torchcodec" or k.startswith("torchcodec.")]:
-            del sys.modules[key]
-
-        _stub = types.ModuleType("torchcodec")
-        _stub.__spec__ = importlib.util.spec_from_loader("torchcodec", loader=None)
-
-        _decoders = types.ModuleType("torchcodec.decoders")
-        _decoders.__spec__ = importlib.util.spec_from_loader("torchcodec.decoders", loader=None)
-        _decoders.AudioDecoder = type("AudioDecoder", (), {})
-        _stub.decoders = _decoders
-
-        sys.modules["torchcodec"] = _stub
-        sys.modules["torchcodec.decoders"] = _decoders
-        # Truncate the error — torchcodec dumps multi-KB tracebacks for
-        # every FFmpeg version it tries, which can fill subprocess PIPE
-        # buffers and hang the server.
-        short = str(exc).split("\n", 1)[0][:200]
-        logger.warning(
-            "torchcodec installed but broken (%s). Inserted stub; voice cloning uses standard audio path. Fix: install FFmpeg shared libs or pip uninstall torchcodec.",
-            short,
-        )
-
-
 def apply_transformers_shims() -> None:
-    """Patch transformers 5.x removals that qwen_asr / qwen_tts depend on.
+    """Patch transformers 5.x removals that qwen_tts / faster_qwen3_tts depend on.
 
     Safe to call multiple times — patches are applied at most once.
     Patches: ``check_model_inputs`` decorator and ``ROPE_INIT_FUNCTIONS["default"]``.
@@ -153,7 +103,7 @@ def apply_transformers_shims() -> None:
     except ImportError:
         return
 
-    for shim_fn in (_shim_check_model_inputs, _shim_rope_init_default, _shim_fix_mistral_regex, _shim_torchcodec_stub):
+    for shim_fn in (_shim_check_model_inputs, _shim_rope_init_default, _shim_fix_mistral_regex):
         try:
             shim_fn()
         except Exception as exc:

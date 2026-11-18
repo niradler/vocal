@@ -79,9 +79,10 @@ url = "https://download.pytorch.org/whl/cu128"
 - cu124 index capped at 2.6.0; cu128 provides up to 2.10.0+
 - Both chatterbox-tts and whisperx now work with 2.10.0 via overrides
 
-### transformers (v5 major bump)
+### transformers (v5 major bump, pinned `>=5.22,<5.23`)
 - `huggingface-hub` does **not** depend on transformers — the override is needed because whisperx transitively pulls in huggingface-hub 1.x, which is incompatible with transformers 4.x's hard `<1.0` import-time check.
-- Transformers 5.x broke `qwen_asr` and `qwen_tts` in several ways. All fixed via adapter-level patches — see the **Runtime Patches** section below.
+- **5.23.0 is excluded.** It ships native `qwen3_asr` / `qwen3_tts` registrations that break the `faster-qwen3-tts` tokenizer (`property 'upsample' ... has no setter`) and it validates sub-config token ids through `get_text_config()`, which crashes the talker config. 5.22.x keeps every model working (Granite Speech 5.0, Cohere Transcribe, Voxtral Realtime, Qwen3-ASR, Qwen3-TTS). Re-test before lifting the pin.
+- Qwen3-ASR uses transformers' native `Qwen3ASRForConditionalGeneration` with the `*-hf` checkpoints. The abandoned `qwen-asr` PyPI package pins `transformers==4.57.6`, so it is **not** a dependency anymore.
 
 ### torchaudio (2.10.0 + cu128)
 - **`torchaudio.io` module removed** — lhotse (NeMo's audio backend) used `torchaudio.io.AudioFileInfo` to probe audio metadata. Removed in torchaudio 2.7+. Fix: pre-convert unsupported formats (`.m4a`, `.aac`, `.wma`, `.amr`) to wav via ffmpeg in the NeMo adapter before passing to NeMo. Implemented in `vocal_core/adapters/stt/nemo_adapter.py`.
@@ -96,27 +97,27 @@ url = "https://download.pytorch.org/whl/cu128"
 
 ## Runtime Patches
 
-Monkey-patches applied at adapter import time to bridge transformers 5.x API breaks in `qwen_asr` / `qwen_tts`. No library source edits, no forks.
+Monkey-patches applied at adapter import time to bridge transformers 5.x API breaks in `faster_qwen3_tts` / `qwen_tts`. No library source edits, no forks.
 
 ### Patch Maintenance
 
-**These patches are fragile.** Each one compensates for a specific API break between transformers 5.x and qwen_asr/qwen_tts. On future upgrades:
+**These patches are fragile.** Each one compensates for a specific API break between transformers 5.x and qwen_tts. On future upgrades:
 
 1. **Check if patches are still needed.** After upgrading transformers or qwen packages, temporarily remove each patch and run the relevant tests. If a patch target already exists natively (e.g. `check_model_inputs` is re-added to transformers), the patch is stale — delete it.
 2. **Check if patches still work.** If transformers changes the patched API again (e.g. `StaticLayer.lazy_initialization` gains a third arg), the patch will silently break. Test the actual model inference, not just import.
-3. **Duplicated shims.** `check_model_inputs` and `ROPE_INIT_FUNCTIONS["default"]` are duplicated in both `transformers_adapter.py` and `faster_qwen3_tts.py`. If adding more patches, consider extracting shared shims to `vocal_core/adapters/_compat.py`.
-4. **Upstream fixes.** Monitor `qwen-asr` and `faster-qwen3-tts` releases — once they officially support transformers 5.x, all patches for that package can be removed.
+3. **Shared shims live in `vocal_core/adapters/_compat.py`.** `apply_transformers_shims()` is called from API startup and from each adapter that needs it; it is idempotent.
+4. **Upstream fixes.** Monitor `faster-qwen3-tts` releases — once it supports transformers 5.23+, the pin and the patches can be lifted.
 
 | Patch | File | What changed in transformers 5.x |
 |---|---|---|
-| `transformers.utils.generic.check_model_inputs = <no-op>` | `transformers_adapter.py`, `faster_qwen3_tts.py` | Decorator removed |
-| `ROPE_INIT_FUNCTIONS["default"] = <inv_freq fn>` | `transformers_adapter.py`, `faster_qwen3_tts.py` | `"default"` key removed from RoPE registry |
-| `Qwen3ASRThinkerTextRotaryEmbedding.compute_default_rope_parameters = <method>` | `transformers_adapter.py` | Method dropped from base class; `modeling_utils.py` calls it for `rope_type == "default"` |
-| `Qwen3ASRThinkerConfig.pad_token_id = None` | `transformers_adapter.py` | `GenerationMixin` now requires the attribute on sub-configs |
+| `transformers.utils.generic.check_model_inputs = <tolerant decorator>` | `_compat.py`, used by `faster_qwen3_tts.py` | Signature changed from decorator factory to direct decorator |
+| `ROPE_INIT_FUNCTIONS["default"] = <inv_freq fn>` | `_compat.py` | `"default"` key removed from RoPE registry |
 | `Qwen3TTSTalkerConfig.pad_token_id = None` | `faster_qwen3_tts.py` | Same |
-| `TokenizersBackend.__init__` wrapped to pop `fix_mistral_regex` from `kwargs` | `faster_qwen3_tts.py` | `__init__` passes it both explicitly and via `**kwargs` when vocab > 100k — Python rejects the duplicate |
+| `TokenizersBackend.__init__` wrapped to pop `fix_mistral_regex` from `kwargs` | `_compat.py` | `__init__` passes it both explicitly and via `**kwargs` when vocab > 100k — Python rejects the duplicate |
 | `StaticLayer.lazy_initialization(self, key, value=None)` | `faster_qwen3_tts.py` | Signature gained required `value_states`; `faster_qwen3_tts` only passes one arg |
 | `DynamicCache.__getitem__ = lambda self, i: (self.layers[i].keys, self.layers[i].values)` | `faster_qwen3_tts.py` | Subscript access removed; `faster_qwen3_tts` uses `cache[layer_idx]` |
+| `MimiModel.upsample` property deleted | `faster_qwen3_tts.py` | Became a read-only deprecated property; `qwen_tts`'s tokenizer encoder assigns `self.upsample = None` |
+| `Voxtral` processor helpers (`num_right_pad_tokens`, …) accept int or callable | `voxtral.py` | Became plain int attributes instead of methods |
 
 ## Open Issues (Upstream Blockers)
 
@@ -144,7 +145,7 @@ Quick reference for the next bulk upgrade. Follow the step-by-step in "How to Up
 
 - [ ] Read this file end-to-end — past pain saves future pain
 - [ ] Note which overrides exist and why (table above)
-- [ ] Check if `qwen-asr` / `faster-qwen3-tts` have released versions with native transformers 5.x support — if so, monkey-patches can be removed
+- [ ] Check if `faster-qwen3-tts` supports the newest transformers — if so, the `<5.23` pin and the monkey-patches can be removed
 
 ### During upgrade
 
@@ -170,7 +171,7 @@ Quick reference for the next bulk upgrade. Follow the step-by-step in "How to Up
 | `chatterbox-tts` torch pin | Remove override once chatterbox unpins from `torch==2.6.0` |
 | `whisperx` huggingface-hub pin | Remove override once whisperx drops `huggingface-hub<1.0` constraint |
 | `gradio` pins (aiofiles, pydantic, websockets) | Remove overrides once chatterbox upgrades its gradio dep or drops it |
-| Monkey-patches in `transformers_adapter.py` | Remove once `qwen-asr` supports transformers 5.x natively |
+| Monkey-patches in `_compat.py` / `faster_qwen3_tts.py` | Remove once `faster-qwen3-tts` supports transformers 5.23+ |
 | Monkey-patches in `faster_qwen3_tts.py` | Remove once `faster-qwen3-tts` supports transformers 5.x natively |
 | `torchaudio.io` removal workaround in `nemo_adapter.py` | Remove if lhotse/NeMo adds native support for torchaudio 2.7+ |
 | `soundfile` workaround in `chatterbox.py` | Remove if torchcodec ships Windows DLLs or torchaudio restores non-torchcodec backend |

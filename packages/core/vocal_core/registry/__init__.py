@@ -3,9 +3,12 @@ from .metadata_cache import ModelMetadataCache
 from .model_info import (
     ModelBackend,
     ModelInfo,
+    ModelMaintenanceStatus,
     ModelProvider,
+    ModelRuntime,
     ModelStatus,
     ModelTask,
+    assert_in_process_runtime,
     format_bytes,
 )
 
@@ -17,5 +20,8 @@ __all__ = [
     "ModelBackend",
     "ModelProvider",
     "ModelTask",
+    "ModelRuntime",
+    "ModelMaintenanceStatus",
+    "assert_in_process_runtime",
     "format_bytes",
 ]

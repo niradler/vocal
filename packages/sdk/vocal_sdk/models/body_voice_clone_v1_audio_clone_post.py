@@ -1,21 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, TypeVar
+from io import BytesIO
+from typing import Any, Self, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
+
 from .. import types
-
-from ..types import UNSET, Unset
-
 from ..models.body_voice_clone_v1_audio_clone_post_response_format import (
     BodyVoiceCloneV1AudioClonePostResponseFormat,
 )
-from ..types import File
-from io import BytesIO
-from typing import cast
-
+from ..types import UNSET, File, Unset
 
 T = TypeVar("T", bound="BodyVoiceCloneV1AudioClonePost")
 
@@ -127,7 +123,7 @@ class BodyVoiceCloneV1AudioClonePost:
         return files
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         d = dict(src_dict)
         reference_audio = File(payload=BytesIO(d.pop("reference_audio")))
 

@@ -21,6 +21,7 @@ from ..capabilities import (
     huggingface_card_record_from_mapping,
     huggingface_snapshot_from_info,
     infer_model_capabilities,
+    license_metadata_from_record,
     model_record_from_mapping,
     supported_model_records_from_mapping,
 )
@@ -143,6 +144,7 @@ class HuggingFaceProvider(BaseProvider):
             likes=record.likes,
             sha=record.sha,
             files=[file.model_dump() for file in record.files] if record.files else None,
+            **license_metadata_from_record(record),
             **capabilities,
         )
 

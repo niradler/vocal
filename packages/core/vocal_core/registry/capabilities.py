@@ -56,6 +56,10 @@ class StoredModelRecord(CapabilityOverrides):
     alias: str | None = None
     actual_parameter_count: int | None = None
     hf_repo_id: str | None = None
+    commercial_use: bool | None = None
+    runtime: str | None = None
+    runtime_note: str | None = None
+    maintenance_status: str | None = None
 
 
 class HuggingFaceCardRecord(BaseModel):
@@ -140,6 +144,10 @@ def model_record_from_mapping(
         "alias",
         "actual_parameter_count",
         "hf_repo_id",
+        "commercial_use",
+        "runtime",
+        "runtime_note",
+        "maintenance_status",
         "supports_streaming",
         "supports_live_streaming",
         "supports_voice_list",
@@ -215,6 +223,16 @@ def huggingface_snapshot_from_info(info: Any) -> HuggingFaceSnapshot:
     return HuggingFaceSnapshot.model_validate(payload)
 
 
+def license_metadata_from_record(record: StoredModelRecord) -> dict[str, Any]:
+    """Project licensing/runtime metadata onto ModelInfo fields."""
+    return {
+        "commercial_use": record.commercial_use,
+        "runtime": record.runtime or "in_process",
+        "runtime_note": record.runtime_note,
+        "maintenance_status": record.maintenance_status or "active",
+    }
+
+
 def infer_model_capabilities(  # noqa: C901
     *,
     task: str,
@@ -271,11 +289,6 @@ def infer_model_capabilities(  # noqa: C901
             inferred_clone_mode = overrides.clone_mode or "reference_audio"
             inferred_min_seconds = overrides.reference_audio_min_seconds if overrides.reference_audio_min_seconds is not None else 3.0
             inferred_max_seconds = overrides.reference_audio_max_seconds if overrides.reference_audio_max_seconds is not None else 30.0
-        elif backend in {"xtts", "fish_speech", "dia"}:
-            inferred_supports_voice_clone = overrides.supports_voice_clone if overrides.supports_voice_clone is not None else True
-            inferred_clone_mode = overrides.clone_mode or "reference_audio"
-            inferred_min_seconds = overrides.reference_audio_min_seconds if overrides.reference_audio_min_seconds is not None else 3.0
-            inferred_max_seconds = overrides.reference_audio_max_seconds if overrides.reference_audio_max_seconds is not None else 30.0
         elif backend == "voxtral_tts":
             inferred_requires_gpu = overrides.requires_gpu if overrides.requires_gpu is not None else True
             inferred_supports_voice_list = overrides.supports_voice_list if overrides.supports_voice_list is not None else True
@@ -299,6 +312,10 @@ def infer_model_capabilities(  # noqa: C901
             inferred_voice_mode = overrides.voice_mode or "instruction"
             inferred_min_seconds = overrides.reference_audio_min_seconds if overrides.reference_audio_min_seconds is not None else 3.0
             inferred_max_seconds = overrides.reference_audio_max_seconds if overrides.reference_audio_max_seconds is not None else 30.0
+        elif backend == "phonon":
+            inferred_requires_gpu = overrides.requires_gpu if overrides.requires_gpu is not None else False
+            inferred_supports_voice_list = overrides.supports_voice_list if overrides.supports_voice_list is not None else True
+            inferred_voice_mode = overrides.voice_mode or "voice_id"
 
     return {
         "supports_streaming": inferred_supports_streaming,

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from .capabilities import infer_model_capabilities, model_record_from_mapping
+from .capabilities import infer_model_capabilities, license_metadata_from_record, model_record_from_mapping
 from .metadata_cache import ModelMetadataCache
 from .model_info import ModelBackend, ModelInfo, ModelProvider, ModelStatus, ModelTask, format_bytes
 from .providers.base import WEIGHT_NAMES, WEIGHT_SUFFIXES
@@ -114,6 +114,7 @@ class ModelRegistry:
                     likes=record.likes,
                     sha=record.sha,
                     files=[f.model_dump() for f in record.files] if record.files else None,
+                    **license_metadata_from_record(record),
                     **caps,
                 )
             except (ValueError, ValidationError):

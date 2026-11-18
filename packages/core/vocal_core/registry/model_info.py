@@ -25,15 +25,12 @@ class ModelBackend(str, Enum):
     FASTER_QWEN3_TTS = "faster_qwen3_tts"
     PIPER = "piper"
     CHATTERBOX = "chatterbox"
-    XTTS = "xtts"
-    FISH_SPEECH = "fish_speech"
-    ORPHEUS = "orpheus"
-    DIA = "dia"
     VOXTRAL_STT = "voxtral_stt"
     VOXTRAL_TTS = "voxtral_tts"
     OMNIVOICE = "omnivoice"
     SUPERTONIC = "supertonic"
     VOXCPM = "voxcpm"
+    PHONON = "phonon"
     CUSTOM = "custom"
 
 
@@ -52,6 +49,28 @@ class ModelTask(str, Enum):
     TTS = "tts"
 
 
+class ModelRuntime(str, Enum):
+    """How a model is executed"""
+
+    IN_PROCESS = "in_process"
+    EXTERNAL = "external"
+
+
+def assert_in_process_runtime(model: "ModelInfo") -> None:
+    """Reject models that need an out-of-process engine with an actionable message."""
+    if model.runtime == ModelRuntime.EXTERNAL:
+        detail = f" ({model.runtime_note})" if model.runtime_note else ""
+        raise ValueError(f"Model '{model.id}' is catalogued for an external inference engine{detail} and cannot run inside Vocal's in-process adapters. Serve it with the engine named above and point your OpenAI client at that server.")
+
+
+class ModelMaintenanceStatus(str, Enum):
+    """Upstream maintenance state of the model"""
+
+    ACTIVE = "active"
+    RETIRED = "retired"
+    DEPRECATED = "deprecated"
+
+
 class ModelInfo(BaseModel):
     """Model information schema"""
 
@@ -67,6 +86,10 @@ class ModelInfo(BaseModel):
     status: ModelStatus = Field(description="Current model status", default=ModelStatus.NOT_DOWNLOADED)
     source_url: HttpUrl | None = None
     license: str | None = None
+    commercial_use: bool | None = Field(None, description="Whether the model weights license permits commercial use")
+    runtime: ModelRuntime = Field(default=ModelRuntime.IN_PROCESS, description="'in_process' when Vocal runs the model itself, 'external' when it needs an out-of-process engine")
+    runtime_note: str | None = Field(None, description="Engine/serving requirement outside Vocal's bundled adapters, if any")
+    maintenance_status: ModelMaintenanceStatus = Field(default=ModelMaintenanceStatus.ACTIVE, description="Upstream maintenance state (active/retired/deprecated)")
     recommended_vram: str | None = Field(None, description="Recommended VRAM (e.g., '6GB+')")
     task: ModelTask = Field(description="Task type: 'stt' or 'tts'")
     local_path: str | None = Field(None, description="Local filesystem path if downloaded")
