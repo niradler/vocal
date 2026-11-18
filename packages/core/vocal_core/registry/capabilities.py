@@ -6,6 +6,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+# Audio formats every converting adapter (kokoro, piper, qwen3-tts, voxtral)
+# accepts; WAV-only adapters synthesize raw waveforms and cannot convert.
+ALL_AUDIO_FORMATS = ["mp3", "opus", "aac", "flac", "wav", "pcm"]
+WAV_ONLY_TTS_BACKENDS = frozenset({"chatterbox", "voxcpm", "supertonic", "omnivoice"})
+
 
 class CapabilityOverrides(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -20,6 +25,7 @@ class CapabilityOverrides(BaseModel):
     clone_mode: str | None = None
     reference_audio_min_seconds: float | None = None
     reference_audio_max_seconds: float | None = None
+    output_formats: list[str] | None = None
 
 
 class RepoFileRecord(BaseModel):
@@ -158,6 +164,7 @@ def model_record_from_mapping(
         "clone_mode",
         "reference_audio_min_seconds",
         "reference_audio_max_seconds",
+        "output_formats",
     )
     for field_name in optional_fields:
         if field_name in data:
@@ -258,6 +265,21 @@ def infer_model_capabilities(  # noqa: C901
     inferred_min_seconds = overrides.reference_audio_min_seconds
     inferred_max_seconds = overrides.reference_audio_max_seconds
 
+    # Output formats reflect what the adapter itself accepts. The base
+    # synthesize_stream fallback batches through synthesize(), so the same
+    # list applies to streaming; realtime voice agents additionally need pcm.
+    if task == "tts":
+        if overrides.output_formats is not None:
+            inferred_output_formats = list(overrides.output_formats)
+        elif backend in WAV_ONLY_TTS_BACKENDS:
+            inferred_output_formats = ["wav"]
+        elif backend == "phonon":
+            inferred_output_formats = ["wav", "pcm"]
+        else:
+            inferred_output_formats = list(ALL_AUDIO_FORMATS)
+    else:
+        inferred_output_formats = []
+
     if task == "stt":
         if backend == "voxtral_stt":
             inferred_requires_gpu = overrides.requires_gpu if overrides.requires_gpu is not None else True
@@ -328,4 +350,5 @@ def infer_model_capabilities(  # noqa: C901
         "clone_mode": inferred_clone_mode,
         "reference_audio_min_seconds": inferred_min_seconds,
         "reference_audio_max_seconds": inferred_max_seconds,
+        "output_formats": inferred_output_formats,
     }

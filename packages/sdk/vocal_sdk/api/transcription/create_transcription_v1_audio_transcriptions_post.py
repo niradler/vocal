@@ -34,10 +34,8 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | TranscriptionResponse | str | None:
+) -> HTTPValidationError | TranscriptionResponse | None:
     if response.status_code == 200:
-        # `response_format=text|srt|vtt` returns a non-JSON body even though
-        # the OpenAPI 200 also advertises the JSON schema.
         if response.headers.get("content-type", "").startswith("text/"):
             return cast(str, response.text)
         response_200 = TranscriptionResponse.from_dict(response.json())

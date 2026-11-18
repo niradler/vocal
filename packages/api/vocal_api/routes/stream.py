@@ -16,7 +16,6 @@ from ..dependencies import get_transcription_service
 router = APIRouter(tags=["stream"])
 logger = logging.getLogger(__name__)
 
-_SILENCE_DURATION_S = vocal_settings.VAD_SILENCE_DURATION_S
 _MAX_CHUNK_DURATION_S = 10.0
 _PARTIAL_INTERVAL_S = vocal_settings.REALTIME_PARTIAL_INTERVAL_S
 _PARTIAL_MIN_AUDIO_S = vocal_settings.REALTIME_PARTIAL_MIN_AUDIO_S
@@ -262,14 +261,18 @@ async def _run_buffered_loop(  # noqa: C901
 @router.websocket("/v1/audio/stream")
 async def audio_stream(
     websocket: WebSocket,
-    model: str = vocal_settings.STT_DEFAULT_MODEL,
-    language: str | None = vocal_settings.STT_DEFAULT_LANGUAGE,
+    model: str | None = None,
+    language: str | None = None,
     task: str = "transcribe",
-    silence_duration: float = _SILENCE_DURATION_S,
+    silence_duration: float | None = None,
     max_chunk_duration: float = _MAX_CHUNK_DURATION_S,
     threshold: float | None = None,
 ) -> None:
     await websocket.accept()
+    # Resolved at connection time so settings changes apply to new sessions.
+    model = model or vocal_settings.STT_DEFAULT_MODEL
+    language = language or vocal_settings.STT_DEFAULT_LANGUAGE
+    silence_duration = silence_duration if silence_duration is not None else vocal_settings.VAD_SILENCE_DURATION_S
     service = get_transcription_service()
     sample_rate = vocal_settings.STT_SAMPLE_RATE
     speech_threshold = threshold if threshold is not None else vocal_settings.VAD_SPEECH_THRESHOLD

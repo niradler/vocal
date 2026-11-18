@@ -26,11 +26,21 @@
         },
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "JSON, plain text or subtitles, depending on `response_format`",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TranscriptionResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "text/vtt": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -190,88 +200,6 @@
         }
       }
     },
-    "/v1/models/{model_id}": {
-      "get": {
-        "tags": [
-          "models"
-        ],
-        "summary": "Get model info",
-        "description": "Get detailed information about a specific model",
-        "operationId": "get_model_v1_models__model_id__get",
-        "parameters": [
-          {
-            "name": "model_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Model Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ModelInfo"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "models"
-        ],
-        "summary": "Delete model",
-        "description": "Remove a downloaded model",
-        "operationId": "delete_model_v1_models__model_id__delete",
-        "parameters": [
-          {
-            "name": "model_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Model Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/models/{model_id}/download": {
       "post": {
         "tags": [
@@ -342,6 +270,88 @@
                 "schema": {
                   "$ref": "#/components/schemas/ModelDownloadProgress"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/models/{model_id}": {
+      "get": {
+        "tags": [
+          "models"
+        ],
+        "summary": "Get model info",
+        "description": "Get detailed information about a specific model",
+        "operationId": "get_model_v1_models__model_id__get",
+        "parameters": [
+          {
+            "name": "model_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Model Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "models"
+        ],
+        "summary": "Delete model",
+        "description": "Remove a downloaded model",
+        "operationId": "delete_model_v1_models__model_id__delete",
+        "parameters": [
+          {
+            "name": "model_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Model Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -592,13 +602,75 @@
         }
       }
     },
+    "/v1/settings": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Get current settings",
+        "description": "Current effective settings. The LLM API key is masked.",
+        "operationId": "get_settings_v1_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Update settings",
+        "description": "Update settings, apply them immediately and persist them for future restarts.",
+        "operationId": "update_settings_v1_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/": {
       "get": {
         "tags": [
           "health"
         ],
         "summary": "Root",
-        "description": "API health check",
+        "description": "API health check for clients; landing page for browsers.\n\nBrowsers send ``Accept: text/html`` and get the landing page. API clients\n(SDK, curl, health checks) send ``*/*`` or ``application/json`` and keep the\noriginal JSON contract.",
         "operationId": "root__get",
         "responses": {
           "200": {
@@ -644,10 +716,16 @@
             "format": "binary"
           },
           "model": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Model",
-            "description": "Model ID",
-            "default": "Systran/faster-whisper-tiny"
+            "description": "Model ID (defaults to the server STT default)"
           },
           "language": {
             "anyOf": [
@@ -700,9 +778,15 @@
             "format": "binary"
           },
           "model": {
-            "type": "string",
-            "title": "Model",
-            "default": "Systran/faster-whisper-tiny"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
           }
         },
         "type": "object",
@@ -725,10 +809,16 @@
             "description": "Text to synthesize in the cloned voice"
           },
           "model": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Model",
-            "description": "TTS model to use for voice cloning (must support cloning, e.g. Qwen3-TTS base variants)",
-            "default": "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+            "description": "TTS model to use for voice cloning (must support cloning, e.g. Qwen3-TTS base variants); defaults to the server clone default"
           },
           "reference_text": {
             "anyOf": [
@@ -1179,6 +1269,14 @@
             ],
             "title": "Reference Audio Max Seconds",
             "description": "Recommended maximum reference audio length for cloning"
+          },
+          "output_formats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Output Formats",
+            "description": "Audio formats /v1/audio/speech accepts for this model (empty for STT)"
           }
         },
         "type": "object",
@@ -1301,6 +1399,456 @@
         ],
         "title": "ModelTask",
         "description": "Model task type"
+      },
+      "SettingsPayload": {
+        "properties": {
+          "LLM_BASE_URL": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^https?://"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Base Url",
+            "description": "OpenAI-compatible LLM base URL for the voice agent"
+          },
+          "LLM_MODEL": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Model",
+            "description": "LLM model used by the voice agent"
+          },
+          "LLM_API_KEY": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Api Key",
+            "description": "LLM API key; the masked value or an empty string keeps the current key"
+          },
+          "STT_DEFAULT_MODEL": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stt Default Model",
+            "description": "Default speech-to-text model"
+          },
+          "STT_DEFAULT_LANGUAGE": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stt Default Language",
+            "description": "Default STT language code; empty string means auto-detect"
+          },
+          "TTS_DEFAULT_MODEL": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tts Default Model",
+            "description": "Default text-to-speech model"
+          },
+          "TTS_DEFAULT_VOICE": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tts Default Voice",
+            "description": "Default TTS voice; empty string means model default"
+          },
+          "TTS_DEFAULT_CLONE_MODEL": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tts Default Clone Model",
+            "description": "Default model for voice cloning"
+          },
+          "DEFAULT_LANGUAGE": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Language",
+            "description": "Default language code"
+          },
+          "VAD_SPEECH_THRESHOLD": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vad Speech Threshold",
+            "description": "Silero speech probability threshold"
+          },
+          "VAD_THRESHOLD": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vad Threshold",
+            "description": "RMS energy threshold (fallback VAD)"
+          },
+          "VAD_ONSET_MS": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 5000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vad Onset Ms",
+            "description": "Speech onset confirmation window"
+          },
+          "VAD_SILENCE_MS": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 10000.0,
+                "minimum": 100.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vad Silence Ms",
+            "description": "Dictation: silence before a turn commits"
+          },
+          "VAD_COMMIT_GRACE_MS": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 5000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vad Commit Grace Ms",
+            "description": "Dictation: extra grace after silence"
+          },
+          "VAD_MIN_SPEECH_MS": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 5000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vad Min Speech Ms",
+            "description": "Minimum speech duration to count as a turn"
+          },
+          "VAD_PREROLL_MS": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 5000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vad Preroll Ms",
+            "description": "Audio kept before speech onset"
+          },
+          "REALTIME_AGENT_SILENCE_MS": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 10000.0,
+                "minimum": 100.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Realtime Agent Silence Ms",
+            "description": "Voice agent: silence before a turn commits"
+          },
+          "REALTIME_AGENT_COMMIT_GRACE_MS": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 5000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Realtime Agent Commit Grace Ms",
+            "description": "Voice agent: extra grace after silence"
+          },
+          "REALTIME_PARTIAL_INTERVAL_S": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 10.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Realtime Partial Interval S",
+            "description": "Live partial transcript interval; 0 disables partials"
+          },
+          "REALTIME_MAX_UTTERANCE_S": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 300.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Realtime Max Utterance S",
+            "description": "Maximum single utterance length"
+          },
+          "CHAT_SYSTEM_PROMPT": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat System Prompt",
+            "description": "Voice agent system prompt; empty string disables it"
+          },
+          "LOG_LEVEL": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "DEBUG",
+                  "INFO",
+                  "WARNING",
+                  "ERROR",
+                  "CRITICAL"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Log Level",
+            "description": "Server log level (applies to new log records)"
+          }
+        },
+        "type": "object",
+        "title": "SettingsPayload",
+        "description": "Editable Vocal settings. Omitted (null) fields are left unchanged on update."
+      },
+      "SettingsResponse": {
+        "properties": {
+          "LLM_BASE_URL": {
+            "type": "string",
+            "title": "Llm Base Url"
+          },
+          "LLM_MODEL": {
+            "type": "string",
+            "title": "Llm Model"
+          },
+          "LLM_API_KEY": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Api Key"
+          },
+          "STT_DEFAULT_MODEL": {
+            "type": "string",
+            "title": "Stt Default Model"
+          },
+          "STT_DEFAULT_LANGUAGE": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stt Default Language"
+          },
+          "TTS_DEFAULT_MODEL": {
+            "type": "string",
+            "title": "Tts Default Model"
+          },
+          "TTS_DEFAULT_VOICE": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tts Default Voice"
+          },
+          "TTS_DEFAULT_CLONE_MODEL": {
+            "type": "string",
+            "title": "Tts Default Clone Model"
+          },
+          "DEFAULT_LANGUAGE": {
+            "type": "string",
+            "title": "Default Language"
+          },
+          "VAD_SPEECH_THRESHOLD": {
+            "type": "number",
+            "title": "Vad Speech Threshold"
+          },
+          "VAD_THRESHOLD": {
+            "type": "number",
+            "title": "Vad Threshold"
+          },
+          "VAD_ONSET_MS": {
+            "type": "integer",
+            "title": "Vad Onset Ms"
+          },
+          "VAD_SILENCE_MS": {
+            "type": "integer",
+            "title": "Vad Silence Ms"
+          },
+          "VAD_COMMIT_GRACE_MS": {
+            "type": "integer",
+            "title": "Vad Commit Grace Ms"
+          },
+          "VAD_MIN_SPEECH_MS": {
+            "type": "integer",
+            "title": "Vad Min Speech Ms"
+          },
+          "VAD_PREROLL_MS": {
+            "type": "integer",
+            "title": "Vad Preroll Ms"
+          },
+          "REALTIME_AGENT_SILENCE_MS": {
+            "type": "integer",
+            "title": "Realtime Agent Silence Ms"
+          },
+          "REALTIME_AGENT_COMMIT_GRACE_MS": {
+            "type": "integer",
+            "title": "Realtime Agent Commit Grace Ms"
+          },
+          "REALTIME_PARTIAL_INTERVAL_S": {
+            "type": "number",
+            "title": "Realtime Partial Interval S"
+          },
+          "REALTIME_MAX_UTTERANCE_S": {
+            "type": "number",
+            "title": "Realtime Max Utterance S"
+          },
+          "CHAT_SYSTEM_PROMPT": {
+            "type": "string",
+            "title": "Chat System Prompt"
+          },
+          "LOG_LEVEL": {
+            "type": "string",
+            "title": "Log Level"
+          },
+          "llm_api_key_set": {
+            "type": "boolean",
+            "title": "Llm Api Key Set"
+          }
+        },
+        "type": "object",
+        "required": [
+          "LLM_BASE_URL",
+          "LLM_MODEL",
+          "LLM_API_KEY",
+          "STT_DEFAULT_MODEL",
+          "STT_DEFAULT_LANGUAGE",
+          "TTS_DEFAULT_MODEL",
+          "TTS_DEFAULT_VOICE",
+          "TTS_DEFAULT_CLONE_MODEL",
+          "DEFAULT_LANGUAGE",
+          "VAD_SPEECH_THRESHOLD",
+          "VAD_THRESHOLD",
+          "VAD_ONSET_MS",
+          "VAD_SILENCE_MS",
+          "VAD_COMMIT_GRACE_MS",
+          "VAD_MIN_SPEECH_MS",
+          "VAD_PREROLL_MS",
+          "REALTIME_AGENT_SILENCE_MS",
+          "REALTIME_AGENT_COMMIT_GRACE_MS",
+          "REALTIME_PARTIAL_INTERVAL_S",
+          "REALTIME_MAX_UTTERANCE_S",
+          "CHAT_SYSTEM_PROMPT",
+          "LOG_LEVEL",
+          "llm_api_key_set"
+        ],
+        "title": "SettingsResponse",
+        "description": "Current effective settings. Plain types on purpose: constraints belong to\nthe request (SettingsPayload); the response reports reality, and a typed\nschema gives the generated SDK real attributes instead of a dict."
       },
       "TTSRequest": {
         "properties": {

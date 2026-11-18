@@ -212,8 +212,8 @@ class ModelRegistry:
                                     default_task=model.task.value,
                                     default_backend=model.backend.value,
                                 )
-                                model.size = record.size
-                                model.size_readable = record.size_readable
+                                model.size = record.size or model.size
+                                model.size_readable = record.size_readable if record.size else model.size_readable
                                 model.parameters = record.parameters
                                 model.modified_at = record.modified_at
                                 model.downloaded_at = record.downloaded_at
@@ -234,6 +234,10 @@ class ModelRegistry:
                                 model.reference_audio_max_seconds = record.reference_audio_max_seconds or model.reference_audio_max_seconds
                             except (ValueError, ValidationError):
                                 pass
+
+                        # Same fallback as list_models: derive size from disk when
+                        # neither HF nor the cached metadata knows it.
+                        self._fill_local_size(model, model_path)
 
                     return model
             except Exception as e:

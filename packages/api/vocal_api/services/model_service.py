@@ -125,4 +125,5 @@ class ModelService:
             clone_mode=model.clone_mode,
             reference_audio_min_seconds=model.reference_audio_min_seconds,
             reference_audio_max_seconds=model.reference_audio_max_seconds,
+            output_formats=model.output_formats,
         )

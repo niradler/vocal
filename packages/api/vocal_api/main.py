@@ -17,22 +17,37 @@ if sys.platform == "win32":
     del ctypes
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from vocal_core.config import vocal_settings
 from vocal_core.logging import setup_logging
 
 from .config import settings
 from .dependencies import get_transcription_service, get_tts_service
-from .routes import models_router, realtime_router, stream_router, system_router, transcription_router, tts_router
+from .routes import (
+    models_router,
+    realtime_router,
+    settings_router,
+    stream_router,
+    system_router,
+    transcription_router,
+    tts_router,
+)
+from .routes.settings import load_persisted_settings
+
+WEBUI_DIR = Path(__file__).parent / "webui"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize services and start background tasks"""
+    load_persisted_settings()
     setup_logging(level=vocal_settings.LOG_LEVEL, fmt=vocal_settings.LOG_FORMAT)
 
     try:
@@ -68,24 +83,54 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Lets a publicly hosted console (GitHub Pages) reach this local server
+    # from the browser (Chrome Private Network Access preflight).
+    allow_private_network=settings.CORS_ALLOW_PRIVATE_NETWORK,
 )
 
 app.include_router(transcription_router)
 app.include_router(models_router)
 app.include_router(tts_router)
 app.include_router(system_router)
+app.include_router(settings_router)
 app.include_router(stream_router)
 app.include_router(realtime_router)
 
+# Web UI static assets (landing page + console). Served under /static so the
+# HTML entry points below can reference shared CSS/JS without a build step.
+app.mount("/static", StaticFiles(directory=WEBUI_DIR), name="static")
+
 
 @app.get("/", tags=["health"])
-async def root():
-    """API health check"""
-    return {
-        "status": "ok",
-        "message": "Vocal API - Ollama-style voice model management",
-        "version": settings.VERSION,
-    }
+async def root(request: Request):
+    """API health check for clients; landing page for browsers.
+
+    Browsers send ``Accept: text/html`` and get the landing page. API clients
+    (SDK, curl, health checks) send ``*/*`` or ``application/json`` and keep the
+    original JSON contract.
+    """
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept:
+        return FileResponse(WEBUI_DIR / "index.html", media_type="text/html", headers={"Vary": "Accept"})
+    return JSONResponse(
+        {
+            "status": "ok",
+            "message": "Vocal API - Ollama-style voice model management",
+            "version": settings.VERSION,
+        }
+    )
+
+
+@app.get("/welcome", include_in_schema=False)
+async def welcome():
+    """Landing page (explicit route)."""
+    return FileResponse(WEBUI_DIR / "index.html", media_type="text/html")
+
+
+@app.get("/ui", include_in_schema=False)
+async def console():
+    """Web console — manage models, run speech pipelines, configure Vocal."""
+    return FileResponse(WEBUI_DIR / "app.html", media_type="text/html")
 
 
 @app.get("/health", tags=["health"])
@@ -113,3 +158,9 @@ def custom_openapi():
 
 
 app.openapi = custom_openapi
+
+# Fallback static mount: serves webui assets at root-level paths (/theme.css,
+# /js/app.js, ...) so the HTML entry points can use relative URLs. The same
+# files then also work under a GitHub Pages subpath. Mounted LAST so every API
+# route above always wins.
+app.mount("/", StaticFiles(directory=WEBUI_DIR), name="webui")

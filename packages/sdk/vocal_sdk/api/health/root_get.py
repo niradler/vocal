@@ -47,7 +47,11 @@ def sync_detailed(
 ) -> Response[Any]:
     """Root
 
-     API health check
+     API health check for clients; landing page for browsers.
+
+    Browsers send ``Accept: text/html`` and get the landing page. API clients
+    (SDK, curl, health checks) send ``*/*`` or ``application/json`` and keep the
+    original JSON contract.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -72,7 +76,11 @@ async def asyncio_detailed(
 ) -> Response[Any]:
     """Root
 
-     API health check
+     API health check for clients; landing page for browsers.
+
+    Browsers send ``Accept: text/html`` and get the landing page. API clients
+    (SDK, curl, health checks) send ``*/*`` or ``application/json`` and keep the
+    original JSON contract.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.

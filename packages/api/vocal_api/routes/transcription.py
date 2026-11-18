@@ -71,7 +71,7 @@ def _render_subtitles(result: TranscriptionResponse, fmt: TranscriptionFormat) -
 )
 async def create_transcription(
     file: Annotated[UploadFile, File(description="Audio file to transcribe")],
-    model: Annotated[str, Form(description="Model ID")] = vocal_settings.STT_DEFAULT_MODEL,
+    model: Annotated[str | None, Form(description="Model ID (defaults to the server STT default)")] = None,
     language: Annotated[str | None, Form(description="Language code")] = None,
     prompt: Annotated[str | None, Form(description="Style prompt")] = None,
     response_format: Annotated[TranscriptionFormat, Form(description="Output format")] = TranscriptionFormat.JSON,
@@ -87,6 +87,8 @@ async def create_transcription(
     `response_format=text` returns `text/plain`, `srt`/`vtt` return subtitles,
     and `json`/`verbose_json` return the JSON schema (OpenAI-compatible).
     """
+    # Resolved at request time so settings changes apply without a restart.
+    model = model or vocal_settings.STT_DEFAULT_MODEL
     file.file.seek(0, 2)
     size = file.file.tell()
     file.file.seek(0)
@@ -124,10 +126,11 @@ async def create_transcription(
 )
 async def create_translation(
     file: Annotated[UploadFile, File()],
-    model: Annotated[str, Form()] = vocal_settings.STT_DEFAULT_MODEL,
+    model: Annotated[str | None, Form()] = None,
     service: TranscriptionService = Depends(get_transcription_service),
 ) -> TranscriptionResponse:
     """Translate audio to English."""
+    model = model or vocal_settings.STT_DEFAULT_MODEL
     try:
         return await service.translate(file, model)
     except ValueError as e:

@@ -19,7 +19,7 @@ class BodyCreateTranscriptionV1AudioTranscriptionsPost:
     """
     Attributes:
         file (File): Audio file to transcribe
-        model (str | Unset): Model ID Default: 'Systran/faster-whisper-tiny'.
+        model (None | str | Unset): Model ID (defaults to the server STT default)
         language (None | str | Unset): Language code
         prompt (None | str | Unset): Style prompt
         response_format (TranscriptionFormat | Unset): Output format for transcription
@@ -27,7 +27,7 @@ class BodyCreateTranscriptionV1AudioTranscriptionsPost:
     """
 
     file: File
-    model: str | Unset = "Systran/faster-whisper-tiny"
+    model: None | str | Unset = UNSET
     language: None | str | Unset = UNSET
     prompt: None | str | Unset = UNSET
     response_format: TranscriptionFormat | Unset = UNSET
@@ -37,7 +37,11 @@ class BodyCreateTranscriptionV1AudioTranscriptionsPost:
     def to_dict(self) -> dict[str, Any]:
         file = self.file.to_tuple()
 
-        model = self.model
+        model: None | str | Unset
+        if isinstance(self.model, Unset):
+            model = UNSET
+        else:
+            model = self.model
 
         language: None | str | Unset
         if isinstance(self.language, Unset):
@@ -83,7 +87,10 @@ class BodyCreateTranscriptionV1AudioTranscriptionsPost:
         files.append(("file", self.file.to_tuple()))
 
         if not isinstance(self.model, Unset):
-            files.append(("model", (None, str(self.model).encode(), "text/plain")))
+            if isinstance(self.model, str):
+                files.append(("model", (None, str(self.model).encode(), "text/plain")))
+            else:
+                files.append(("model", (None, str(self.model).encode(), "text/plain")))
 
         if not isinstance(self.language, Unset):
             if isinstance(self.language, str):
@@ -128,7 +135,14 @@ class BodyCreateTranscriptionV1AudioTranscriptionsPost:
         d = dict(src_dict)
         file = File(payload=BytesIO(d.pop("file")))
 
-        model = d.pop("model", UNSET)
+        def _parse_model(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        model = _parse_model(d.pop("model", UNSET))
 
         def _parse_language(data: object) -> None | str | Unset:
             if data is None:

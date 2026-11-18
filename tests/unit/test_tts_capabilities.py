@@ -135,3 +135,44 @@ async def test_omnivoice_synthesize_raises_when_not_loaded():
     adapter = OmniVoiceTTSAdapter()
     with pytest.raises(RuntimeError, match="not loaded"):
         await adapter.synthesize("hello")
+
+
+class TestOutputFormatInference:
+    """Registry-level output_formats must match what adapters actually accept."""
+
+    def test_wav_only_backends(self):
+        from vocal_core.registry.capabilities import infer_model_capabilities
+
+        for backend in ("chatterbox", "voxcpm", "supertonic", "omnivoice"):
+            caps = infer_model_capabilities(task="tts", backend=backend, model_id=f"org/{backend}-model")
+            assert caps["output_formats"] == ["wav"], backend
+
+    def test_phonon_wav_and_pcm(self):
+        from vocal_core.registry.capabilities import infer_model_capabilities
+
+        caps = infer_model_capabilities(task="tts", backend="phonon", model_id="gradium/phonon-31m-en")
+        assert caps["output_formats"] == ["wav", "pcm"]
+
+    def test_converting_backends_accept_all_formats(self):
+        from vocal_core.registry.capabilities import ALL_AUDIO_FORMATS, infer_model_capabilities
+
+        for backend in ("kokoro", "piper", "faster_qwen3_tts", "voxtral_tts"):
+            caps = infer_model_capabilities(task="tts", backend=backend, model_id=f"org/{backend}-model")
+            assert caps["output_formats"] == ALL_AUDIO_FORMATS, backend
+
+    def test_stt_has_no_output_formats(self):
+        from vocal_core.registry.capabilities import infer_model_capabilities
+
+        caps = infer_model_capabilities(task="stt", backend="faster_whisper", model_id="Systran/faster-whisper-tiny")
+        assert caps["output_formats"] == []
+
+    def test_curated_override_wins(self):
+        from vocal_core.registry.capabilities import CapabilityOverrides, infer_model_capabilities
+
+        caps = infer_model_capabilities(
+            task="tts",
+            backend="kokoro",
+            model_id="org/kokoro-custom",
+            overrides=CapabilityOverrides(output_formats=["wav"]),
+        )
+        assert caps["output_formats"] == ["wav"]

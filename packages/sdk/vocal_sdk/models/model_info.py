@@ -65,6 +65,7 @@ class ModelInfo:
         clone_mode (None | str | Unset): How /v1/audio/clone works for this model
         reference_audio_min_seconds (float | None | Unset): Recommended minimum reference audio length for cloning
         reference_audio_max_seconds (float | None | Unset): Recommended maximum reference audio length for cloning
+        output_formats (list[str] | Unset): Audio formats /v1/audio/speech accepts for this model (empty for STT)
     """
 
     id: str
@@ -104,6 +105,7 @@ class ModelInfo:
     clone_mode: None | str | Unset = UNSET
     reference_audio_min_seconds: float | None | Unset = UNSET
     reference_audio_max_seconds: float | None | Unset = UNSET
+    output_formats: list[str] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -267,6 +269,10 @@ class ModelInfo:
         else:
             reference_audio_max_seconds = self.reference_audio_max_seconds
 
+        output_formats: list[str] | Unset = UNSET
+        if not isinstance(self.output_formats, Unset):
+            output_formats = self.output_formats
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -341,6 +347,8 @@ class ModelInfo:
             field_dict["reference_audio_min_seconds"] = reference_audio_min_seconds
         if reference_audio_max_seconds is not UNSET:
             field_dict["reference_audio_max_seconds"] = reference_audio_max_seconds
+        if output_formats is not UNSET:
+            field_dict["output_formats"] = output_formats
 
         return field_dict
 
@@ -578,6 +586,8 @@ class ModelInfo:
             d.pop("reference_audio_max_seconds", UNSET)
         )
 
+        output_formats = cast(list[str], d.pop("output_formats", UNSET))
+
         model_info = cls(
             id=id,
             name=name,
@@ -616,6 +626,7 @@ class ModelInfo:
             clone_mode=clone_mode,
             reference_audio_min_seconds=reference_audio_min_seconds,
             reference_audio_max_seconds=reference_audio_max_seconds,
+            output_formats=output_formats,
         )
 
         model_info.additional_properties = d

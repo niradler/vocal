@@ -251,33 +251,45 @@ async def _partial_transcription_loop(ws: WebSocket, session: _Session, service)
             return
 
 
+def _llm_messages(session: _Session) -> list[dict]:
+    """Chat messages for the current turn. The caller must have appended the
+    current user utterance to the history BEFORE streaming starts."""
+    return ([{"role": "system", "content": session.system_prompt}] if session.system_prompt else []) + session.conversation_history
+
+
 async def _stream_llm(session: _Session, cancel: asyncio.Event):
     """Yield LLM text deltas over the OpenAI-compatible chat completions API."""
-    messages = ([{"role": "system", "content": session.system_prompt}] if session.system_prompt else []) + session.conversation_history
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        async with client.stream(
-            "POST",
-            f"{vocal_settings.LLM_BASE_URL}/chat/completions",
-            headers={"Authorization": f"Bearer {vocal_settings.LLM_API_KEY}", "Content-Type": "application/json"},
-            json={"model": vocal_settings.LLM_MODEL, "messages": messages, "stream": True},
-        ) as resp:
-            if resp.status_code != 200:
-                body = (await resp.aread()).decode("utf-8", "replace")[:300]
-                logger.warning("LLM request failed (%s): %s", resp.status_code, body)
-                yield ""  # surface the failure as an empty (spoken) response
-                return
-            async for line in resp.aiter_lines():
-                if cancel.is_set():
+    messages = _llm_messages(session)
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            async with client.stream(
+                "POST",
+                f"{vocal_settings.LLM_BASE_URL}/chat/completions",
+                headers={"Authorization": f"Bearer {vocal_settings.LLM_API_KEY}", "Content-Type": "application/json"},
+                json={"model": vocal_settings.LLM_MODEL, "messages": messages, "stream": True},
+            ) as resp:
+                if resp.status_code != 200:
+                    body = (await resp.aread()).decode("utf-8", "replace")[:300]
+                    logger.warning("LLM request failed (%s): %s", resp.status_code, body)
+                    yield ""  # surface the failure as an empty (spoken) response
                     return
-                if not (line.startswith("data: ") and "[DONE]" not in line):
-                    continue
-                try:
-                    chunk = json.loads(line[6:])
-                    delta = (chunk.get("choices") or [{}])[0].get("delta", {}).get("content") or ""
-                except (json.JSONDecodeError, KeyError, IndexError):
-                    continue
-                if delta:
-                    yield delta
+                async for line in resp.aiter_lines():
+                    if cancel.is_set():
+                        return
+                    if not (line.startswith("data: ") and "[DONE]" not in line):
+                        continue
+                    try:
+                        chunk = json.loads(line[6:])
+                        delta = (chunk.get("choices") or [{}])[0].get("delta", {}).get("content") or ""
+                    except (json.JSONDecodeError, KeyError, IndexError):
+                        continue
+                    if delta:
+                        yield delta
+    except httpx.HTTPError as exc:
+        # An unreachable endpoint must still complete the turn (response.done),
+        # not abort the pipeline with a bare error event.
+        logger.warning("LLM endpoint unreachable (%s): %s", vocal_settings.LLM_BASE_URL, exc)
+        yield ""
 
 
 async def _speak_sentences(  # noqa: C901
@@ -353,6 +365,10 @@ async def _run_voice_agent(  # noqa: C901
     session.response_cancel = cancel
     timings: dict = {"speech_end": speech_end, "stt_ms": round(session.last_stt_ms, 1)}
 
+    # The current utterance belongs to THIS turn's LLM context. Appending it
+    # only after the response completed made the agent answer one turn behind.
+    session.conversation_history.append({"role": "user", "content": user_text})
+
     try:
         if not await _emit(ws, session, "response.created", response={"id": response_id, "status": "in_progress"}):
             return
@@ -403,7 +419,6 @@ async def _run_voice_agent(  # noqa: C901
 
         answer = "".join(full_response).strip()
         if answer:
-            session.conversation_history.append({"role": "user", "content": user_text})
             session.conversation_history.append({"role": "assistant", "content": answer})
 
         await _emit(ws, session, "response.output_audio_transcript.done", response_id=response_id, item_id=item_id, transcript=answer)
@@ -610,7 +625,7 @@ async def _handle_audio_append(ws: WebSocket, session: _Session, event: dict, tr
         task.add_done_callback(session.turn_tasks.discard)
 
 
-async def _dispatch_event(ws: WebSocket, session: _Session, event: dict, transcription_service, tts_service) -> None:
+async def _dispatch_event(ws: WebSocket, session: _Session, event: dict, transcription_service, tts_service) -> None:  # noqa: C901
     event_type = event.get("type", "")
 
     if event_type in ("session.update", "transcription_session.update"):
@@ -639,6 +654,8 @@ async def _dispatch_event(ws: WebSocket, session: _Session, event: dict, transcr
         await _emit(ws, session, "input_audio_buffer.cleared")
     elif event_type == "response.cancel":
         await _cancel_active_response(ws, session, reason="client_cancelled")
+    elif event_type == "ping":
+        await _emit(ws, session, "pong")
     else:
         await _emit(ws, session, "error", error={"code": "unknown_event", "message": f"Unknown event type: {event_type}"})
 

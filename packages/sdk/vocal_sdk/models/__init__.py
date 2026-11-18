@@ -24,6 +24,9 @@ from .model_runtime import ModelRuntime
 from .model_show_request import ModelShowRequest
 from .model_status import ModelStatus
 from .model_task import ModelTask
+from .settings_payload import SettingsPayload
+from .settings_payload_loglevel_type_0 import SettingsPayloadLOGLEVELType0
+from .settings_response import SettingsResponse
 from .transcription_format import TranscriptionFormat
 from .transcription_response import TranscriptionResponse
 from .transcription_segment import TranscriptionSegment
@@ -53,6 +56,9 @@ __all__ = (
     "ModelShowRequest",
     "ModelStatus",
     "ModelTask",
+    "SettingsPayload",
+    "SettingsPayloadLOGLEVELType0",
+    "SettingsResponse",
     "TTSRequest",
     "TTSRequestResponseFormat",
     "TranscriptionFormat",

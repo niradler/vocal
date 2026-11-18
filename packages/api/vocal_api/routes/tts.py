@@ -257,7 +257,7 @@ async def list_voices(model: str | None = None, service: TTSService = Depends(ge
 async def voice_clone(
     reference_audio: Annotated[UploadFile, File(description="Reference audio recording for voice cloning (wav/mp3/m4a, 3-30s recommended)")],
     text: Annotated[str, Form(description="Text to synthesize in the cloned voice")],
-    model: Annotated[str, Form(description="TTS model to use for voice cloning (must support cloning, e.g. Qwen3-TTS base variants)")] = vocal_settings.TTS_DEFAULT_CLONE_MODEL,
+    model: Annotated[str | None, Form(description="TTS model to use for voice cloning (must support cloning, e.g. Qwen3-TTS base variants); defaults to the server clone default")] = None,
     reference_text: Annotated[str | None, Form(description="Optional transcript of the reference audio")] = None,
     language: Annotated[str, Form(description="Target language code (e.g. 'en', 'zh')")] = "en",
     response_format: Annotated[AudioFormat, Form(description="Output format")] = "wav",
@@ -278,6 +278,8 @@ async def voice_clone(
     **Note:** Voice cloning is hardware-intensive. Ensure the model is downloaded first
     via `POST /v1/models/{model_id}/download`.
     """
+    # Resolved at request time so settings changes apply without a restart.
+    model = model or vocal_settings.TTS_DEFAULT_CLONE_MODEL
     if not text.strip():
         raise HTTPException(status_code=422, detail="text must not be empty.")
 

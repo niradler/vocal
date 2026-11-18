@@ -47,6 +47,33 @@ class TestModelsList:
         assert kokoro["supports_voice_list"] is True
         assert kokoro["voice_mode"] == "voice_id"
 
+    def test_get_model_by_id(self, client):
+        resp = client.get_httpx_client().get("/v1/models/Systran/faster-whisper-tiny")
+        assert resp.status_code == 200
+        assert resp.json()["id"] == "Systran/faster-whisper-tiny"
+
+    def test_download_status_route_not_shadowed(self, client):
+        # Issue #20: the greedy /{model_id:path} route used to swallow
+        # /download/status whole. The specific route must answer instead —
+        # its 404 detail names the model, not the suffixed path.
+        resp = client.get_httpx_client().get("/v1/models/Systran/faster-whisper-tiny/download/status")
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "No active download for this model"
+
+    def test_catalog_exposes_output_formats(self, client):
+        raw = client.get_httpx_client().get("/v1/models/catalog")
+        assert raw.status_code == 200
+        models = {m["id"]: m for m in raw.json()["models"]}
+
+        chatterbox = models["ResembleAI/chatterbox"]
+        assert chatterbox["output_formats"] == ["wav"]
+
+        kokoro = models["hexgrad/Kokoro-82M"]
+        assert set(kokoro["output_formats"]) == {"mp3", "opus", "aac", "flac", "wav", "pcm"}
+
+        whisper = models["Systran/faster-whisper-tiny"]
+        assert whisper["output_formats"] == []
+
     def test_catalog_exposes_licensing_and_runtime_metadata(self, client):
         raw = client.get_httpx_client().get("/v1/models/catalog")
         assert raw.status_code == 200

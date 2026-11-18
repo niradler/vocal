@@ -106,6 +106,7 @@ class ModelInfo(BaseModel):
     clone_mode: str | None = Field(default=None, description="How /v1/audio/clone works for this model")
     reference_audio_min_seconds: float | None = Field(default=None, description="Recommended minimum reference audio length for cloning")
     reference_audio_max_seconds: float | None = Field(default=None, description="Recommended maximum reference audio length for cloning")
+    output_formats: list[str] = Field(default_factory=list, description="Audio formats /v1/audio/speech accepts for this model (empty for STT)")
 
 
 class ModelListResponse(BaseModel):

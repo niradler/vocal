@@ -22,8 +22,8 @@ class BodyVoiceCloneV1AudioClonePost:
     Attributes:
         reference_audio (File): Reference audio recording for voice cloning (wav/mp3/m4a, 3-30s recommended)
         text (str): Text to synthesize in the cloned voice
-        model (str | Unset): TTS model to use for voice cloning (must support cloning, e.g. Qwen3-TTS base variants)
-            Default: 'Qwen/Qwen3-TTS-12Hz-0.6B-Base'.
+        model (None | str | Unset): TTS model to use for voice cloning (must support cloning, e.g. Qwen3-TTS base
+            variants); defaults to the server clone default
         reference_text (None | str | Unset): Optional transcript of the reference audio
         language (str | Unset): Target language code (e.g. 'en', 'zh') Default: 'en'.
         response_format (BodyVoiceCloneV1AudioClonePostResponseFormat | Unset): Output format Default:
@@ -32,7 +32,7 @@ class BodyVoiceCloneV1AudioClonePost:
 
     reference_audio: File
     text: str
-    model: str | Unset = "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+    model: None | str | Unset = UNSET
     reference_text: None | str | Unset = UNSET
     language: str | Unset = "en"
     response_format: BodyVoiceCloneV1AudioClonePostResponseFormat | Unset = (
@@ -45,7 +45,11 @@ class BodyVoiceCloneV1AudioClonePost:
 
         text = self.text
 
-        model = self.model
+        model: None | str | Unset
+        if isinstance(self.model, Unset):
+            model = UNSET
+        else:
+            model = self.model
 
         reference_text: None | str | Unset
         if isinstance(self.reference_text, Unset):
@@ -86,7 +90,10 @@ class BodyVoiceCloneV1AudioClonePost:
         files.append(("text", (None, str(self.text).encode(), "text/plain")))
 
         if not isinstance(self.model, Unset):
-            files.append(("model", (None, str(self.model).encode(), "text/plain")))
+            if isinstance(self.model, str):
+                files.append(("model", (None, str(self.model).encode(), "text/plain")))
+            else:
+                files.append(("model", (None, str(self.model).encode(), "text/plain")))
 
         if not isinstance(self.reference_text, Unset):
             if isinstance(self.reference_text, str):
@@ -129,7 +136,14 @@ class BodyVoiceCloneV1AudioClonePost:
 
         text = d.pop("text")
 
-        model = d.pop("model", UNSET)
+        def _parse_model(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        model = _parse_model(d.pop("model", UNSET))
 
         def _parse_reference_text(data: object) -> None | str | Unset:
             if data is None:
