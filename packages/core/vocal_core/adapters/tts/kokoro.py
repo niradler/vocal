@@ -4,6 +4,7 @@ import asyncio
 import importlib.util
 import logging
 import os
+import re
 import struct
 import tempfile
 import wave
@@ -27,6 +28,28 @@ logger = logging.getLogger(__name__)
 KOKORO_AVAILABLE: bool = importlib.util.find_spec("kokoro") is not None and importlib.util.find_spec("torch") is not None
 
 KOKORO_SAMPLE_RATE = 24000
+
+# OpenAI-compatible clients send these names by default. Map the ones Kokoro
+# ships a close equivalent for; anything else is rejected with a 400 listing
+# the real voices instead of failing deep inside synthesis (issue #13).
+OPENAI_VOICE_ALIASES: dict[str, str] = {
+    "alloy": "af_alloy",
+    "echo": "am_echo",
+    "fable": "bm_fable",
+    "onyx": "am_onyx",
+    "nova": "af_nova",
+    "shimmer": "af_sky",
+}
+
+_VOICE_ID_PATTERN = re.compile(r"^[a-z]{1,2}_[a-z0-9_]+$")
+
+
+def _as_float_numpy(audio) -> np.ndarray:
+    """Kokoro returns torch tensors (possibly on GPU); normalise to float32 numpy."""
+    if hasattr(audio, "detach"):
+        audio = audio.detach().cpu().numpy()
+    return np.asarray(audio, dtype=np.float32).reshape(-1)
+
 
 LANG_CODE_TO_LANGUAGE = {
     "a": "en-us",
@@ -101,15 +124,19 @@ KOKORO_VOICES = list(KOKORO_VOICE_DATA.keys())
 
 
 def _wav_header_open_ended(sample_rate: int, num_channels: int = 1, bits_per_sample: int = 16) -> bytes:
-    """Return a WAV header with 0xFFFFFFFF data-chunk size for streaming (no seek-back needed)."""
+    """Return a WAV header for a stream of unknown length.
+
+    Both the RIFF and data sizes are 0xFFFFFFFF ("unknown"), which players and
+    ffmpeg accept for pipes. Adding 36 to 0xFFFFFFFF would overflow the 32-bit
+    field and raise ``struct.error`` (the streaming-WAV 500 from issue #13).
+    """
     byte_rate = sample_rate * num_channels * bits_per_sample // 8
     block_align = num_channels * bits_per_sample // 8
-    data_size = 0xFFFFFFFF
-    riff_size = 36 + data_size
+    unknown_size = 0xFFFFFFFF
     return struct.pack(
         "<4sI4s4sIHHIIHH4sI",
         b"RIFF",
-        riff_size,
+        unknown_size,
         b"WAVE",
         b"fmt ",
         16,
@@ -120,12 +147,17 @@ def _wav_header_open_ended(sample_rate: int, num_channels: int = 1, bits_per_sam
         block_align,
         bits_per_sample,
         b"data",
-        data_size,
+        unknown_size,
     )
 
 
+def resolve_voice_name(voice_id: str) -> str:
+    """Map OpenAI voice names (alloy, onyx, ...) to Kokoro voice ids."""
+    return OPENAI_VOICE_ALIASES.get(voice_id.strip().lower(), voice_id.strip())
+
+
 def _voice_lang_code(voice_id: str) -> str:
-    first = voice_id.split(",")[0].strip()
+    first = resolve_voice_name(voice_id.split(",")[0])
     return first[0] if first and first[0] in LANG_CODE_TO_LANGUAGE else "a"
 
 
@@ -258,7 +290,7 @@ class KokoroTTSAdapter(TTSAdapter):
 
         return TTSResult(audio_data=audio_bytes, sample_rate=sample_rate, duration=duration, format=output_format)
 
-    async def synthesize_stream(
+    async def synthesize_stream(  # noqa: C901
         self,
         text: str,
         voice: str | None = None,
@@ -280,15 +312,23 @@ class KokoroTTSAdapter(TTSAdapter):
         voice_id = voice or "af_heart"
         lang_code = _voice_lang_code(voice_id)
         loop = asyncio.get_running_loop()
-        queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+        # (bytes | None for end-of-stream | Exception to re-raise)
+        queue: asyncio.Queue = asyncio.Queue()
 
         def _run() -> None:
             try:
                 pipeline = self._get_pipeline(lang_code)
                 loaded_voice = self._load_voice(voice_id)
-                for _, _, audio_chunk in pipeline(text, voice=loaded_voice, speed=speed, split_pattern=r"\n+"):
-                    pcm_bytes = (audio_chunk * 32767).astype(np.int16).tobytes()
+                # Split on sentence boundaries as well as newlines so a single
+                # paragraph streams per sentence instead of one silent blob.
+                for _, _, audio_chunk in pipeline(text, voice=loaded_voice, speed=speed, split_pattern=r"\n+|(?<=[.!?])\s+"):
+                    samples = _as_float_numpy(audio_chunk)
+                    if samples.size == 0:
+                        continue
+                    pcm_bytes = (samples * 32767).astype(np.int16).tobytes()
                     loop.call_soon_threadsafe(queue.put_nowait, pcm_bytes)
+            except Exception as exc:  # surface thread failures instead of silence
+                loop.call_soon_threadsafe(queue.put_nowait, exc)
             finally:
                 loop.call_soon_threadsafe(queue.put_nowait, None)
 
@@ -303,6 +343,8 @@ class KokoroTTSAdapter(TTSAdapter):
                 chunk = await queue.get()
                 if chunk is None:
                     break
+                if isinstance(chunk, Exception):
+                    raise chunk
                 yield chunk
         finally:
             executor.shutdown(wait=False)
@@ -310,13 +352,32 @@ class KokoroTTSAdapter(TTSAdapter):
     def _load_single_voice(self, voice_id: str) -> torch.Tensor | str:
         import torch
 
-        voice_id = voice_id.strip()
+        voice_id = resolve_voice_name(voice_id)
         if self.model_path:
             voice_pt = self.model_path / "voices" / f"{voice_id}.pt"
             if voice_pt.exists():
                 return torch.load(str(voice_pt), weights_only=True, map_location="cpu")
         logger.warning(f"Voice file not found locally for '{voice_id}', falling back to HF download")
         return voice_id
+
+    def validate_voice(self, voice: str | None) -> None:
+        """Reject names this backend cannot synthesize, with the valid list."""
+        if not voice:
+            return
+        for part in voice.split(","):
+            candidate = part.strip()
+            if not candidate:
+                continue
+            resolved = resolve_voice_name(candidate)
+            if resolved in KOKORO_VOICE_DATA:
+                continue
+            if self.model_path and (self.model_path / "voices" / f"{resolved}.pt").exists():
+                continue
+            # Kokoro can pull arbitrary voice ids from the Hub (af_bella, ...).
+            if _VOICE_ID_PATTERN.match(resolved):
+                continue
+            valid = ", ".join(sorted(KOKORO_VOICE_DATA))
+            raise ValueError(f"Unknown voice '{candidate}'. Available voices: {valid}")
 
     def _load_voice(self, voice_id: str) -> torch.Tensor | str:
         import torch

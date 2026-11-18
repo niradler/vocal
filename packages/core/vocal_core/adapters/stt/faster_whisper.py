@@ -283,3 +283,84 @@ class FasterWhisperAdapter(STTAdapter):
         finally:
             if temp_file and Path(temp_file.name).exists():
                 Path(temp_file.name).unlink()
+
+    async def transcribe_pcm(
+        self,
+        pcm: bytes,
+        sample_rate: int = 16000,
+        language: str | None = None,
+        task: str = "transcribe",
+        beam_size: int = 1,
+        vad_filter: bool = False,
+    ) -> TranscriptionResult:
+        """Transcribe raw PCM16 mono audio without a temp file or av decode.
+
+        Realtime callers already ran VAD, so ``vad_filter`` defaults to off and
+        greedy beam search keeps per-utterance latency low.
+        """
+        if not self.is_loaded():
+            raise RuntimeError("Model not loaded. Call load_model() first.")
+        if not pcm:
+            return TranscriptionResult(text="", language=language or "", duration=0.0, segments=None)
+
+        import numpy as np
+
+        audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+        loop = asyncio.get_running_loop()
+        kwargs = {
+            "language": language,
+            "task": task,
+            "beam_size": beam_size,
+            "vad_filter": vad_filter,
+            "temperature": 0.0,
+            "condition_on_previous_text": False,
+            "without_timestamps": True,
+        }
+        return await loop.run_in_executor(None, lambda: self._transcribe_array(audio, **kwargs))
+
+    def _transcribe_array(self, audio, **kwargs) -> TranscriptionResult:
+        assert self.model is not None
+        segments, info = self.model.transcribe(audio, **kwargs)
+        texts: list[str] = []
+        segs: list[TranscriptionSegment] = []
+        for idx, segment in enumerate(segments):
+            texts.append(segment.text)
+            segs.append(
+                TranscriptionSegment(
+                    id=idx,
+                    start=segment.start,
+                    end=segment.end,
+                    text=segment.text,
+                    avg_logprob=segment.avg_logprob,
+                    no_speech_prob=segment.no_speech_prob,
+                )
+            )
+        return TranscriptionResult(
+            text=" ".join(text.strip() for text in texts).strip(),
+            language=getattr(info, "language", None) or "",
+            duration=getattr(info, "duration", 0.0) or 0.0,
+            segments=segs or None,
+        )
+
+    async def transcribe_live(
+        self,
+        audio_chunks: AsyncGenerator[bytes, Any],
+        sample_rate: int = 16000,
+        language: str | None = None,
+        **kwargs,
+    ) -> AsyncGenerator[TranscriptionSegment, None]:
+        """Buffer PCM chunks, then decode once in-memory (no WAV temp file)."""
+        pcm = bytearray()
+        async for chunk in audio_chunks:
+            pcm.extend(chunk)
+        if not pcm:
+            return
+        result = await self.transcribe_pcm(bytes(pcm), sample_rate=sample_rate, language=language, **kwargs)
+        yield TranscriptionSegment(
+            id=0,
+            start=0.0,
+            end=result.duration,
+            text=result.text,
+            avg_logprob=0.0,
+            no_speech_prob=0.0,
+        )

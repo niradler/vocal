@@ -181,6 +181,11 @@ async def text_to_speech(request: TTSRequest, service: TTSService = Depends(get_
 
     try:
         if request.stream:
+            # Resolve the adapter first: otherwise a missing backend becomes an
+            # empty 200 response instead of a proper 503, and an unknown voice
+            # would abort mid-stream instead of returning 400.
+            await service.ensure_ready(request.model, request.voice)
+            sample_rate = await service.get_sample_rate(request.model)
             generator = service.synthesize_stream(
                 model_id=request.model,
                 text=request.input,
@@ -191,7 +196,11 @@ async def text_to_speech(request: TTSRequest, service: TTSService = Depends(get_
             return StreamingResponse(
                 generator,
                 media_type=media_type,
-                headers={"Content-Disposition": f"attachment; filename=speech.{ext}"},
+                headers={
+                    "Content-Disposition": f"attachment; filename=speech.{ext}",
+                    "X-Sample-Rate": str(sample_rate),
+                    "Cache-Control": "no-store",
+                },
             )
 
         result = await service.synthesize(

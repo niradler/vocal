@@ -1084,6 +1084,77 @@ def _play_wav_bytes(audio_bytes: bytes, device: int | None = None) -> None:
     sd.wait()
 
 
+class _StreamingPlayback:
+    """Plays PCM16 chunks as they arrive instead of waiting for a whole reply."""
+
+    def __init__(self, device: int | None, sample_rate: int = 24000) -> None:
+        self._device = device
+        self._rate = sample_rate
+        self._buffer = bytearray()
+        self._lock = threading.Lock()
+        self._stream = None
+        self._drained = threading.Event()
+        self._drained.set()
+
+    def _callback(self, outdata, frames, _time_info, _status) -> None:
+        need = frames * 2
+        with self._lock:
+            chunk = bytes(self._buffer[:need])
+            del self._buffer[:need]
+            empty = not self._buffer
+        if len(chunk) < need:
+            chunk += b"\x00" * (need - len(chunk))
+            if empty:
+                self._drained.set()
+        outdata[:] = np.frombuffer(chunk, dtype=np.int16).reshape(-1, 1)
+
+    def _ensure_stream(self) -> None:
+        if self._stream is not None:
+            return
+        self._stream = sd.OutputStream(
+            samplerate=self._rate,
+            channels=1,
+            dtype="int16",
+            device=self._device,
+            callback=self._callback,
+        )
+        self._stream.start()
+
+    def feed(self, data: bytes) -> bool:
+        if not data:
+            return
+        self._ensure_stream()
+        self._drained.clear()
+        with self._lock:
+            self._buffer.extend(data)
+
+    def stop(self) -> None:
+        with self._lock:
+            self._buffer.clear()
+        self._close()
+
+    def close(self, timeout: float = 30.0) -> int:
+        """Wait for the buffer to drain, then release the device."""
+        deadline = time.monotonic() + timeout
+        while not self._drained.is_set() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        if self._drained.is_set():
+            time.sleep(0.12)
+        remaining = len(self._buffer)
+        self._close()
+        return remaining
+
+    def _close(self) -> None:
+        stream, self._stream = self._stream, None
+        if stream is not None:
+            try:
+                stream.stop()
+                stream.close()
+            except Exception:
+                pass
+        self._drained.set()
+
+
 def _play_pcm16(pcm_bytes: bytes, sample_rate: int = 24000, device: int | None = None) -> None:
     if not pcm_bytes:
         return
@@ -1106,9 +1177,22 @@ def _chat_trace(etype: str, event: dict, state: dict) -> None:
     console.print(f"[dim]  [{etype}{extra}][/dim]", markup=False)
 
 
-async def _chat_handle_delta(etype: str, event: dict, state: dict, verbose: bool, playing: asyncio.Event) -> None:
+async def _chat_handle_delta(
+    etype: str,
+    event: dict,
+    state: dict,
+    verbose: bool,
+    playing: asyncio.Event,
+    player: _StreamingPlayback | None = None,
+) -> None:
     if etype == "conversation.item.input_audio_transcription.delta":
-        state["transcript"].append(event.get("delta", ""))
+        if event.get("partial"):
+            state["transcript"] = [event.get("partial_transcript") or event.get("delta", "")]
+        else:
+            state["transcript"].append(event.get("delta", ""))
+        if verbose:
+            sys.stdout.write("\r[you: " + "".join(state["transcript"]).strip()[-70:] + "]")
+            sys.stdout.flush()
     elif etype == "response.output_audio_transcript.delta":
         delta = event.get("delta", "")
         state["text"].append(delta)
@@ -1117,12 +1201,16 @@ async def _chat_handle_delta(etype: str, event: dict, state: dict, verbose: bool
     elif etype == "response.output_audio.delta":
         playing.set()
         try:
-            state["audio"].append(base64.b64decode(event.get("delta", "")))
+            pcm = base64.b64decode(event.get("delta", ""))
         except Exception:
-            pass
+            return
+        if player is not None:
+            player.feed(pcm)
+        else:
+            state["audio"].append(pcm)
 
 
-async def _chat_handle_done(
+async def _chat_handle_done(  # noqa: C901
     etype: str,
     event: dict,
     state: dict,
@@ -1130,9 +1218,11 @@ async def _chat_handle_done(
     loop: asyncio.AbstractEventLoop,
     output_device_idx: int | None,
     playing: asyncio.Event,
-) -> None:
+) -> None:  # noqa: C901
     if etype == "conversation.item.input_audio_transcription.completed":
-        transcript = event.get("transcript", "").strip() or " ".join(state["transcript"]).strip()
+        transcript = event.get("transcript", "").strip() or "".join(state["transcript"]).strip()
+        if state["transcript"]:
+            sys.stdout.write("\r" + " " * 80 + "\r")
         state["transcript"] = []
         sys.stdout.write("\r" + " " * 60 + "\r")
         if transcript:
@@ -1141,16 +1231,30 @@ async def _chat_handle_done(
         if state["text"]:
             sys.stdout.write("\n")
             sys.stdout.flush()
-        if state["audio"]:
+        player: _StreamingPlayback | None = state.get("player")
+        if player is not None:
+            await loop.run_in_executor(None, player.close)
+            state["player"] = None
+        elif state["audio"]:
             pcm = b"".join(state["audio"])
             await loop.run_in_executor(None, _play_pcm16, pcm, 24000, output_device_idx)
         state["audio"] = []
         state["text"] = []
         await asyncio.sleep(_PLAYBACK_COOLDOWN)
         playing.clear()
+    elif etype == "response.cancelled":
+        state["text"] = []
+        state["audio"] = []
+        player = state.get("player")
+        if player is not None:
+            player.stop()
+            state["player"] = None
+        playing.clear()
+    elif etype == "response.metrics" and verbose:
+        console.print(f"[dim]  metrics {event.get('metrics')}[/dim]")
 
 
-async def _chat_receiver(ws, output_device_idx: int | None, verbose: bool, loop: asyncio.AbstractEventLoop, stop_event: asyncio.Event, playing: asyncio.Event) -> None:
+async def _chat_receiver(ws, output_device_idx: int | None, verbose: bool, loop: asyncio.AbstractEventLoop, stop_event: asyncio.Event, playing: asyncio.Event) -> None:  # noqa: C901
     state: dict = {"audio": [], "text": [], "transcript": []}
 
     async for msg in ws:
@@ -1162,11 +1266,19 @@ async def _chat_receiver(ws, output_device_idx: int | None, verbose: bool, loop:
         if verbose:
             _chat_trace(etype, event, state)
 
+        if etype == "response.output_audio.delta":
+            if state.get("player") is None:
+                state["player"] = _StreamingPlayback(output_device_idx)
         if "delta" in etype:
-            await _chat_handle_delta(etype, event, state, verbose, playing)
+            await _chat_handle_delta(etype, event, state, verbose, playing, state.get("player"))
         elif "done" in etype or "completed" in etype:
             await _chat_handle_done(etype, event, state, verbose, loop, output_device_idx, playing)
         elif etype == "input_audio_buffer.speech_started":
+            player = state.get("player")
+            if player is not None:
+                player.stop()
+                state["player"] = None
+                playing.clear()
             sys.stdout.write("\r[detecting speech...]     \r")
             sys.stdout.flush()
         elif etype == "response.done":

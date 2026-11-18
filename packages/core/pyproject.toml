@@ -20,7 +20,11 @@ classifiers = [
 ]
 dependencies = [
     "faster-whisper>=1.2.1",
-    "huggingface-hub>=1.7.1",
+    # av 19 dropped the `metadata_errors` kwarg faster-whisper 1.2.1 passes to
+    # av.open(); without this pin a fresh install 500s on every transcription.
+    "av>=14.0.0,<17.0.0",
+    # transformers 5.x breaks on huggingface-hub 2.x.
+    "huggingface-hub>=1.7.1,<2.0.0",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.13.1",
     "pyttsx3>=2.99",

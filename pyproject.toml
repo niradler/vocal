@@ -87,13 +87,19 @@ override-dependencies = [
     "ctranslate2>=4.7.1",
     "transformers>=5.3.0",
     "numpy>=2.4.3",
-    "huggingface-hub>=1.7.1",
+    "huggingface-hub>=1.7.1,<2.0.0",
     "torch>=2.8.0",
     "torchaudio>=2.8.0",
     "aiofiles>=25.1.0",
     "pydantic>=2.12.5",
     "websockets>=16.0",
     "setuptools>=70.0.0,<81",
+    # av 19 removed the `metadata_errors` kwarg that faster-whisper still passes
+    # to av.open(), so a fresh resolve breaks every transcription call.
+    "av>=14.0.0,<17.0.0",
+    # whisperx pulls torchvision; the locked 0.23 build is ABI-incompatible
+    # with torch 2.11 ("operator torchvision::nms does not exist").
+    "torchvision>=0.26.0,<0.27.0",
 ]
 
 [tool.uv.extra-build-dependencies]
@@ -114,6 +120,7 @@ vocal-sdk = { workspace = true, editable = true }
 vocal-cli = { workspace = true, editable = true }
 torch = { index = "pytorch" }
 torchaudio = { index = "pytorch" }
+torchvision = { index = "pytorch" }
 en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }
 
 [dependency-groups]
