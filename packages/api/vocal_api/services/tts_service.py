@@ -39,6 +39,17 @@ except ImportError:
     PIPER_AVAILABLE = False
 
 
+_DEFAULT_SAMPLE_RATES = {
+    "pyttsx3": 22050,
+    "piper": 22050,
+    "kokoro": 24000,
+    "chatterbox": 24000,
+    "faster_qwen3_tts": 24000,
+    "omnivoice": 24000,
+    "voxtral_tts": 24000,
+}
+
+
 class TTSService:
     """Service for handling TTS operations with Ollama-style keep-alive"""
 
@@ -46,6 +57,7 @@ class TTSService:
         self.registry = registry
         self.adapters: dict[str, TTSAdapter] = {}
         self.last_used: dict[str, float] = {}
+        self._adapter_locks: dict[str, asyncio.Lock] = {}
         self.keep_alive_seconds = keep_alive_seconds
         self._cleanup_task = None
 
@@ -123,6 +135,10 @@ class TTSService:
 
         adapter = await self._get_or_create_adapter(model_id, model_path, model_info.backend.value)
         self.last_used[model_id] = time.time()
+        if voice:
+            # Reject unknown voices before synthesis (issue #13): otherwise the
+            # backend fails deep inside generation and the caller sees a 500.
+            adapter.validate_voice(voice)
 
         return await adapter.synthesize(text=text, voice=voice, speed=speed, output_format=output_format, **extra)
 
@@ -211,6 +227,9 @@ class TTSService:
 
         adapter = await self._get_or_create_adapter(model_id, model_path, model_info.backend.value)
         self.last_used[model_id] = time.time()
+        if voice:
+            # Fail with ValueError (-> 400) before any audio is generated.
+            adapter.validate_voice(voice)
 
         async for chunk in adapter.synthesize_stream(text=text, voice=voice, speed=speed, output_format=output_format):
             yield chunk
@@ -264,6 +283,48 @@ class TTSService:
         self.last_used[model_id] = time.time()
         return adapter.get_capabilities()
 
+    async def ensure_ready(self, model_id: str, voice: str | None = None) -> None:
+        """Load the model/backend before a streaming response starts.
+
+        StreamingResponse returns HTTP 200 before the generator runs, so a
+        missing backend or an invalid voice would otherwise become an empty or
+        aborted download instead of a 4xx.
+        """
+        adapter, _ = await self._resolve(model_id)
+        if voice:
+            adapter.validate_voice(voice)
+
+    async def _resolve(self, model_id: str) -> tuple[TTSAdapter, str]:
+        """Return the loaded adapter for a model and its backend name."""
+        if not model_id or model_id == "pyttsx3":
+            adapter = await self._get_or_create_simple_adapter()
+            self.last_used["pyttsx3"] = time.time()
+            return adapter, "pyttsx3"
+
+        model_path = self.registry.get_model_path(model_id)
+        if not model_path:
+            raise ValueError(f"Model {model_id} not downloaded")
+        model_info = await self.registry.get_model(model_id)
+        if not model_info:
+            raise ValueError(f"Model {model_id} not found")
+        backend = model_info.backend.value
+        adapter = await self._get_or_create_adapter(model_id, model_path, backend)
+        self.last_used[model_id] = time.time()
+        return adapter, backend
+
+    async def get_sample_rate(self, model_id: str) -> int:
+        """Return the native PCM sample rate for a model, for streaming callers."""
+        adapter, backend = await self._resolve(model_id)
+
+        try:
+            info = adapter.get_model_info()
+        except Exception:
+            info = {}
+        rate = info.get("sample_rate") if isinstance(info, dict) else None
+        if isinstance(rate, int) and rate > 0:
+            return rate
+        return _DEFAULT_SAMPLE_RATES.get(backend, 24000)
+
     async def _get_or_create_simple_adapter(self) -> SimpleTTSAdapter:
         """Get or create the simple system TTS adapter"""
         if "pyttsx3" not in self.adapters:
@@ -273,13 +334,21 @@ class TTSService:
         return self.adapters["pyttsx3"]
 
     async def _get_or_create_adapter(self, model_id: str, model_path: Path, backend: str) -> TTSAdapter:
-        """Get or create TTS adapter for model"""
-        if model_id not in self.adapters:
-            adapter = self._create_adapter(backend)
-            await adapter.load_model(model_path)
-            self.adapters[model_id] = adapter
+        """Get or create TTS adapter for model (single load per model)."""
+        adapter = self.adapters.get(model_id)
+        if adapter is not None:
+            return adapter
 
-        return self.adapters[model_id]
+        # Concurrent first requests (realtime warm-up + the TTS call) would
+        # otherwise both load the model and double the memory footprint.
+        lock = self._adapter_locks.setdefault(model_id, asyncio.Lock())
+        async with lock:
+            adapter = self.adapters.get(model_id)
+            if adapter is None:
+                adapter = self._create_adapter(backend)
+                await adapter.load_model(model_path)
+                self.adapters[model_id] = adapter
+        return adapter
 
     def _create_adapter(self, backend: str) -> TTSAdapter:  # noqa: C901
         if backend == "kokoro":

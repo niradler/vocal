@@ -279,6 +279,34 @@ class _AudioAPI:
 '''
 
 
+def patch_transcription_formats() -> None:
+    """Let the generated transcription client return raw text formats.
+
+    ``/v1/audio/transcriptions`` returns ``text/plain`` for ``response_format``
+    ``text``/``srt``/``vtt`` and JSON otherwise. The generator only models the
+    JSON branch, so add a content-type check. Kept here (rather than edited by
+    hand) so it survives regeneration.
+    """
+    module = VOCAL_SDK_DIR / "api" / "transcription" / "create_transcription_v1_audio_transcriptions_post.py"
+    if not module.exists():
+        return
+    source = module.read_text(encoding="utf-8")
+    marker = "        response_200 = TranscriptionResponse.from_dict(response.json())"
+    if marker not in source or "content-type" in source:
+        return
+    source = source.replace(
+        marker,
+        '        if response.headers.get("content-type", "").startswith("text/"):\n            return cast(str, response.text)\n' + marker,
+        1,
+    )
+    source = source.replace("from typing import Any\n", "from typing import Any, cast\n", 1)
+    source = source.replace(
+        "Response[HTTPValidationError | TranscriptionResponse]",
+        "Response[HTTPValidationError | TranscriptionResponse | str]",
+    )
+    module.write_text(source, encoding="utf-8")
+
+
 def sync_generated(generated_pkg: Path) -> None:
     if not generated_pkg.exists() or not any(generated_pkg.iterdir()):
         print(f"Generated package at {generated_pkg} is missing or empty.")
@@ -298,6 +326,8 @@ def sync_generated(generated_pkg: Path) -> None:
     shutil.copytree(generated_pkg, VOCAL_SDK_DIR)
 
     (VOCAL_SDK_DIR / "compat.py").write_text(COMPAT_PY, encoding="utf-8")
+
+    patch_transcription_formats()
 
     init = VOCAL_SDK_DIR / "__init__.py"
     content = init.read_text(encoding="utf-8")

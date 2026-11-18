@@ -62,7 +62,7 @@ def _transcribe(
     model: str,
     language: str | None = None,
     response_format: TranscriptionFormat | Unset = UNSET,
-) -> TranscriptionResponse | None:
+) -> TranscriptionResponse | str | None:
     audio_path = Path(str(audio_file))
     with open(audio_path, "rb") as fobj:
         body = BodyCreateTranscriptionV1AudioTranscriptionsPost(
@@ -446,6 +446,30 @@ class TestAudioTranscription:
             assert result.duration > 0, "Should have duration"
 
             print(f"\n[OK] Transcribed {filename}")
+
+    def test_transcribe_text_format_returns_plain_text(self, client, test_model, test_assets, ensure_stt_model):
+        """#14: response_format=text returns a text/plain body the SDK can parse."""
+        audio_file = test_assets["audio_dir"] / "Recording.m4a"
+
+        result = _transcribe(client, audio_file, test_model, response_format=TranscriptionFormat.TEXT)
+
+        assert isinstance(result, str), f"Expected plain text, got {type(result).__name__}"
+        assert result.strip(), "Expected non-empty transcript"
+        assert not result.lstrip().startswith("{"), "text format must not return JSON"
+
+        print(f"\n[OK] text format: {result[:60]!r}")
+
+    def test_transcribe_srt_format_returns_subtitles(self, client, test_model, test_assets, ensure_stt_model):
+        """#14: response_format=srt returns numbered SRT cues, not JSON."""
+        audio_file = test_assets["audio_dir"] / "Recording.m4a"
+
+        result = _transcribe(client, audio_file, test_model, response_format=TranscriptionFormat.SRT)
+
+        assert isinstance(result, str), f"Expected subtitle text, got {type(result).__name__}"
+        assert " --> " in result, "SRT output must contain cue timings"
+        assert result.lstrip().startswith("1"), "SRT output must start with cue number 1"
+
+        print(f"\n[OK] srt format: {len(result)} chars")
 
     def test_translate_audio_to_english(self, client, test_model, test_assets, ensure_stt_model):
         """Test /v1/audio/translations — non-English audio translated to English text"""
@@ -1362,6 +1386,34 @@ class TestKokoroTTS:
         assert all(v.id and v.language for v in result.voices), "Each voice should have id and language"
 
         print(f"\n[OK] Kokoro voices: {result.total} voices — {[v.id for v in result.voices[:5]]}")
+
+    def test_kokoro_unknown_voice_rejected(self, client, api_server):
+        """#13: an unknown voice fails before streaming, with the valid list."""
+        import requests as req
+
+        _ensure_model(client, _KOKORO_TTS_MODEL, max_wait=300)
+
+        response = req.post(
+            f"{api_server}/v1/audio/speech",
+            json={"model": _KOKORO_TTS_MODEL, "input": "nope", "voice": "not_a_voice"},
+            timeout=60,
+        )
+
+        assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text[:200]}"
+        detail = response.json().get("detail", "")
+        assert "not_a_voice" in detail and "af_heart" in detail, detail
+
+        print("\n[OK] unknown voice rejected with 400 and the valid list")
+
+    def test_kokoro_openai_voice_alias(self, client):
+        """#13: OpenAI voice names map onto Kokoro voices."""
+        _ensure_model(client, _KOKORO_TTS_MODEL, max_wait=300)
+
+        audio = _tts(client, "Alias test.", model=_KOKORO_TTS_MODEL, voice="alloy", response_format=TTSRequestResponseFormat.WAV)
+
+        assert isinstance(audio, bytes) and len(audio) > 1000, "alloy alias should synthesize audio"
+
+        print(f"\n[OK] OpenAI alias 'alloy': {len(audio):,} bytes")
 
     def test_kokoro_streams_wav(self, client):
         """Open-ended WAV headers must be valid uint32 RIFF chunks (regression: 36+0xFFFFFFFF overflowed)."""

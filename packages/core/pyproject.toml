@@ -20,6 +20,10 @@ classifiers = [
 ]
 dependencies = [
     "faster-whisper>=1.2.1",
+    # PyAV 19 removed `metadata_errors`, which faster-whisper 1.2.1 still
+    # passes to av.open(); without this pin a published install 500s on
+    # every transcription (issue #12).
+    "av>=17,<19",
     "huggingface-hub>=2.4.0",
     "pydantic>=2.14.3",
     "pydantic-settings>=2.16.3",

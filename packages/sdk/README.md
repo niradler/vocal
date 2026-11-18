@@ -62,11 +62,13 @@ import asyncio
 from vocal_sdk import VocalClient
 from vocal_sdk.api.models import list_models_v1_models_get
 
+
 async def main():
     client = VocalClient(base_url="http://localhost:8000")
     resp = await list_models_v1_models_get.asyncio(client=client)
     for model in resp.models:
         print(model.id)
+
 
 asyncio.run(main())
 ```
@@ -79,7 +81,7 @@ The legacy dict-based `VocalSDK` wrapper is still available for existing code:
 from vocal_sdk import VocalSDK
 
 client = VocalSDK(base_url="http://localhost:8000")
-models = client.models.list()          # returns dict
+models = client.models.list()  # returns dict
 result = client.audio.transcribe(...)  # returns dict
 ```
 

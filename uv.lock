@@ -12090,6 +12090,7 @@ name = "vocal-core"
 version = "0.4.0"
 source = { editable = "packages/core" }
 dependencies = [
+    { name = "av" },
     { name = "faster-whisper" },
     { name = "huggingface-hub" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
@@ -12147,6 +12148,7 @@ whisperx = [
 
 [package.metadata]
 requires-dist = [
+    { name = "av", specifier = ">=17,<19" },
     { name = "chatterbox-tts", marker = "extra == 'chatterbox'", specifier = ">=0.1.7" },
     { name = "en-core-web-sm", marker = "extra == 'kokoro'", url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" },
     { name = "faster-qwen3-tts", marker = "extra == 'qwen3-tts'", specifier = ">=0.5.4" },

@@ -1,5 +1,5 @@
 from http import HTTPStatus
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -34,8 +34,12 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | TranscriptionResponse | None:
+) -> HTTPValidationError | TranscriptionResponse | str | None:
     if response.status_code == 200:
+        # `response_format=text|srt|vtt` returns a non-JSON body even though
+        # the OpenAPI 200 also advertises the JSON schema.
+        if response.headers.get("content-type", "").startswith("text/"):
+            return cast(str, response.text)
         response_200 = TranscriptionResponse.from_dict(response.json())
 
         return response_200
@@ -53,7 +57,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | TranscriptionResponse]:
+) -> Response[HTTPValidationError | TranscriptionResponse | str]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -66,7 +70,7 @@ def sync_detailed(
     *,
     client: AuthenticatedClient | Client,
     body: BodyCreateTranscriptionV1AudioTranscriptionsPost,
-) -> Response[HTTPValidationError | TranscriptionResponse]:
+) -> Response[HTTPValidationError | TranscriptionResponse | str]:
     """Transcribe audio
 
      Transcribe audio file to text using specified model
@@ -79,7 +83,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | TranscriptionResponse]
+        Response[HTTPValidationError | TranscriptionResponse | str]
     """
 
     kwargs = _get_kwargs(
@@ -123,7 +127,7 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient | Client,
     body: BodyCreateTranscriptionV1AudioTranscriptionsPost,
-) -> Response[HTTPValidationError | TranscriptionResponse]:
+) -> Response[HTTPValidationError | TranscriptionResponse | str]:
     """Transcribe audio
 
      Transcribe audio file to text using specified model
@@ -136,7 +140,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | TranscriptionResponse]
+        Response[HTTPValidationError | TranscriptionResponse | str]
     """
 
     kwargs = _get_kwargs(
