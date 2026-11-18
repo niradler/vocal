@@ -40,6 +40,76 @@ def test_all_catalog_backends_are_known_enum_values():
     assert unknown == set(), f"Unknown backends in catalog: {unknown}"
 
 
+IMPLEMENTED_BACKENDS = {
+    "faster_whisper",
+    "whisperx",
+    "transformers",
+    "nemo",
+    "kokoro",
+    "faster_qwen3_tts",
+    "piper",
+    "chatterbox",
+    "voxtral_stt",
+    "voxtral_tts",
+    "omnivoice",
+    "supertonic",
+    "voxcpm",
+    "phonon",
+}
+
+
+def test_in_process_models_use_an_implemented_backend():
+    data = _load_catalog()
+    broken = [m["id"] for m in data["models"] if m.get("runtime", "in_process") == "in_process" and m["backend"] not in IMPLEMENTED_BACKENDS]
+    assert broken == [], f"In-process models without a working adapter: {broken}"
+
+
+def test_external_models_explain_their_runtime():
+    data = _load_catalog()
+    external = [m for m in data["models"] if m.get("runtime") == "external"]
+    assert external, "expected at least one external-runtime entry (Higgs, Drama 3, Ming)"
+    for m in external:
+        assert m.get("runtime_note"), f"External model {m['id']} must document its runtime in runtime_note"
+
+
+def test_every_model_declares_license_and_commercial_use():
+    data = _load_catalog()
+    for m in data["models"]:
+        assert m.get("license"), f"Model {m['id']} is missing a license"
+        assert isinstance(m.get("commercial_use"), bool), f"Model {m['id']} is missing commercial_use"
+        assert m.get("maintenance_status") in {"active", "retired", "deprecated"}, f"Model {m['id']} has an invalid maintenance_status"
+
+
+def test_non_commercial_licenses_are_flagged():
+    data = _load_catalog()
+    for m in data["models"]:
+        if m["license"].startswith(("cc-by-nc", "coqui-public", "fish-audio", "boson-")):
+            assert m["commercial_use"] is False, f"{m['id']} has a non-commercial license but commercial_use is true"
+
+
+def test_pruned_backends_have_no_catalog_entries():
+    data = _load_catalog()
+    retired = {"xtts", "fish_speech", "orpheus", "dia"}
+    leftovers = [m["id"] for m in data["models"] if m.get("backend") in retired]
+    assert leftovers == [], f"Catalog still lists models for removed backends: {leftovers}"
+
+
+def test_phonon_exposes_voice_list_without_cloning():
+    models = _models_by_backend("phonon")
+    assert len(models) == 1
+    model = models[0]
+    assert model["supports_voice_list"] is True
+    assert model["supports_voice_clone"] is False
+    assert model["requires_gpu"] is False
+
+
+def test_chatterbox_is_marked_retired():
+    models = _models_by_backend("chatterbox")
+    assert models
+    for m in models:
+        assert m["maintenance_status"] == "retired"
+
+
 @pytest.mark.parametrize(
     "alias",
     [
@@ -66,11 +136,18 @@ def test_all_catalog_backends_are_known_enum_values():
         "canary-qwen",
         "chatterbox",
         "chatterbox-turbo",
-        "xtts-v2",
-        "fish-speech",
-        "orpheus-3b",
-        "dia-1.6b",
-        "dia2-2b",
+        "chatterbox-multilingual-v3",
+        "qwen3-tts-1.7b-design",
+        "supertonic-3",
+        "voxcpm2",
+        "cohere-transcribe",
+        "granite-speech-5.0-2b",
+        "granite-speech-turboctc",
+        "nemotron-3.5-asr",
+        "phonon-31m",
+        "ming-3.0-tts",
+        "higgs-tts-3",
+        "fish-drama-3",
     ],
 )
 def test_alias_exists_in_catalog(alias):
@@ -104,23 +181,33 @@ def test_chatterbox_models_have_voice_clone():
         assert m.get("supports_voice_clone") is True, f"Chatterbox model {m['id']} should support voice clone"
 
 
-def test_xtts_model_multilingual():
-    models = _models_by_backend("xtts")
-    assert len(models) >= 1
-    assert len(models[0].get("languages", [])) >= 10, "XTTS-v2 should list 10+ languages"
-
-
-def test_dia_models_present():
-    models = _models_by_backend("dia")
-    assert len(models) >= 2
-
-
 def test_tts_models_have_task_tts():
     data = _load_catalog()
-    tts_backends = {"kokoro", "faster_qwen3_tts", "piper", "chatterbox", "xtts", "fish_speech", "orpheus", "dia", "omnivoice"}
+    tts_backends = {"kokoro", "faster_qwen3_tts", "piper", "chatterbox", "omnivoice", "supertonic", "voxcpm", "phonon"}
     for m in data["models"]:
         if m.get("backend") in tts_backends:
             assert m.get("task") == "tts", f"Model {m['id']} has wrong task"
+
+
+@pytest.mark.asyncio
+async def test_onnx_directory_without_config_json_verifies(tmp_path):
+    from vocal_core.registry.providers.huggingface import HuggingFaceProvider
+
+    onnx_dir = tmp_path / "onnx"
+    onnx_dir.mkdir()
+    (onnx_dir / "vocoder.onnx").write_bytes(b"onnx")
+    provider = HuggingFaceProvider()
+    assert await provider.verify_model("Supertone/supertonic-3", tmp_path) is True
+
+
+@pytest.mark.asyncio
+async def test_incomplete_download_does_not_verify(tmp_path):
+    from vocal_core.registry.providers.huggingface import HuggingFaceProvider
+
+    (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "model.safetensors.incomplete").write_bytes(b"partial")
+    provider = HuggingFaceProvider()
+    assert await provider.verify_model("openbmb/VoxCPM2", tmp_path) is False
 
 
 def test_stt_models_have_task_stt():

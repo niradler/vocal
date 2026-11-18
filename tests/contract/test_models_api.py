@@ -47,6 +47,34 @@ class TestModelsList:
         assert kokoro["supports_voice_list"] is True
         assert kokoro["voice_mode"] == "voice_id"
 
+    def test_catalog_exposes_licensing_and_runtime_metadata(self, client):
+        raw = client.get_httpx_client().get("/v1/models/catalog")
+        assert raw.status_code == 200
+        models = {m["id"]: m for m in raw.json()["models"]}
+
+        phonon = models["gradium/phonon-31m-en"]
+        assert phonon["license"] == "apache-2.0"
+        assert phonon["commercial_use"] is True
+        assert phonon["runtime"] == "in_process"
+        assert phonon["requires_gpu"] is False
+
+        drama = models["fishaudio/drama-3"]
+        assert drama["commercial_use"] is False
+        assert drama["runtime"] == "external"
+        assert drama["runtime_note"]
+
+        chatterbox = models["ResembleAI/chatterbox"]
+        assert chatterbox["maintenance_status"] == "retired"
+
+    def test_removed_backends_are_gone_from_catalog(self, client):
+        raw = client.get_httpx_client().get("/v1/models/catalog")
+        body = raw.json()
+        backend_values = {m["backend"] for m in body["models"]}
+        assert not backend_values & {"xtts", "fish_speech", "orpheus", "dia"}
+        ids = {m["id"] for m in body["models"]}
+        assert "coqui/XTTS-v2" not in ids
+        assert "nari-labs/Dia-1.6B" not in ids
+
 
 class TestModelGet:
     def test_get_known_stt_model(self, client):
@@ -65,14 +93,14 @@ class TestModelGet:
         assert result.task.value == "tts"
 
     def test_get_qwen3_asr_model(self, client):
-        model_id = "Qwen/Qwen3-ASR-0.6B"
+        model_id = "Qwen/Qwen3-ASR-0.6B-hf"
         result = get_model_v1_models_model_id_get.sync(model_id=model_id, client=client)
         assert result is not None
         assert result.task.value == "stt"
         assert result.backend.value == "transformers"
 
     def test_model_status_not_downloaded(self, client):
-        model_id = "Qwen/Qwen3-ASR-1.7B"
+        model_id = "Qwen/Qwen3-ASR-1.7B-hf"
         result = get_model_v1_models_model_id_get.sync(model_id=model_id, client=client)
         assert result is not None
         assert result.status in (ModelStatus.NOT_DOWNLOADED, ModelStatus.AVAILABLE)

@@ -21,6 +21,7 @@ from ..capabilities import (
     huggingface_card_record_from_mapping,
     huggingface_snapshot_from_info,
     infer_model_capabilities,
+    license_metadata_from_record,
     model_record_from_mapping,
     supported_model_records_from_mapping,
 )
@@ -37,27 +38,6 @@ from .base import ModelProvider as BaseProvider
 
 
 class HuggingFaceProvider(BaseProvider):
-    KNOWN_STT_MODELS = {
-        "Systran/faster-whisper-tiny": "whisper-tiny",
-        "Systran/faster-whisper-base": "whisper-base",
-        "Systran/faster-whisper-small": "whisper-small",
-        "Systran/faster-whisper-medium": "whisper-medium",
-        "Systran/faster-whisper-large-v2": "whisper-large-v2",
-        "Systran/faster-whisper-large-v3": "whisper-large-v3",
-    }
-
-    KNOWN_TTS_MODELS = {
-        "hexgrad/Kokoro-82M": "kokoro",
-        "onnx-community/Kokoro-82M-ONNX": "kokoro-onnx",
-        "Qwen/Qwen3-TTS-12Hz-0.6B-Base": "qwen3-tts-0.6b",
-        "Qwen/Qwen3-TTS-12Hz-1.7B-Base": "qwen3-tts-1.7b",
-        "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice": "qwen3-tts-0.6b-custom",
-        "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice": "qwen3-tts-1.7b-custom",
-        "fishaudio/fish-speech-1.5": "fish-speech",
-        "coqui/XTTS-v2": "xtts-v2",
-        "myshell-ai/MeloTTS-English": "melotts-en",
-    }
-
     def __init__(self, cache_dir: Path | None = None):
         self.cache_dir = cache_dir
         self._supported_models: dict[str, StoredModelRecord] | None = None
@@ -139,6 +119,7 @@ class HuggingFaceProvider(BaseProvider):
             likes=record.likes,
             sha=record.sha,
             files=[file.model_dump() for file in record.files] if record.files else None,
+            **license_metadata_from_record(record),
             **capabilities,
         )
 
@@ -280,13 +261,14 @@ class HuggingFaceProvider(BaseProvider):
         if not local_path.exists():
             return False
 
-        if not (local_path / "config.json").exists():
-            return False
-
         all_files = [f for f in local_path.rglob("*") if f.is_file()]
 
         if any(".incomplete" in f.name or f.suffix == ".lock" for f in all_files):
             return False
 
         has_weights = any(f.name in WEIGHT_NAMES or f.suffix in WEIGHT_SUFFIXES for f in all_files)
-        return has_weights
+        if not has_weights:
+            return False
+        if (local_path / "config.json").exists():
+            return True
+        return any(f.suffix == ".onnx" for f in all_files)

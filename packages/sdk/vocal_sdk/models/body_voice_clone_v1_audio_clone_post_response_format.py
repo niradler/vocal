@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class BodyVoiceCloneV1AudioClonePostResponseFormat(str, Enum):
+class BodyVoiceCloneV1AudioClonePostResponseFormat(StrEnum):
     AAC = "aac"
     FLAC = "flac"
     MP3 = "mp3"

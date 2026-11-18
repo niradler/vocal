@@ -17,8 +17,10 @@ from .model_download_progress import ModelDownloadProgress
 from .model_info import ModelInfo
 from .model_info_files_type_0_item import ModelInfoFilesType0Item
 from .model_list_response import ModelListResponse
+from .model_maintenance_status import ModelMaintenanceStatus
 from .model_provider import ModelProvider
 from .model_pull_request import ModelPullRequest
+from .model_runtime import ModelRuntime
 from .model_show_request import ModelShowRequest
 from .model_status import ModelStatus
 from .model_task import ModelTask
@@ -44,17 +46,19 @@ __all__ = (
     "ModelInfo",
     "ModelInfoFilesType0Item",
     "ModelListResponse",
+    "ModelMaintenanceStatus",
     "ModelProvider",
     "ModelPullRequest",
+    "ModelRuntime",
     "ModelShowRequest",
     "ModelStatus",
     "ModelTask",
+    "TTSRequest",
+    "TTSRequestResponseFormat",
     "TranscriptionFormat",
     "TranscriptionResponse",
     "TranscriptionSegment",
     "TranscriptionWord",
-    "TTSRequest",
-    "TTSRequestResponseFormat",
     "ValidationError",
     "VoiceInfo",
     "VoicesResponse",

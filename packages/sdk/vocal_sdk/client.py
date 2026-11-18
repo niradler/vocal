@@ -1,8 +1,8 @@
 import ssl
-from typing import Any
+from typing import Any, Self
 
-from attrs import define, field, evolve
 import httpx
+from attrs import define, evolve, field
 
 
 @define
@@ -97,12 +97,12 @@ class VocalClient:
             )
         return self._client
 
-    def __enter__(self) -> "VocalClient":
+    def __enter__(self) -> Self:
         """Enter a context manager for self.client"""
         self.get_httpx_client().__enter__()
         return self
 
-    def __exit__(self, *args: Any, **kwargs: Any) -> None:
+    def __exit__(self, *args: object, **kwargs: Any) -> None:
         """Exit the context manager for internal httpx.Client"""
         self.get_httpx_client().__exit__(*args, **kwargs)
 
@@ -128,12 +128,12 @@ class VocalClient:
             )
         return self._async_client
 
-    async def __aenter__(self) -> "VocalClient":
+    async def __aenter__(self) -> Self:
         """Enter a context manager for underlying httpx.AsyncClient"""
         await self.get_async_httpx_client().__aenter__()
         return self
 
-    async def __aexit__(self, *args: Any, **kwargs: Any) -> None:
+    async def __aexit__(self, *args: object, **kwargs: Any) -> None:
         """Exit the context manager for underlying httpx.AsyncClient"""
         await self.get_async_httpx_client().__aexit__(*args, **kwargs)
 
@@ -239,12 +239,12 @@ class VocalAuthenticatedClient:
             )
         return self._client
 
-    def __enter__(self) -> "VocalAuthenticatedClient":
+    def __enter__(self) -> Self:
         """Enter a context manager for self.client"""
         self.get_httpx_client().__enter__()
         return self
 
-    def __exit__(self, *args: Any, **kwargs: Any) -> None:
+    def __exit__(self, *args: object, **kwargs: Any) -> None:
         """Exit the context manager for internal httpx.Client"""
         self.get_httpx_client().__exit__(*args, **kwargs)
 
@@ -275,12 +275,12 @@ class VocalAuthenticatedClient:
             )
         return self._async_client
 
-    async def __aenter__(self) -> "VocalAuthenticatedClient":
+    async def __aenter__(self) -> Self:
         """Enter a context manager for underlying httpx.AsyncClient"""
         await self.get_async_httpx_client().__aenter__()
         return self
 
-    async def __aexit__(self, *args: Any, **kwargs: Any) -> None:
+    async def __aexit__(self, *args: object, **kwargs: Any) -> None:
         """Exit the context manager for underlying httpx.AsyncClient"""
         await self.get_async_httpx_client().__aexit__(*args, **kwargs)
 

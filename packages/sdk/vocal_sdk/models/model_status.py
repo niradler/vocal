@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class ModelStatus(str, Enum):
+class ModelStatus(StrEnum):
     AVAILABLE = "available"
     DOWNLOADING = "downloading"
     ERROR = "error"

@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class ModelTask(str, Enum):
+class ModelTask(StrEnum):
     STT = "stt"
     TTS = "tts"
 
