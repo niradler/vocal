@@ -346,6 +346,7 @@ Expected: transcribes speech only, no LLM/TTS response.
 ### 8.3 OpenAI-compatible client test
 ```python
 from openai import AsyncOpenAI
+
 client = AsyncOpenAI(base_url="http://localhost:8000", api_key="local")
 # Connect with Realtime API — same client code works against Vocal as against OpenAI
 ```
@@ -437,6 +438,7 @@ client = Client(base_url="http://localhost:8000")
 
 # List models
 from vocal_sdk.api.models import list_models_v1_models_get
+
 result = list_models_v1_models_get.sync(client=client)
 print(result)
 ```

@@ -94,8 +94,9 @@ All default values (model names, URLs, sample rates, timeouts) live in **`vocal_
 
 ```python
 from vocal_core.config import vocal_settings
-model = vocal_settings.STT_DEFAULT_MODEL   # ✅
-model = "Systran/faster-whisper-tiny"       # ❌
+
+model = vocal_settings.STT_DEFAULT_MODEL  # ✅
+model = "Systran/faster-whisper-tiny"  # ❌
 ```
 
 ### Logging
@@ -104,6 +105,7 @@ All modules use stdlib `logging` — never `print()`:
 
 ```python
 import logging
+
 logger = logging.getLogger(__name__)
 logger.info("Loading model from %s", path)
 ```
