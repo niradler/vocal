@@ -107,11 +107,25 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
-        run: uv sync --locked
+      - name: Build the production requirement set
+        run: |
+          uv export --format requirements-txt --no-dev --no-emit-project --no-hashes -o requirements-audit.txt
+          # PyTorch's cu132 wheels carry a local version tag that pip cannot resolve; the audited
+          # code is the same, only the build index differs.
+          sed -i -E 's/\+cu[0-9]+//' requirements-audit.txt
 
-      - name: Audit installed dependencies (base install surface)
-        run: uv run --with pip-audit pip-audit --skip-editable --progress-spinner off
+      # Audits what a plain `pip install vocal-ai` pulls in (no dev tools, no optional backends).
+      # Ignored advisories are not reachable from Vocal's code paths:
+      # - setuptools <82 is required for pkg_resources (perth/chatterbox watermarking); the
+      #   advisory is a build-time MANIFEST.in Unicode issue.
+      # - fsspec is capped by datasets (NeMo); the advisory is RCE in ReferenceFileSystem, which
+      #   Vocal never instantiates.
+      - name: Audit production dependencies
+        run: |
+          uv run --with pip-audit pip-audit -r requirements-audit.txt --progress-spinner off \
+            --ignore-vuln PYSEC-2026-3447 \
+            --ignore-vuln GHSA-xmj3-9gf7-h52w \
+            --ignore-vuln PYSEC-2026-4217
 
   catalog-check:
     name: Model Catalog Check
