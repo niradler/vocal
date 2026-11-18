@@ -1363,6 +1363,17 @@ class TestKokoroTTS:
 
         print(f"\n[OK] Kokoro voices: {result.total} voices — {[v.id for v in result.voices[:5]]}")
 
+    def test_kokoro_streams_wav(self, client):
+        """Open-ended WAV headers must be valid uint32 RIFF chunks (regression: 36+0xFFFFFFFF overflowed)."""
+        _ensure_model(client, _KOKORO_TTS_MODEL, max_wait=300)
+
+        audio = _tts(client, "Streaming WAV from Kokoro works.", model=_KOKORO_TTS_MODEL, response_format=TTSRequestResponseFormat.WAV, stream=True)
+
+        assert len(audio) > 1000, "Kokoro WAV streaming should produce audio"
+        assert audio[:4] == b"RIFF" and audio[8:12] == b"WAVE", "streamed WAV must start with a RIFF/WAVE header"
+        assert audio[36:40] == b"data", "streamed WAV must declare its data chunk"
+        print(f"\n[OK] Kokoro streamed {len(audio)} bytes of WAV")
+
 
 @pytest.mark.skipif(_IN_CI, reason="CI: Chatterbox requires GPU and large download — skip in CI")
 @pytest.mark.skipif(not _HAS_CHATTERBOX, reason="chatterbox-tts not installed — run: pip install chatterbox-tts")
@@ -1575,14 +1586,31 @@ _PHONON_MODEL = "gradium/phonon-31m-en"
 
 
 def _hf_repo_accessible(repo_id: str) -> bool:
-    """True when this machine may download the repo (gated repos need the licence accepted)."""
+    """True when this machine may download the repo (gated repos need the licence accepted).
+
+    Only gated / auth / not-found errors mean "we genuinely can't use this repo"; anything else
+    (network outage, DNS, rate limit) must fail the test rather than silently skip it.
+    """
     try:
         from huggingface_hub import hf_hub_download
+    except ImportError:
+        return False
 
+    from huggingface_hub.errors import GatedRepoError, HfHubHTTPError, LocalEntryNotFoundError, RepositoryNotFoundError
+
+    try:
         hf_hub_download(repo_id=repo_id, filename="config.json", token=True)
         return True
-    except Exception:
+    except (GatedRepoError, RepositoryNotFoundError):
         return False
+    except HfHubHTTPError as exc:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        if status in (401, 403, 404):
+            return False
+        raise
+    except LocalEntryNotFoundError:
+        # Offline cache miss: report the network problem instead of skipping.
+        raise
 
 
 @pytest.mark.skipif(not _HAS_TRANSFORMERS, reason="transformers not installed — run: uv sync --extra transformers")
@@ -1675,6 +1703,17 @@ class TestPhononTTS:
 
         assert len(audio) > 1000, "Phonon streaming should produce audio"
         print(f"\n[OK] Phonon streamed {len(audio)} bytes of PCM")
+
+    def test_phonon_streams_wav(self, client):
+        """Open-ended WAV headers must be valid uint32 RIFF chunks (regression: 36+0xFFFFFFFF overflowed)."""
+        _ensure_model(client, _PHONON_MODEL, max_wait=600)
+
+        audio = _tts(client, "Streaming WAV from Phonon works.", model=_PHONON_MODEL, response_format=TTSRequestResponseFormat.WAV, stream=True)
+
+        assert len(audio) > 1000, "Phonon WAV streaming should produce audio"
+        assert audio[:4] == b"RIFF" and audio[8:12] == b"WAVE", "streamed WAV must start with a RIFF/WAVE header"
+        assert audio[36:40] == b"data", "streamed WAV must declare its data chunk"
+        print(f"\n[OK] Phonon streamed {len(audio)} bytes of WAV")
 
     def test_phonon_rejects_unknown_voice(self, client):
         _ensure_model(client, _PHONON_MODEL, max_wait=600)

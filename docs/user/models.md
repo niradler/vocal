@@ -49,9 +49,11 @@ Whisper-based models cover 99 languages and auto-detect language. The newer ASR 
 | `nvidia/nemotron-3.5-asr-streaming-0.6b` | ~2.4 GB | 638M | 6 GB | Fast | 40 locales | Built for voice agents: native streaming, automatic language detection |
 | `mistralai/Voxtral-Mini-4B-Realtime-2602` | ~9 GB | 4B | 16 GB | Good | 13 | Requires `[voxtral]` + CUDA |
 
-**Backend:** `Systran/faster-whisper-*` models use CTranslate2 (optimized, quantized). Qwen3-ASR, Granite Speech and Cohere Transcribe use HuggingFace Transformers (dedicated prompt/processor paths). Qwen3-ASR only works with the `*-hf` checkpoints (e.g. `Qwen/Qwen3-ASR-0.6B-hf`) because that layout matches transformers' native `Qwen3ASRForConditionalGeneration`; the original repos ship custom-code weights that require an older transformers. Nemotron 3.5 uses NeMo and needs a NeMo build that ships `nemotron-3.5` (>= 26.06). Voxtral uses `VoxtralRealtimeForConditionalGeneration` from transformers≥5.2.0.
+**Backend:** `Systran/faster-whisper-*` models use CTranslate2 (optimized, quantized). Qwen3-ASR, Granite Speech and Cohere Transcribe use HuggingFace Transformers (dedicated prompt/processor paths). Qwen3-ASR only works with the `*-hf` checkpoints (e.g. `Qwen/Qwen3-ASR-0.6B-hf`) because that layout matches transformers' native `Qwen3ASRForConditionalGeneration`; the original repos ship custom-code weights that require an older transformers. Nemotron 3.5 uses NeMo and needs `nemo_toolkit[asr] >= 3.0` (the `nemotron-3.5` collection). Voxtral uses `VoxtralRealtimeForConditionalGeneration` from transformers≥5.2.0.
 
 **Timestamps:** Granite Speech, Cohere Transcribe, Nemotron 3.5 and Qwen3-ASR return text only. Use Whisper, WhisperX or Parakeet when you need word timestamps.
+
+**Language control:** Granite Speech 5.0 2B takes a language-id prompt (`en`, `fr`, `de`, `es`, `pt`, `ja`); other codes are rejected. The 470M TurboCTC model detects the language itself and ignores `language`.
 
 **Recommended starting point:** `Systran/faster-whisper-tiny` — runs on CPU, downloads in seconds.
 

@@ -128,7 +128,7 @@ Every STT/TTS backend implements a base class in `adapters/stt/base.py` or `adap
 
 `supported_models.json` is the product's claim about what Vocal supports. Keep it honest:
 
-- Every entry declares `license` (SPDX id), `commercial_use` (bool) and `maintenance_status` (`active`/`retired`/`deprecated`).
+- Every entry declares `license` (SPDX id when one exists, otherwise the upstream license id), `commercial_use` (bool) and `maintenance_status` (`active`/`retired`/`deprecated`).
 - `runtime` is `in_process` only when an adapter can actually run the model. Models that need vLLM-Omni, SGLang-Omni or a vendored runtime must use `"runtime": "external"` plus a `runtime_note`, and the services reject them with an actionable error via `assert_in_process_runtime()`.
 - Do not add a catalog entry without an adapter — `tests/unit/test_catalog_coverage.py` fails on any `in_process` entry whose backend has no implementation.
 - Refresh HF-derived facts (size, params, languages, downloads) with `make generate-supported-models`; it preserves curated fields.
@@ -142,7 +142,7 @@ Every STT/TTS backend implements a base class in `adapters/stt/base.py` or `adap
 - `faster-whisper` calls `av.open(metadata_errors=...)`, which PyAV 19 removed — `av` is pinned to `<19` in the overrides.
 - `openapi-python-client` 0.30 emits `httpx2` imports; the SDK stays on 0.29.x so generated code and the hand-written client share `httpx`.
 - `transformers` is pinned to `>=5.22,<5.23`: 5.23 registers native `qwen3_tts` configs that break `faster-qwen3-tts`, and validates sub-config token ids in a way the qwen3-tts talker config cannot satisfy. See `docs/deps.md`.
-- `torchaudio` decoding needs `torchcodec` + FFmpeg shared DLLs; adapters decode with `soundfile` (falling back to `ffmpeg`) instead, so a broken torchcodec never reaches inference.
+- `torchaudio` decoding needs `torchcodec` + FFmpeg shared DLLs; adapters decode with `soundfile` (falling back to `ffmpeg`) instead, so a broken torchcodec never reaches inference. All four torch packages (torch, torchaudio, torchvision, torchcodec) resolve from the `pytorch` cu132 index.
 
 ---
 

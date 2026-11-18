@@ -48,6 +48,18 @@ def fetch_and_normalize_spec(url: str, destination: Path) -> Path:
     return destination
 
 
+def load_and_normalize_spec(path: Path, destination: Path) -> Path:
+    """Normalize a saved spec file so ``--path`` regeneration matches ``--url``.
+
+    Without this, generating from a locally saved FastAPI spec silently emits ``str`` upload
+    fields again (see ``_normalize_binary_schemas``).
+    """
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    _normalize_binary_schemas(spec)
+    destination.write_text(json.dumps(spec, indent=2), encoding="utf-8")
+    return destination
+
+
 SDK_DIR = Path(__file__).parent.parent
 VOCAL_SDK_DIR = SDK_DIR / "vocal_sdk"
 CONFIG_FILE = SDK_DIR / "openapi-python-client-config.yaml"
@@ -321,7 +333,10 @@ def main() -> None:
         source_flag = "--path"
 
     with tempfile.TemporaryDirectory() as tmp:
-        if not args.path:
+        if args.path:
+            normalized = load_and_normalize_spec(Path(args.path).resolve(), Path(tmp) / "openapi.json")
+            source_value = str(normalized)
+        else:
             print(f"Fetching OpenAPI spec from: {args.url}")
             normalized = fetch_and_normalize_spec(args.url, Path(tmp) / "openapi.json")
             source_value = str(normalized)

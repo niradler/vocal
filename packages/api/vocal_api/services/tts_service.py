@@ -230,13 +230,15 @@ class TTSService:
             self.last_used["pyttsx3"] = time.time()
             return await adapter.get_voices()
 
-        model_path = self.registry.get_model_path(model_id)
-        if not model_path:
-            raise ValueError(f"Model {model_id} not downloaded")
-
         model_info = await self.registry.get_model(model_id)
         if not model_info:
             raise ValueError(f"Model {model_id} not found")
+
+        assert_in_process_runtime(model_info)
+
+        model_path = self.registry.get_model_path(model_id)
+        if not model_path:
+            raise ValueError(f"Model {model_id} not downloaded")
 
         adapter = await self._get_or_create_adapter(model_id, model_path, model_info.backend.value)
         self.last_used[model_id] = time.time()
@@ -248,13 +250,15 @@ class TTSService:
             self.last_used["pyttsx3"] = time.time()
             return adapter.get_capabilities()
 
-        model_path = self.registry.get_model_path(model_id)
-        if not model_path:
-            raise ValueError(f"Model {model_id} not downloaded")
-
         model_info = await self.registry.get_model(model_id)
         if not model_info:
             raise ValueError(f"Model {model_id} not found")
+
+        assert_in_process_runtime(model_info)
+
+        model_path = self.registry.get_model_path(model_id)
+        if not model_path:
+            raise ValueError(f"Model {model_id} not downloaded")
 
         adapter = await self._get_or_create_adapter(model_id, model_path, model_info.backend.value)
         self.last_used[model_id] = time.time()

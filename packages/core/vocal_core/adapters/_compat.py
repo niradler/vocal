@@ -1,8 +1,9 @@
 """Shared compatibility shims for transformers 5.x API breaks.
 
 These monkey-patches bridge gaps between transformers 5.x and downstream
-packages (faster_qwen3_tts, qwen_tts) that were written against transformers 4.x.  Each shim is guarded so it only applies when the target
-is actually missing — once upstream fixes land the shim becomes a no-op.
+packages (faster_qwen3_tts, qwen_tts) that were written against transformers 4.x.
+Each shim is guarded so it only applies when the target is actually missing —
+once upstream fixes land the shim becomes a no-op.
 
 See docs/deps.md "Runtime Patches" for the full table of what changed.
 """
@@ -21,17 +22,23 @@ def _shim_check_model_inputs() -> None:
 
     transformers 5.x turned the old decorator factory into ``check_model_inputs(func)``.
     Downstream packages (qwen_tts) still write ``@check_model_inputs()``, which now raises
-    ``TypeError: missing 1 required positional argument: 'func'``.  Accept both forms and
-    return the wrapped callable unchanged - the decorator only forwarded defaults.
+    ``TypeError: missing 1 required positional argument: 'func'``. Accept both forms while
+    still delegating to the real decorator, which merges config defaults into forward kwargs.
     """
     import transformers.utils.generic as _tug
 
-    def _shim(func=None, **_kw):
+    if getattr(_tug.check_model_inputs, "_vocal_patched", False):
+        return
+
+    _orig = _tug.check_model_inputs
+
+    def _shim(func=None, **kwargs):
         if callable(func):
-            return func
-        return lambda inner: inner
+            return _orig(func)
+        return lambda inner: _orig(inner)
 
     _shim._vocal_patched = True
+    _shim.__wrapped__ = _orig
     _tug.check_model_inputs = _shim
     logger.debug("Patched transformers.utils.generic.check_model_inputs")
 

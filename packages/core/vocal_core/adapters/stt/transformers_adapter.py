@@ -225,6 +225,16 @@ class TransformersSTTAdapter(STTAdapter):
     # Cohere Transcribe supports 14 languages; the processor expects ISO codes.
     _COHERE_LANGUAGES = frozenset({"en", "fr", "de", "it", "es", "pt", "el", "nl", "pl", "zh", "ja", "ko", "vi", "ar"})
 
+    # Granite Speech 5.0 2B takes a language-id prompt naming the language in English.
+    _GRANITE_LANGUAGE_NAMES = {
+        "en": "English",
+        "fr": "French",
+        "de": "German",
+        "es": "Spanish",
+        "pt": "Portuguese",
+        "ja": "Japanese",
+    }
+
     @staticmethod
     def _get_audio_duration(audio_path: str) -> float:
         """Estimate audio duration in seconds."""
@@ -255,7 +265,7 @@ class TransformersSTTAdapter(STTAdapter):
         elif self._prompt_kind == "cohere":
             text = self._run_cohere_asr(audio_path, language)
         elif self._prompt_kind == "granite":
-            text = self._run_granite_speech(audio_path)
+            text = self._run_granite_speech(audio_path, language)
         else:
             text = self._run_granite_ctc(audio_path)
 
@@ -340,12 +350,21 @@ class TransformersSTTAdapter(STTAdapter):
         outputs = self._prompt_model.generate(**inputs, max_new_tokens=256)
         return str(self._prompt_processor.decode(outputs, skip_special_tokens=True)).strip()
 
-    def _run_granite_speech(self, audio_path: str) -> str:
+    def _run_granite_speech(self, audio_path: str, language: str | None) -> str:
         import torch
 
         audio = torch.from_numpy(self._load_mono_audio(audio_path, 16000)).unsqueeze(0)
         tokenizer = self._prompt_processor.tokenizer
-        chat = [{"role": "user", "content": "<|audio|>transcribe the speech with proper punctuation and capitalization."}]
+
+        # IBM documents a language-id prompt for multilingual ASR (README: "ASR with language ID").
+        instruction = "transcribe the speech with proper punctuation and capitalization."
+        if language:
+            name = self._GRANITE_LANGUAGE_NAMES.get(language)
+            if name is None:
+                raise ValueError(f"Granite Speech 5.0 2B does not support language '{language}'. Supported: {', '.join(sorted(self._GRANITE_LANGUAGE_NAMES))}")
+            instruction = f"The speech is in {name}. Transcribe it exactly; do not translate. can you transcribe the speech into a written format?"
+
+        chat = [{"role": "user", "content": f"<|audio|>{instruction}"}]
         prompt = tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=True)
 
         inputs = self._prompt_processor(prompt, audio, device=self._prompt_model.device, return_tensors="pt").to(self._prompt_model.device)
@@ -364,8 +383,13 @@ class TransformersSTTAdapter(STTAdapter):
         return "" if text == "<|nospeech|>" else text
 
     def _run_pipeline(self, audio_path: str, generate_kwargs: dict) -> TranscriptionResult:
+        # Hand the pipeline a decoded array so it never reaches for torchcodec/ffmpeg backends
+        # that may be missing on Windows.
+        feature_extractor = getattr(self.pipe, "feature_extractor", None)
+        sampling_rate = int(getattr(feature_extractor, "sampling_rate", 16000) or 16000)
+        audio = self._load_mono_audio(audio_path, sampling_rate)
         raw = self.pipe(
-            audio_path,
+            {"array": audio, "sampling_rate": sampling_rate},
             return_timestamps=True,
             generate_kwargs=generate_kwargs if generate_kwargs else None,
         )

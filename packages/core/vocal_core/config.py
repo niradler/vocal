@@ -14,6 +14,10 @@ class VocalSettings(BaseSettings):
     TTS_DEFAULT_VOICE: str | None = None
     TTS_DEFAULT_CLONE_MODEL: str = "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
 
+    # Empty -> ptts.DEFAULT_MODEL (a commit-pinned wheel reference).
+    PHONON_MODEL_REF: str = ""
+    PHONON_QUANT: str = "q8_0"
+
     DEFAULT_LANGUAGE: str = "en"
 
     WHISPERX_BATCH_SIZE: int = 16

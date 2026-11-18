@@ -3,6 +3,7 @@ import importlib.util
 import io
 import logging
 import struct
+import threading
 from collections.abc import AsyncGenerator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -17,8 +18,7 @@ logger = logging.getLogger(__name__)
 
 PHONON_AVAILABLE = importlib.util.find_spec("ptts") is not None
 
-PHONON_MODEL_REF = "hf://gradium/phonon-31m-en"
-PHONON_QUANT = "q8_0"
+PHONON_DEFAULT_QUANT = "q8_0"
 PHONON_DEFAULT_VOICE = "default"
 SUPPORTED_FORMATS = {AudioFormat.WAV, AudioFormat.PCM}
 _WEIGHT_SUFFIXES = (".gguf", ".safetensors", ".bin")
@@ -29,7 +29,8 @@ def _wav_header_open_ended(sample_rate: int, num_channels: int = 1, bits_per_sam
     byte_rate = sample_rate * num_channels * bits_per_sample // 8
     block_align = num_channels * bits_per_sample // 8
     data_size = 0xFFFFFFFF
-    riff_size = 36 + data_size
+    # RIFF sizes are uint32: 36 + 0xFFFFFFFF would overflow struct.pack("<I", ...).
+    riff_size = 0xFFFFFFFF
     return struct.pack(
         "<4sI4s4sIHHIIHH4sI",
         b"RIFF",
@@ -52,6 +53,12 @@ def _has_local_weights(model_path: Path) -> bool:
     return any(model_path.glob(f"*{suffix}") for suffix in _WEIGHT_SUFFIXES)
 
 
+def _to_pcm16(chunk: Any) -> bytes:
+    """Convert one float32 PCM chunk from ptts into little-endian int16 bytes."""
+    samples = np.asarray(chunk, dtype=np.float32).reshape(-1)
+    return (np.clip(samples, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
+
+
 class PhononTTSAdapter(TTSAdapter):
     """Phonon 31M (ptts) — CPU-only, ~65 MB, 100+ shipped voices, no cloning."""
 
@@ -71,17 +78,25 @@ class PhononTTSAdapter(TTSAdapter):
     def _load_sync(self, model_path: Path) -> None:
         import ptts
 
+        from ...config import vocal_settings
+
         self.model_path = model_path
         self.device = "cpu"
-        model_ref = str(model_path) if _has_local_weights(model_path) else PHONON_MODEL_REF
-        logger.info("Loading Phonon 31M from %s (quant=%s)", model_ref, PHONON_QUANT)
+
+        quant = vocal_settings.PHONON_QUANT or PHONON_DEFAULT_QUANT
+        if _has_local_weights(model_path):
+            model_ref = str(model_path)
+        else:
+            # Nothing downloaded yet: fall back to the configured (commit-pinned) upstream ref.
+            model_ref = vocal_settings.PHONON_MODEL_REF or ptts.DEFAULT_MODEL
+
+        logger.info("Loading Phonon 31M from %s (quant=%s)", model_ref, quant)
         try:
-            self.model = ptts.TTS(model_ref, lang="en", quant=PHONON_QUANT)
+            self.model = ptts.TTS(model_ref, lang="en", quant=quant)
         except Exception as exc:
-            if model_ref == PHONON_MODEL_REF:
+            if model_ref != str(model_path):
                 raise
-            logger.warning("Could not load Phonon from %s (%s); falling back to %s", model_ref, exc, PHONON_MODEL_REF)
-            self.model = ptts.TTS(PHONON_MODEL_REF, lang="en", quant=PHONON_QUANT)
+            raise RuntimeError(f"Phonon weights in {model_path} could not be loaded ({exc}). Delete the model and re-download it.") from exc
         self.sample_rate = int(self.model.sample_rate)
         logger.info("Phonon 31M loaded (sr=%d, voices=%d)", self.sample_rate, len(self._catalog()))
 
@@ -169,6 +184,46 @@ class PhononTTSAdapter(TTSAdapter):
         audio = self.model.synth(text, voice=voice_id)
         return np.asarray(audio, dtype=np.float32).reshape(-1)
 
+    async def _iter_pcm_chunks(self, text: str, voice_id: str) -> AsyncGenerator[bytes, None]:
+        """Run ptts streaming synthesis on a worker thread, yielding PCM as it arrives."""
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[bytes | BaseException | None] = asyncio.Queue()
+        cancelled = threading.Event()
+
+        def _post(item: bytes | BaseException | None) -> None:
+            if cancelled.is_set() or loop.is_closed():
+                return
+            try:
+                loop.call_soon_threadsafe(queue.put_nowait, item)
+            except RuntimeError:
+                # Event loop already torn down (client disconnected).
+                pass
+
+        def _run() -> None:
+            try:
+                with self.model.stream(text, voice=voice_id) as stream:
+                    for chunk in stream:
+                        _post(_to_pcm16(chunk))
+            except BaseException as exc:  # propagate synthesis failures to the consumer
+                logger.exception("Phonon streaming synthesis failed")
+                _post(exc)
+            finally:
+                _post(None)
+
+        executor = ThreadPoolExecutor(max_workers=1)
+        executor.submit(_run)
+        try:
+            while True:
+                chunk = await queue.get()
+                if chunk is None:
+                    return
+                if isinstance(chunk, BaseException):
+                    raise chunk
+                yield chunk
+        finally:
+            cancelled.set()
+            executor.shutdown(wait=False)
+
     async def synthesize_stream(
         self,
         text: str,
@@ -182,33 +237,11 @@ class PhononTTSAdapter(TTSAdapter):
         if output_format not in SUPPORTED_FORMATS:
             raise ValueError(f"Phonon only supports WAV and PCM streaming. Requested: '{output_format}'.")
 
-        voice_id = self._resolve_voice(voice)
-        loop = asyncio.get_running_loop()
-        queue: asyncio.Queue[bytes | None] = asyncio.Queue()
-
-        def _run() -> None:
-            try:
-                with self.model.stream(text, voice=voice_id) as stream:
-                    for chunk in stream:
-                        samples = np.asarray(chunk, dtype=np.float32).reshape(-1)
-                        if samples.size:
-                            loop.call_soon_threadsafe(queue.put_nowait, (np.clip(samples, -1.0, 1.0) * 32767).astype(np.int16).tobytes())
-            finally:
-                loop.call_soon_threadsafe(queue.put_nowait, None)
-
         if output_format == AudioFormat.WAV:
             yield _wav_header_open_ended(self.sample_rate)
 
-        executor = ThreadPoolExecutor(max_workers=1)
-        executor.submit(_run)
-        try:
-            while True:
-                chunk = await queue.get()
-                if chunk is None:
-                    break
-                yield chunk
-        finally:
-            executor.shutdown(wait=False)
+        async for chunk in self._iter_pcm_chunks(text, self._resolve_voice(voice)):
+            yield chunk
 
     async def get_voices(self) -> list[Voice]:
         return [Voice(id=str(item.get("voice_id")), name=str(item.get("name") or item.get("voice_id")), language=str(item.get("language") or "en")) for item in self._catalog() if item.get("voice_id")]

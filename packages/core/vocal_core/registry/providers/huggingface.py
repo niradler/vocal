@@ -38,31 +38,6 @@ from .base import ModelProvider as BaseProvider
 
 
 class HuggingFaceProvider(BaseProvider):
-    KNOWN_STT_MODELS = {
-        "Systran/faster-whisper-tiny": "whisper-tiny",
-        "Systran/faster-whisper-base": "whisper-base",
-        "Systran/faster-whisper-small": "whisper-small",
-        "Systran/faster-whisper-medium": "whisper-medium",
-        "Systran/faster-whisper-large-v2": "whisper-large-v2",
-        "Systran/faster-whisper-large-v3": "whisper-large-v3",
-    }
-
-    KNOWN_TTS_MODELS = {
-        "hexgrad/Kokoro-82M": "kokoro",
-        "onnx-community/Kokoro-82M-ONNX": "kokoro-onnx",
-        "Qwen/Qwen3-TTS-12Hz-0.6B-Base": "qwen3-tts-0.6b",
-        "Qwen/Qwen3-TTS-12Hz-1.7B-Base": "qwen3-tts-1.7b",
-        "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice": "qwen3-tts-0.6b-custom",
-        "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice": "qwen3-tts-1.7b-custom",
-        "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign": "qwen3-tts-1.7b-design",
-        "Supertone/supertonic-3": "supertonic-3",
-        "openbmb/VoxCPM2": "voxcpm2",
-        "ResembleAI/chatterbox-multilingual-v3": "chatterbox-multilingual-v3",
-        "fishaudio/fish-speech-1.5": "fish-speech",
-        "coqui/XTTS-v2": "xtts-v2",
-        "myshell-ai/MeloTTS-English": "melotts-en",
-    }
-
     def __init__(self, cache_dir: Path | None = None):
         self.cache_dir = cache_dir
         self._supported_models: dict[str, StoredModelRecord] | None = None

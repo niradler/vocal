@@ -3264,7 +3264,7 @@
       ],
       "recommended_vram": "6GB+",
       "source_url": "https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b",
-      "description": "NVIDIA Nemotron 3.5 ASR Streaming (Jun 2026) \u2014 cache-aware FastConformer + RNNT built for voice agents: native streaming at 80-1120 ms chunks, automatic language detection across 40 locales. Needs a NeMo build that ships nemotron-3.5 (>= 26.06).",
+      "description": "NVIDIA Nemotron 3.5 ASR Streaming (Jun 2026) \u2014 cache-aware FastConformer + RNNT built for voice agents: native streaming at 80-1120 ms chunks, automatic language detection across 40 locales. Needs nemo_toolkit[asr] >= 3.0 (the nemotron-3.5 collection).",
       "license": "openmdw-1.1",
       "commercial_use": true,
       "maintenance_status": "active",
@@ -3322,7 +3322,7 @@
       "provider": "huggingface",
       "task": "tts",
       "backend": "custom",
-      "parameters": "1.48B",
+      "parameters": "0.5B",
       "size": 3000000000,
       "size_readable": "3.0 GB",
       "languages": [
@@ -3358,7 +3358,8 @@
         "voice-design",
         "multilingual",
         "license:mit"
-      ]
+      ],
+      "actual_parameter_count": 1480000000
     },
     {
       "id": "bosonai/higgs-tts-3-4b",

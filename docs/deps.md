@@ -29,7 +29,7 @@ Resolution errors are metadata mismatches, not runtime failures. `chatterbox-tts
 
 ### What to watch for (genuine blockers)
 
-- **CUDA index** — if `uv sync` fails because a package needs a newer torch than the index provides, check `nvidia-smi` and switch the pytorch index URL (cu124 → cu126 → cu128). This is a one-line change.
+- **CUDA index** — if `uv sync` fails because a package needs a newer torch than the index provides, check `nvidia-smi` and switch the pytorch index URL (cu128 → cu130 → cu132). This is a one-line change.
 - **Packages that call pip at runtime** — some packages (e.g. spacy's `cli.download`) invoke pip internally. uv-managed venvs don't include pip. Fix: pre-declare the resource as an explicit dep (URL wheel if needed), not by adding pip to deps. Adding pip as a workaround allows arbitrary runtime installs and makes the environment non-reproducible.
 - **Test failures** — the only real signal. Everything else is noise until proven otherwise.
 
@@ -39,25 +39,30 @@ Located in root `pyproject.toml` under `[tool.uv] override-dependencies`. These 
 
 | Override | Reason |
 |---|---|
-| `ctranslate2>=4.7.1` | Ensure minimum version for faster-whisper compatibility |
-| `transformers>=5.3.0` | Force v5 because transformers 4.x hard-checks `huggingface-hub<1.0` at import time and refuses to start |
-| `setuptools>=70.0.0,<81` | setuptools 82.0.0 removed `pkg_resources`; pin below 81 to keep it for perth/chatterbox and other legacy packages |
+| `ctranslate2>=4.9.0` | faster-whisper 1.2.x requires 4.9+ (`av.open`/quantization API changes) |
+| `av>=17,<19` | faster-whisper calls `av.open(metadata_errors=...)`, which PyAV 19 removed |
+| `transformers>=5.22,<5.23` | 5.23 registers native `qwen3_tts`/`qwen3_asr` configs that break `faster-qwen3-tts`; 5.22.x is the newest working minor (see below) |
+| `setuptools>=70.0.0,<85` | setuptools 82 removed `pkg_resources`, needed by `perth`/chatterbox; 80.10.2 is installed |
 | `numpy>=2.4.3` | chatterbox-tts pins `numpy>=1.24,<1.26`; numpy 2.x is backward compatible |
-| `huggingface-hub>=1.7.1` | whisperx<3.8.2 declares `huggingface-hub<1.0.0`; 1.7.1 works fine at runtime |
-| `torch>=2.8.0` | chatterbox-tts hard-pins `torch==2.6.0`; tested and works with 2.10.0 |
-| `torchaudio>=2.8.0` | chatterbox-tts hard-pins `torchaudio==2.6.0`; works with 2.10.0 |
+| `huggingface-hub>=2.4.0` | whisperx declares `huggingface-hub<1.0.0`; transformers 5.x needs hub 2.x |
+| `torch>=2.15.0` | chatterbox-tts hard-pins `torch==2.6.0`; 2.15.0+cu132 is tested |
+| `torchaudio>=2.11.1` | chatterbox-tts hard-pins `torchaudio==2.6.0`; must match torch |
+| `torchvision>=0.29.1` | must match torch 2.15 — a mismatched build breaks `transformers` at import (`operator torchvision::nms does not exist`) |
+| `torchcodec>=0.17.0` | torchaudio 2.11 audio I/O; unknown-to-PyPI builds were incompatible |
 | `aiofiles>=25.1.0` | gradio 5.44.1 (via chatterbox-tts) declares `aiofiles<25`; 25.x works fine |
-| `pydantic>=2.12.5` | gradio 5.44.1 declares `pydantic<2.12`; 2.12.x works fine |
-| `websockets>=16.0` | gradio-client declares `websockets<16`; 16.x works fine |
+| `pydantic>=2.14.3` | gradio 5.44.1 declares `pydantic<2.12`; 2.14.x works fine |
+| `websockets>=17.4` | gradio-client declares `websockets<16`; 17.x works fine |
+| `safetensors>=0.8.0` | chatterbox-tts pins `safetensors==0.5.3`; 0.8.0 is compatible |
 
 ## pytorch CUDA Index
 
 ```
-url = "https://download.pytorch.org/whl/cu128"
+url = "https://download.pytorch.org/whl/cu132"
 ```
 
-- Switched from **cu124 → cu128** to unlock torch 2.7+ (cu124 tops out at torch 2.6.0)
-- Requires CUDA 12.8+ driver. Tested on CUDA 13.0 (driver 581.57) — fully compatible via backward compat
+- Resolved versions: `torch 2.15.0+cu132`, `torchaudio 2.11.1+cu132`, `torchvision 0.29.2+cu132`, `torchcodec 0.17.0+cu132` (all from `[tool.uv.sources]`, none from PyPI)
+- Requires a CUDA 13.2-capable driver. Tested on driver 610.88 (CUDA 13.2) on an RTX 4090
+- torchcodec still needs FFmpeg shared DLLs at runtime on Windows; adapters avoid it anyway (soundfile + ffmpeg fallback)
 
 ## Package-Specific Notes
 
@@ -75,21 +80,21 @@ url = "https://download.pytorch.org/whl/cu128"
 - Resolved by switching to cu128 index (torch 2.10.0 now installed)
 
 ### torch / torchaudio
-- Current: `2.10.0+cu128`
-- cu124 index capped at 2.6.0; cu128 provides up to 2.10.0+
-- Both chatterbox-tts and whisperx now work with 2.10.0 via overrides
+- Current: `torch 2.15.0+cu132` / `torchaudio 2.11.1+cu132` / `torchvision 0.29.2+cu132`
+- torch, torchaudio and torchvision must stay on mutually compatible versions — a torchvision built for an older torch breaks `transformers` at import
+- Both chatterbox-tts and whisperx work with 2.15.0 via the overrides above
 
 ### transformers (v5 major bump, pinned `>=5.22,<5.23`)
 - `huggingface-hub` does **not** depend on transformers — the override is needed because whisperx transitively pulls in huggingface-hub 1.x, which is incompatible with transformers 4.x's hard `<1.0` import-time check.
 - **5.23.0 is excluded.** It ships native `qwen3_asr` / `qwen3_tts` registrations that break the `faster-qwen3-tts` tokenizer (`property 'upsample' ... has no setter`) and it validates sub-config token ids through `get_text_config()`, which crashes the talker config. 5.22.x keeps every model working (Granite Speech 5.0, Cohere Transcribe, Voxtral Realtime, Qwen3-ASR, Qwen3-TTS). Re-test before lifting the pin.
 - Qwen3-ASR uses transformers' native `Qwen3ASRForConditionalGeneration` with the `*-hf` checkpoints. The abandoned `qwen-asr` PyPI package pins `transformers==4.57.6`, so it is **not** a dependency anymore.
 
-### torchaudio (2.10.0 + cu128)
+### torchaudio (2.11.1 + cu132)
 - **`torchaudio.io` module removed** — lhotse (NeMo's audio backend) used `torchaudio.io.AudioFileInfo` to probe audio metadata. Removed in torchaudio 2.7+. Fix: pre-convert unsupported formats (`.m4a`, `.aac`, `.wma`, `.amr`) to wav via ffmpeg in the NeMo adapter before passing to NeMo. Implemented in `vocal_core/adapters/stt/nemo_adapter.py`.
-- **`torchaudio.save` requires torchcodec on Windows** — torchaudio 2.10.0 uses torchcodec as its default backend. Torchcodec needs FFmpeg shared DLLs (`full-shared` build). The standard static FFmpeg build (e.g. essentials from gyan.dev) does not provide these DLLs. Fix: use `soundfile` for WAV output in adapters. Implemented in `chatterbox.py`.
+- **`torchaudio.save` requires torchcodec on Windows** — torchaudio uses torchcodec as its default backend. Torchcodec needs FFmpeg shared DLLs (`full-shared` build). The standard static FFmpeg build (e.g. essentials from gyan.dev) does not provide these DLLs. Fix: use `soundfile` for WAV output in adapters, and decode inputs with `soundfile` (+ an `ffmpeg` fallback for containers) instead of `transformers.audio_utils.load_audio`.
 
 ### setuptools (82.x)
-- **`pkg_resources` removed in setuptools 82.0.0** (February 2026). `pkg_resources` was part of setuptools for decades and used by many older packages at runtime. Fix: pin `setuptools>=70.0.0,<81` via override. This restores `pkg_resources` and fixes `perth` (used by chatterbox-tts for audio watermarking), which silently set `PerthImplicitWatermarker = None` on import failure, causing `'NoneType' object is not callable` at synthesis time.
+- **`pkg_resources` removed in setuptools 82.0.0** (February 2026). `pkg_resources` was part of setuptools for decades and used by many older packages at runtime. Fix: pin `setuptools>=70.0.0,<85` via override. This restores `pkg_resources` and fixes `perth` (used by chatterbox-tts for audio watermarking), which silently set `PerthImplicitWatermarker = None` on import failure, causing `'NoneType' object is not callable` at synthesis time.
 
 ### kokoro
 - Latest available: 0.9.4 — no update available
@@ -121,13 +126,18 @@ Monkey-patches applied at adapter import time to bridge transformers 5.x API bre
 
 ## Open Issues (Upstream Blockers)
 
-No outstanding upstream blockers remain. All previously open issues have been resolved via adapter-level monkey-patching. See the transformers v5 notes above.
+- **`transformers` 5.23.0** regresses `faster-qwen3-tts` (native `qwen3_tts` registration + sub-config token-id validation). Pinned to `>=5.22,<5.23` until `faster-qwen3-tts` ships a compatible release.
+- **`openapi-python-client` 0.30** generates `httpx2` imports; the SDK stays on 0.29.x.
+- **`av` 19** removed `metadata_errors`, which faster-whisper still passes. Pinned `<19`.
 
 ## Packages That Cannot Be Upgraded
 
 | Package | Reason |
 |---|---|
 | `kokoro` | 0.9.4 is already latest |
+| `transformers` | `<5.23` — 5.23 breaks `faster-qwen3-tts` (see above) |
+| `av` | `<19` — faster-whisper calls `av.open(metadata_errors=...)` |
+| `openapi-python-client` | `<0.30` — 0.30 emits `httpx2` imports |
 
 ## Upgrade History
 
@@ -136,6 +146,8 @@ No outstanding upstream blockers remain. All previously open issues have been re
 | 2026-03-14 | Bulk upgrade all packages to latest; switched cu124→cu128; resolved chatterbox/whisperx/torch conflicts via overrides; added en-core-web-sm URL dep to fix kokoro G2P pip-call issue in uv venvs |
 | 2026-03-14 | Added `setuptools<81` override (setuptools 82 removed `pkg_resources`, breaking `perth` → chatterbox); fixed NeMo m4a support via ffmpeg pre-conversion in adapter; fixed chatterbox WAV output via soundfile (replacing torchaudio.save which needs torchcodec DLLs); documented qwen-asr/qwen-tts as upstream blockers on transformers 5.x |
 | 2026-03-14 | Resolved all qwen-asr and qwen-tts transformers 5.x incompatibilities via adapter-level monkey-patching (7 distinct API breaks fixed); `TestTransformersSTT` and `TestVoiceClone` now pass on Windows; all 3 test suites green, lint clean |
+| 2026-11-18 | 0.4.0 maintenance: torch 2.15/torchaudio 2.11/torchvision 0.29/torchcodec 0.17 on cu132; transformers pinned `>=5.22,<5.23`; `av>=17,<19`; NeMo 3.0; whisperx 3.8.6; `uv.lock` committed and CI uses `uv sync --locked`; dropped `qwen-asr` (Qwen3-ASR now native transformers + `*-hf` checkpoints); adapters decode with soundfile/ffmpeg so a broken torchcodec never reaches inference |
+| 2026-11-18 | Fixed streaming WAV/PCM in Kokoro and Phonon: open-ended RIFF headers overflowed uint32 (`36 + 0xFFFFFFFF`), Kokoro's worker assumed numpy when kokoro 0.9 yields torch tensors, and both swallowed worker exceptions into a truncated 200. Streaming now propagates errors and has unit + E2E regression coverage |
 
 ## Future Upgrade Checklist
 
