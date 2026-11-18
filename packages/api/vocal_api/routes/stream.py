@@ -181,7 +181,7 @@ async def _run_live_stream_loop(
             await chunk_q.put(data)
 
 
-async def _run_buffered_loop(
+async def _run_buffered_loop(  # noqa: C901
     websocket: WebSocket,
     service,
     model: str,
@@ -198,12 +198,26 @@ async def _run_buffered_loop(
     gate.max_utterance_s = max_chunk_duration
     partial_task: asyncio.Task | None = None
     state: dict = {}
+    # Audio the VAD never claimed (quiet speech, unusual input), plus a
+    # byte budget that counts *all* received audio. Without it
+    # `max_chunk_duration` would only cap detected utterances: a client whose
+    # audio the VAD keeps claiming as speech would never get a result.
+    spill = bytearray()
+    flush_limit = int(max_chunk_duration * sample_rate) * 2
+    since_flush = 0
+
+    def schedule_flush(pcm: bytes) -> None:
+        flush_task = asyncio.create_task(_flush_pcm(websocket, pcm, model, language, task, sample_rate, service))
+        flush_task.add_done_callback(lambda t: logger.error("Flush task failed: %s", t.exception()) if not t.cancelled() and t.exception() else None)
 
     while True:
         data = await websocket.receive_bytes()
+        since_flush += len(data)
+        committed = False
         for boundary in gate.feed(data):
             if boundary.kind == "speech_started":
                 state.clear()
+                spill.clear()
                 if _PARTIAL_INTERVAL_S > 0:
                     partial_task = asyncio.create_task(_partial_loop(websocket, gate, model, language, task, sample_rate, service, state))
             elif boundary.kind == "speech_stopped":
@@ -212,8 +226,31 @@ async def _run_buffered_loop(
                 if partial_task is not None and not partial_task.done():
                     partial_task.cancel()
                 partial_task = None
-                flush_task = asyncio.create_task(_flush_pcm(websocket, pcm, model, language, task, sample_rate, service))
-                flush_task.add_done_callback(lambda t: logger.error("Flush task failed: %s", t.exception()) if not t.cancelled() and t.exception() else None)
+                since_flush = 0
+                committed = True
+                schedule_flush(pcm)
+
+        if committed:
+            # The whole chunk was consumed by the turn that just committed;
+            # keeping it in the spill buffer would transcribe it twice.
+            spill.clear()
+        elif not gate.is_active:
+            spill.extend(data)
+
+        if flush_limit and since_flush >= flush_limit:
+            if gate.is_active:
+                # Force-commit an open turn that the VAD refuses to close.
+                pcm = gate.take_utterance()
+                gate.reset()
+                if partial_task is not None and not partial_task.done():
+                    partial_task.cancel()
+                partial_task = None
+                spill.clear()
+            else:
+                pcm, spill = bytes(spill), bytearray()
+            if pcm:
+                schedule_flush(pcm)
+            since_flush = 0
 
 
 @router.websocket("/v1/audio/stream")

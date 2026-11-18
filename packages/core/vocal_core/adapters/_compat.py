@@ -18,16 +18,40 @@ _shims_applied = False
 
 
 def _shim_check_model_inputs() -> None:
-    """Restore ``check_model_inputs`` decorator (removed in transformers 5.x)."""
+    """Make ``check_model_inputs`` work both bare and called with no args.
+
+    transformers 4.x exposed it as a decorator factory (``@check_model_inputs()``)
+    and qwen_asr/qwen_tts still use that form, while 5.x changed it to a plain
+    decorator (``@check_model_inputs``). Depending on the 5.x release it is
+    either missing or requires the function positionally, so wrap it when needed.
+    """
+    import inspect
+
     import transformers.utils.generic as _tug
 
-    if not hasattr(_tug, "check_model_inputs"):
+    def _accept_both(func=None, **kwargs):
+        return (lambda f: f) if func is None else func
 
-        def _shim(func=None, **kw):  # noqa: ARG001
-            return (lambda f: f) if func is None else func
-
-        _tug.check_model_inputs = _shim
+    current = getattr(_tug, "check_model_inputs", None)
+    if current is None:
+        _tug.check_model_inputs = _accept_both
         logger.debug("Patched transformers.utils.generic.check_model_inputs")
+        return
+
+    try:
+        params = list(inspect.signature(current).parameters.values())
+    except (TypeError, ValueError):  # pragma: no cover - builtins
+        return
+    first_required = bool(params) and params[0].default is inspect.Parameter.empty
+    if not first_required:
+        return  # already accepts the no-arg form
+
+    def _compat(func=None, **kwargs):
+        # Bare use must behave exactly like the installed decorator.
+        return current(func, **kwargs) if func is not None else (lambda f: f)
+
+    _tug.check_model_inputs = _compat
+    logger.debug("Wrapped transformers.utils.generic.check_model_inputs for legacy callers")
 
 
 def _shim_rope_init_default() -> None:
@@ -137,11 +161,87 @@ def _shim_torchcodec_stub() -> None:
         )
 
 
+def _shim_create_causal_mask() -> None:
+    """Accept the pre-5.2 ``create_causal_mask`` calling convention.
+
+    transformers 5.2 renamed ``input_embeds`` to ``inputs_embeds``, and by 5.12
+    the ``cache_position`` argument was removed entirely (the mask is derived
+    from the cache). On 5.3.x the opposite problem exists: ``cache_position``
+    is *required*, but packages written against 4.x never pass it. Both raise
+    ``TypeError`` deep inside generation, so translate the call instead.
+    """
+    import inspect
+
+    import transformers.masking_utils as _masking
+
+    current = getattr(_masking, "create_causal_mask", None)
+    if current is None or getattr(current, "_vocal_patched", False):
+        return
+
+    try:
+        params = inspect.signature(current).parameters
+    except (TypeError, ValueError):  # pragma: no cover - builtins
+        return
+
+    accepts_old_embeds = "input_embeds" in params
+    has_kwargs = any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+    cache_param = params.get("cache_position")
+    cache_required = cache_param is not None and cache_param.default is inspect.Parameter.empty
+    if accepts_old_embeds and not cache_required:
+        return  # already backward compatible
+
+    def _compat(config, *args, **kwargs):
+        if not accepts_old_embeds and "input_embeds" in kwargs:
+            kwargs.setdefault("inputs_embeds", kwargs.pop("input_embeds"))
+        if cache_required and "cache_position" not in kwargs:
+            # Prefill positions, the same tensor transformers 4.x built.
+            import torch
+
+            embeds = kwargs.get("inputs_embeds")
+            past = kwargs.get("past_key_values")
+            if embeds is None:
+                return current(config, *args, **kwargs)
+            past_seen = past.get_seq_length() if past is not None else 0
+            kwargs["cache_position"] = torch.arange(past_seen, past_seen + embeds.shape[1], device=embeds.device)
+        elif cache_param is None and not has_kwargs:
+            kwargs.pop("cache_position", None)
+        return current(config, *args, **kwargs)
+
+    _compat._vocal_patched = True
+    _masking.create_causal_mask = _compat
+    logger.debug("Wrapped transformers.masking_utils.create_causal_mask for legacy callers")
+
+
+def _shim_config_validate_layer_type() -> None:
+    """Add ``PretrainedConfig.validate_layer_type`` for 5.3.x.
+
+    transformers 5.4 introduced it, and qwen_tts's talker config calls it
+    between ``validate_rope()`` and the rest of ``__init__``. Without it those
+    models raise ``AttributeError`` while loading.
+    """
+    try:
+        from transformers.configuration_utils import PretrainedConfig
+    except ImportError:
+        return
+
+    if hasattr(PretrainedConfig, "validate_layer_type"):
+        return
+
+    def validate_layer_type(self):
+        for layer_type in getattr(self, "layer_types", None) or []:
+            if layer_type not in ("full_attention", "sliding_attention"):
+                raise ValueError(f"Invalid layer type '{layer_type}'; expected 'full_attention' or 'sliding_attention'")
+
+    PretrainedConfig.validate_layer_type = validate_layer_type
+    logger.debug("Patched PretrainedConfig.validate_layer_type for transformers 5.3.x")
+
+
 def apply_transformers_shims() -> None:
-    """Patch transformers 5.x removals that qwen_asr / qwen_tts depend on.
+    """Patch transformers 5.x breaks that qwen_asr / qwen_tts depend on.
 
     Safe to call multiple times — patches are applied at most once.
-    Patches: ``check_model_inputs`` decorator and ``ROPE_INIT_FUNCTIONS["default"]``.
+    Patches: ``check_model_inputs`` decorator, ``ROPE_INIT_FUNCTIONS["default"]``,
+    ``create_causal_mask`` keywords, ``fix_mistral_regex`` and the torchcodec stub.
     """
     global _shims_applied
     if _shims_applied:
@@ -153,7 +253,14 @@ def apply_transformers_shims() -> None:
     except ImportError:
         return
 
-    for shim_fn in (_shim_check_model_inputs, _shim_rope_init_default, _shim_fix_mistral_regex, _shim_torchcodec_stub):
+    for shim_fn in (
+        _shim_check_model_inputs,
+        _shim_rope_init_default,
+        _shim_create_causal_mask,
+        _shim_config_validate_layer_type,
+        _shim_fix_mistral_regex,
+        _shim_torchcodec_stub,
+    ):
         try:
             shim_fn()
         except Exception as exc:

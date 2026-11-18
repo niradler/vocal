@@ -68,7 +68,7 @@ class TransformersSTTAdapter(STTAdapter):
         return ""
 
     @staticmethod
-    def _apply_qwen_asr_shims() -> None:
+    def _apply_qwen_asr_shims() -> None:  # noqa: C901
         import torch
 
         from vocal_core.adapters._compat import apply_transformers_shims
@@ -76,7 +76,64 @@ class TransformersSTTAdapter(STTAdapter):
         apply_transformers_shims()
 
         # --- qwen_asr-specific patches (not shared with TTS) -----------------
+        from qwen_asr.core.transformers_backend.configuration_qwen3_asr import Qwen3ASRConfig as _ASRConfig
+        from qwen_asr.core.transformers_backend.modeling_qwen3_asr import Qwen3ASRThinkerForConditionalGeneration as _ASRModel
         from qwen_asr.core.transformers_backend.modeling_qwen3_asr import Qwen3ASRThinkerTextRotaryEmbedding as _RotEmb
+
+        # transformers 5.x validates token ids inside PretrainedConfig.__init__,
+        # which calls get_text_config() before qwen_asr has assigned
+        # `thinker_config`. Fall back to the base implementation during init.
+        if not getattr(_ASRConfig, "_vocal_text_config_shim", False):
+            _original_get_text_config = _ASRConfig.get_text_config
+
+            def _safe_get_text_config(self, *args, **kwargs):
+                if not hasattr(self, "thinker_config"):
+                    return super(_ASRConfig, self).get_text_config(*args, **kwargs)
+                return _original_get_text_config(self, *args, **kwargs)
+
+            _ASRConfig.get_text_config = _safe_get_text_config
+            _ASRConfig._vocal_text_config_shim = True
+
+        # transformers 5.x generation no longer passes `cache_position` on the
+        # prefill step, but qwen_asr subscripts it. Keep it None (the model
+        # computes correct positions itself) and only use it for the
+        # prefill-vs-decode decision it was added for.
+        if not getattr(_ASRModel, "_vocal_gen_shim", False):
+            _base_prepare = super(_ASRModel, _ASRModel).prepare_inputs_for_generation
+
+            def _prepare_inputs_for_generation(
+                self,
+                input_ids,
+                past_key_values=None,
+                attention_mask=None,
+                inputs_embeds=None,
+                cache_position=None,
+                position_ids=None,
+                use_cache=True,
+                input_features=None,
+                feature_attention_mask=None,
+                **kwargs,
+            ):
+                model_inputs = _base_prepare(
+                    self,
+                    input_ids,
+                    past_key_values=past_key_values,
+                    attention_mask=attention_mask,
+                    inputs_embeds=inputs_embeds,
+                    cache_position=cache_position,
+                    position_ids=position_ids,
+                    use_cache=use_cache,
+                    input_features=input_features,
+                    feature_attention_mask=feature_attention_mask,
+                    **kwargs,
+                )
+                model_inputs["position_ids"] = None
+                if cache_position is not None and cache_position[0] != 0:
+                    model_inputs["input_features"] = None
+                return model_inputs
+
+            _ASRModel.prepare_inputs_for_generation = _prepare_inputs_for_generation
+            _ASRModel._vocal_gen_shim = True
 
         try:
             from qwen_asr.core.transformers_backend.configuration_qwen3_asr import Qwen3ASRThinkerConfig as _ThinkerCfg

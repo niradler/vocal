@@ -85,7 +85,10 @@ explicit = true
 [tool.uv]
 override-dependencies = [
     "ctranslate2>=4.7.1",
-    "transformers>=5.3.0",
+    # VoxtralRealtime landed in 5.2; qwen_asr 0.0.6 (Qwen3-ASR) only works
+    # through 5.3.x — 5.4 changed the attention/generation hooks it relies
+    # on (see docs/deps.md "Runtime Patches").
+    "transformers>=5.3.0,<5.4",
     "numpy>=2.4.3",
     "huggingface-hub>=1.7.1,<2.0.0",
     "torch>=2.8.0",

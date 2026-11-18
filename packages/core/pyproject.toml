@@ -29,7 +29,7 @@ dependencies = [
     "pydantic-settings>=2.13.1",
     "pyttsx3>=2.99",
     "numpy>=2.4.3",
-    "transformers>=5.3.0",
+    "transformers>=5.3.0,<5.4",
     "torch>=2.8.0",
     "silero-vad>=6.2.1",
 ]
@@ -56,7 +56,7 @@ qwen3-tts = [
     "torchaudio>=2.8.0",
 ]
 transformers = [
-    "transformers>=5.3.0",
+    "transformers>=5.3.0,<5.4",
     "torch>=2.8.0",
 ]
 nemo = [

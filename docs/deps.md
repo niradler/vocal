@@ -98,6 +98,20 @@ url = "https://download.pytorch.org/whl/cu128"
 
 Monkey-patches applied at adapter import time to bridge transformers 5.x API breaks in `qwen_asr` / `qwen_tts`. No library source edits, no forks.
 
+`qwen-asr` 0.0.6 itself declares `transformers==4.57.6`, so Vocal supports it on the narrow 5.3.x range it was validated against. `transformers>=5.4` changes the generation entry points (`cache_position` is no longer passed on prefill) and the audio-encoder attention path; the result is a shape mismatch inside SDPA, not a clean import error. The pins (`transformers>=5.3.0,<5.4`) therefore live in both the workspace override and `packages/core/pyproject.toml`, because CI resolves without a committed `uv.lock`.
+
+### Optional extras that cannot coexist
+
+The override forces one transformers version for the whole environment, so some extras are mutually exclusive:
+
+| Extra | Constraint | Conflict |
+|---|---|---|
+| `qwen-asr` (core, Qwen3-ASR) | validated on transformers 5.3.x | breaks on 5.4+ (see above) |
+| `qwen3-tts` (`faster-qwen3-tts`) | requires `transformers>=5.15.1` | CUDA-graph capture fails on 5.3.x, and 5.15.1+ breaks Qwen3-ASR |
+| `chatterbox` | pins `safetensors==0.5.3` | transformers 5.15.1+ needs `safetensors>=0.8.0` |
+
+`uv`'s override ignores these metadata conflicts at resolve time, so `make install-dev` installs a combination that cannot run in one process. Keep `qwen3-tts` out of the local environment while Qwen3-ASR is supported; its E2E tests skip with an explicit reason.
+
 ### Patch Maintenance
 
 **These patches are fragile.** Each one compensates for a specific API break between transformers 5.x and qwen_asr/qwen_tts. On future upgrades:
@@ -109,7 +123,11 @@ Monkey-patches applied at adapter import time to bridge transformers 5.x API bre
 
 | Patch | File | What changed in transformers 5.x |
 |---|---|---|
-| `transformers.utils.generic.check_model_inputs = <no-op>` | `transformers_adapter.py`, `faster_qwen3_tts.py` | Decorator removed |
+| `check_model_inputs` wrapped to accept both `@decorator` and `@decorator()` use | `_compat.py` | Decorator was removed, and the 5.x replacement requires the function positionally |
+| `create_causal_mask` wrapped to accept `input_embeds=` / ignore `cache_position` | `_compat.py` | 5.2 renamed the keyword to `inputs_embeds`, 5.12 dropped `cache_position` |
+| `PretrainedConfig.validate_layer_type` added | `_compat.py` | Introduced in transformers 5.4; `qwen_tts` calls it from its talker config while loading |
+| `Qwen3ASRThinkerForConditionalGeneration.prepare_inputs_for_generation` wrapped | `transformers_adapter.py` | 5.9 stopped passing `cache_position` on prefill, but `qwen_asr` subscripts it |
+| `Qwen3ASRConfig.get_text_config` guarded during init | `transformers_adapter.py` | 5.9 validates token ids before `thinker_config` is assigned |
 | `ROPE_INIT_FUNCTIONS["default"] = <inv_freq fn>` | `transformers_adapter.py`, `faster_qwen3_tts.py` | `"default"` key removed from RoPE registry |
 | `Qwen3ASRThinkerTextRotaryEmbedding.compute_default_rope_parameters = <method>` | `transformers_adapter.py` | Method dropped from base class; `modeling_utils.py` calls it for `rope_type == "default"` |
 | `Qwen3ASRThinkerConfig.pad_token_id = None` | `transformers_adapter.py` | `GenerationMixin` now requires the attribute on sub-configs |

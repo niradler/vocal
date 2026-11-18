@@ -37,20 +37,37 @@ TTS_DEFAULT_CLONE_MODEL=Qwen/Qwen3-TTS-12Hz-0.6B-Base
 
 ## VAD (Voice Activity Detection)
 
-Applies to `vocal live`, `vocal chat`, and `/v1/audio/stream`.
+Applies to `vocal live`, `vocal chat`, `/v1/audio/stream` and `/v1/realtime`.
+Turn detection is millisecond-based, so it behaves the same regardless of the
+client's chunk size. The backend is Silero VAD (ONNX Runtime when available,
+PyTorch otherwise) with an RMS fallback.
 
 ```env
-VAD_THRESHOLD=400.0              # RMS energy threshold (0–32768 scale)
-VAD_SILENCE_FRAMES=15            # Silence frames before end-of-speech
-VAD_MAX_BUFFER_FRAMES=150        # Max buffer before forced commit
-VAD_SPEECH_ONSET_FRAMES=3        # Consecutive loud frames to trigger speech_started
-VAD_MIN_SPEECH_FRAMES=4          # Min speech frames before sending to STT
-VAD_SILENCE_DURATION_S=1.5       # vocal live: silence length before flushing chunk
+VAD_SPEECH_THRESHOLD=0.5         # Silero speech probability to open a turn
+VAD_ONSET_MS=180                 # Confirmed speech before speech_started fires
+VAD_PREROLL_MS=300               # Audio kept before onset (no clipped phonemes)
+VAD_SILENCE_MS=600               # Dictation: silence before committing a turn
+VAD_COMMIT_GRACE_MS=0            # Dictation: extra wait before committing
+REALTIME_AGENT_SILENCE_MS=700    # Voice agent: silence before committing a turn
+REALTIME_AGENT_COMMIT_GRACE_MS=400  # Extra wait: a ~1 s pause stays in the same turn
+REALTIME_MAX_UTTERANCE_S=30      # Hard cap on one utterance
+VAD_SILENCE_DURATION_S=0.8       # /v1/audio/stream default silence before flush
+VAD_THRESHOLD=400.0              # RMS energy threshold for the fallback adapter
 ```
 
+The two endpointing profiles exist because the jobs differ:
+
+- **Dictation** wants the transcript as soon as you stop; a long pause usually
+  means "new sentence", so 600 ms is enough.
+- **A voice agent** must not split one sentence into two LLM turns. Natural
+  pauses inside a sentence reach ~1 s, so the agent profile waits 700 ms, then
+  gives speech another 400 ms to resume before committing.
+
 **Tuning tips:**
-- Background noise triggers too often → raise `VAD_THRESHOLD` or `VAD_SPEECH_ONSET_FRAMES`
-- Short words are missed → lower `VAD_MIN_SPEECH_FRAMES`
+- The agent cuts you off mid-sentence → raise `REALTIME_AGENT_COMMIT_GRACE_MS`
+- Replies feel sluggish after you stop → lower `REALTIME_AGENT_SILENCE_MS`
+- Background noise opens turns → raise `VAD_SPEECH_THRESHOLD`
+- First words are clipped → raise `VAD_PREROLL_MS`
 - Echo from speakers activates the mic → raise `PLAYBACK_COOLDOWN`
 
 ## Audio / CLI
