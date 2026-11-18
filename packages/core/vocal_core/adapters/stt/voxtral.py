@@ -160,7 +160,11 @@ class VoxtralSTTAdapter(STTAdapter):
         try:
             audio = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32) / 32768.0
 
-            pad_samples = self.processor.num_right_pad_tokens() * self.processor.raw_audio_length_per_tok
+            # transformers 5.2x turned these processor helpers into plain int attributes.
+            num_pad_tokens = self.processor.num_right_pad_tokens
+            if callable(num_pad_tokens):
+                num_pad_tokens = num_pad_tokens()
+            pad_samples = num_pad_tokens * self.processor.raw_audio_length_per_tok
             audio = np.pad(audio, (0, pad_samples))
 
             first_n = self.processor.num_samples_first_audio_chunk

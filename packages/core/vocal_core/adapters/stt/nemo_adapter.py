@@ -3,6 +3,7 @@ import importlib.util
 import io
 import logging
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -15,6 +16,8 @@ from ...config import optional_dependency_install_hint, vocal_settings
 from .base import STTAdapter, TranscriptionResult, TranscriptionSegment
 
 logger = logging.getLogger(__name__)
+
+_LANG_TAG = re.compile(r"<[a-z]{2,3}-[A-Z]{2}>")
 
 _NEMO_NOISY_LOGGERS = [
     "nemo",
@@ -267,22 +270,24 @@ class NemoSTTAdapter(STTAdapter):
 
     def _run_transcribe(self, audio_path: str, language: str | None, word_timestamps: bool) -> TranscriptionResult:
         resolved_language = language or vocal_settings.STT_DEFAULT_LANGUAGE or vocal_settings.NEMO_DEFAULT_LANGUAGE or vocal_settings.DEFAULT_LANGUAGE
+        audio = self._load_audio_array(audio_path)
 
         if word_timestamps:
-            output = self.model.transcribe([audio_path], timestamps=True)
+            output = self._transcribe(audio, timestamps=True)
             if isinstance(output, tuple):
                 hypotheses, ts_list = output
-                text = hypotheses[0] if hypotheses else ""
+                text = getattr(hypotheses[0], "text", None) or str(hypotheses[0]) if hypotheses else ""
                 segments = self._build_segments(ts_list[0] if ts_list else None)
             else:
-                text = str(output[0]) if output else ""
+                item = output[0] if output else None
+                text = (getattr(item, "text", None) or str(item)) if item is not None else ""
                 segments = None
         else:
-            output = self.model.transcribe([audio_path])
+            output = self._transcribe(audio)
             logger.debug("NeMo transcribe output type=%s len=%s", type(output).__name__, len(output) if hasattr(output, "__len__") else "?")
             if isinstance(output, tuple):
                 hypotheses = output[0]
-                text = str(hypotheses[0]) if hypotheses else ""
+                text = getattr(hypotheses[0], "text", None) or str(hypotheses[0]) if hypotheses else ""
             elif output:
                 item = output[0]
                 # NeMo Hypothesis objects expose .text directly
@@ -292,11 +297,62 @@ class NemoSTTAdapter(STTAdapter):
             segments = None
 
         return TranscriptionResult(
-            text=text.strip(),
+            text=self._strip_lang_tags(text).strip(),
             language=resolved_language,
-            duration=0.0,
+            duration=float(len(audio)) / float(vocal_settings.STT_SAMPLE_RATE),
             segments=segments,
         )
+
+    @staticmethod
+    def _load_audio_array(audio_path: str) -> Any:
+        """Load audio as a 16 kHz mono float32 array.
+
+        Passing an array instead of a path keeps NeMo off its lhotse manifest path, whose temporary
+        directory cleanup fails on Windows with ``PermissionError``.
+        """
+        import numpy as np
+        import soundfile as sf
+
+        audio, sample_rate = sf.read(audio_path, dtype="float32", always_2d=False)
+        if audio.ndim > 1:
+            audio = audio.mean(axis=1)
+        if sample_rate != vocal_settings.STT_SAMPLE_RATE:
+            try:
+                import librosa
+
+                audio = librosa.resample(audio, orig_sr=sample_rate, target_sr=vocal_settings.STT_SAMPLE_RATE)
+            except Exception as exc:
+                logger.warning("Could not resample %s from %d Hz (%s); passing native rate", audio_path, sample_rate, exc)
+        return np.asarray(audio, dtype=np.float32)
+
+    @staticmethod
+    def _strip_lang_tags(text: str) -> str:
+        """Drop Nemotron language tags such as ``<en-US>`` from the transcript."""
+        return _LANG_TAG.sub("", text)
+
+    def _transcribe(self, audio: Any, timestamps: bool = False) -> Any:
+        """Run NeMo transcription, tolerating the Windows tempdir cleanup race."""
+        try:
+            return self.model.transcribe(audio, timestamps=timestamps)
+        except PermissionError as exc:
+            logger.warning("NeMo tempdir cleanup failed (%s); retrying through the generator", exc)
+
+        from nemo.collections.asr.parts.mixins.transcription import TranscribeConfig
+
+        config = TranscribeConfig(batch_size=1, num_workers=0, timestamps=timestamps, verbose=False)
+        generator = self.model.transcribe_generator(audio, override_config=config)
+        collected: list[Any] = []
+        try:
+            for batch in generator:
+                collected.extend(batch if isinstance(batch, (list, tuple)) else [batch])
+        except PermissionError as exc:
+            logger.debug("Ignored NeMo tempdir cleanup error on Windows: %s", exc)
+        finally:
+            generator.close()
+
+        if timestamps:
+            return (collected, None)
+        return collected
 
     def _build_segments(self, ts_data: Any) -> list[TranscriptionSegment] | None:
         if ts_data is None:

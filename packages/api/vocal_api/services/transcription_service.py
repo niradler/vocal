@@ -7,7 +7,7 @@ from pathlib import Path
 import aiofiles
 from fastapi import UploadFile
 
-from vocal_core import ModelRegistry, TranscriptionResult
+from vocal_core import ModelRegistry, TranscriptionResult, assert_in_process_runtime
 from vocal_core.adapters.stt import (
     NEMO_AVAILABLE,
     TRANSFORMERS_AVAILABLE,
@@ -83,6 +83,8 @@ class TranscriptionService:
         if not model_info:
             raise ValueError(f"Model {model_id} not found in registry")
 
+        assert_in_process_runtime(model_info)
+
         model_path = self.registry.get_model_path(model_id)
         if not model_path:
             raise ValueError(f"Model {model_id} not downloaded. Download it first: POST /v1/models/{model_id}/download")
@@ -120,6 +122,8 @@ class TranscriptionService:
         if not model_info:
             raise ValueError(f"Model {model_id} not found in registry")
 
+        assert_in_process_runtime(model_info)
+
         model_path = self.registry.get_model_path(model_id)
         if not model_path:
             raise ValueError(f"Model {model_id} not downloaded")
@@ -154,6 +158,8 @@ class TranscriptionService:
         if not model_info:
             raise ValueError(f"Model {model_id} not found in registry")
 
+        assert_in_process_runtime(model_info)
+
         model_path = self.registry.get_model_path(model_id)
         if not model_path:
             raise ValueError(f"Model {model_id} not downloaded. Download it first: POST /v1/models/{model_id}/download")
@@ -180,6 +186,8 @@ class TranscriptionService:
         model_info = await self.registry.get_model(model_id)
         if not model_info:
             raise ValueError(f"Model {model_id} not found in registry")
+
+        assert_in_process_runtime(model_info)
 
         model_path = self.registry.get_model_path(model_id)
         if not model_path:

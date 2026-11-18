@@ -1201,7 +1201,7 @@ class TestVoiceClone:
 
 
 _HAS_TRANSFORMERS = importlib.util.find_spec("transformers") is not None
-_HAS_QWEN_ASR = importlib.util.find_spec("qwen_asr") is not None
+_HAS_PHONON = importlib.util.find_spec("ptts") is not None
 _HAS_WHISPERX = importlib.util.find_spec("whisperx") is not None
 _HAS_KOKORO = importlib.util.find_spec("kokoro") is not None
 _HAS_CHATTERBOX = importlib.util.find_spec("chatterbox") is not None
@@ -1216,7 +1216,7 @@ try:
 except Exception:
     _HAS_NEMO = False
 
-_TRANSFORMERS_STT_MODEL = "Qwen/Qwen3-ASR-0.6B"
+_TRANSFORMERS_STT_MODEL = "Qwen/Qwen3-ASR-0.6B-hf"
 _NEMO_STT_MODEL = "nvidia/parakeet-tdt-0.6b-v2"
 _WHISPERX_STT_MODEL = "whisperx/distil-large-v3"
 _KOKORO_TTS_MODEL = "hexgrad/Kokoro-82M"
@@ -1246,9 +1246,8 @@ def _ensure_model(client: VocalClient, model_id: str, max_wait: int = 600) -> No
 
 
 @pytest.mark.skipif(not _HAS_TRANSFORMERS, reason="transformers not installed — run: uv sync --extra transformers")
-@pytest.mark.skipif(not _HAS_QWEN_ASR, reason="qwen_asr not installed — run: pip install qwen-asr")
 class TestTransformersSTT:
-    """E2E: HuggingFace Transformers STT backend (Qwen3-ASR-0.6B)"""
+    """E2E: HuggingFace Transformers STT backend (Qwen3-ASR-0.6B-hf, native transformers path)"""
 
     def test_transformers_transcribe(self, client, test_assets):
         audio_file = test_assets["audio_dir"] / "Recording.m4a"
@@ -1415,6 +1414,17 @@ class TestKokoroTTS:
         assert isinstance(audio, bytes) and len(audio) > 1000, "alloy alias should synthesize audio"
 
         print(f"\n[OK] OpenAI alias 'alloy': {len(audio):,} bytes")
+
+    def test_kokoro_streams_wav(self, client):
+        """Open-ended WAV headers must be valid uint32 RIFF chunks (regression: 36+0xFFFFFFFF overflowed)."""
+        _ensure_model(client, _KOKORO_TTS_MODEL, max_wait=300)
+
+        audio = _tts(client, "Streaming WAV from Kokoro works.", model=_KOKORO_TTS_MODEL, response_format=TTSRequestResponseFormat.WAV, stream=True)
+
+        assert len(audio) > 1000, "Kokoro WAV streaming should produce audio"
+        assert audio[:4] == b"RIFF" and audio[8:12] == b"WAVE", "streamed WAV must start with a RIFF/WAVE header"
+        assert audio[36:40] == b"data", "streamed WAV must declare its data chunk"
+        print(f"\n[OK] Kokoro streamed {len(audio)} bytes of WAV")
 
 
 @pytest.mark.skipif(_IN_CI, reason="CI: Chatterbox requires GPU and large download — skip in CI")
@@ -1618,6 +1628,151 @@ class TestVoxtralSTT:
                     print(f"\n[OK] Voxtral live stream (utterance {utterance_num}): '{full_text.strip()}'")
 
         _ws_run(_test())
+
+
+_GRANITE_CTC_MODEL = "ibm-granite/granite-speech-5.0-470m-turboctc"
+_GRANITE_2B_MODEL = "ibm-granite/granite-speech-5.0-2b"
+_COHERE_MODEL = "CohereLabs/cohere-transcribe-03-2026"
+_NEMOTRON_MODEL = "nvidia/nemotron-3.5-asr-streaming-0.6b"
+_PHONON_MODEL = "gradium/phonon-31m-en"
+
+
+def _hf_repo_accessible(repo_id: str) -> bool:
+    """True when this machine may download the repo (gated repos need the licence accepted).
+
+    Only gated / auth / not-found errors mean "we genuinely can't use this repo"; anything else
+    (network outage, DNS, rate limit) must fail the test rather than silently skip it.
+    """
+    try:
+        from huggingface_hub import hf_hub_download
+    except ImportError:
+        return False
+
+    from huggingface_hub.errors import GatedRepoError, HfHubHTTPError, LocalEntryNotFoundError, RepositoryNotFoundError
+
+    try:
+        hf_hub_download(repo_id=repo_id, filename="config.json", token=True)
+        return True
+    except (GatedRepoError, RepositoryNotFoundError):
+        return False
+    except HfHubHTTPError as exc:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        if status in (401, 403, 404):
+            return False
+        raise
+    except LocalEntryNotFoundError:
+        # Offline cache miss: report the network problem instead of skipping.
+        raise
+
+
+@pytest.mark.skipif(not _HAS_TRANSFORMERS, reason="transformers not installed — run: uv sync --extra transformers")
+class TestGraniteSpeechSTT:
+    """E2E: IBM Granite Speech (prompt-driven and CTC transformers paths)"""
+
+    def test_granite_turboctc_transcribe(self, client, test_assets):
+        audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
+        _ensure_model(client, _GRANITE_CTC_MODEL, max_wait=900)
+
+        result = _transcribe(client, audio_file, _GRANITE_CTC_MODEL, language="en")
+
+        assert result is not None
+        assert len(result.text.strip()) > 0, "Granite TurboCTC transcription should not be empty"
+        assert result.duration > 0
+        print(f"\n[OK] Granite TurboCTC STT: '{result.text.strip()}'")
+
+    def test_granite_2b_transcribe(self, client, test_assets):
+        audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
+        _ensure_model(client, _GRANITE_2B_MODEL, max_wait=1800)
+
+        result = _transcribe(client, audio_file, _GRANITE_2B_MODEL, language="en")
+
+        assert result is not None
+        assert len(result.text.strip()) > 0, "Granite 2B transcription should not be empty"
+        print(f"\n[OK] Granite 5.0 2B STT: '{result.text.strip()}'")
+
+
+@pytest.mark.skipif(not _HAS_TRANSFORMERS, reason="transformers not installed — run: uv sync --extra transformers")
+class TestCohereTranscribeSTT:
+    """E2E: Cohere Transcribe (gated repo — needs the licence accepted on Hugging Face)"""
+
+    def test_cohere_transcribe(self, client, test_assets):
+        if not _hf_repo_accessible(_COHERE_MODEL):
+            pytest.skip(f"{_COHERE_MODEL} is gated: accept the licence at https://huggingface.co/{_COHERE_MODEL} and set HF_TOKEN")
+
+        audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
+        _ensure_model(client, _COHERE_MODEL, max_wait=1800)
+
+        result = _transcribe(client, audio_file, _COHERE_MODEL, language="en")
+
+        assert result is not None
+        assert len(result.text.strip()) > 0, "Cohere Transcribe output should not be empty"
+        print(f"\n[OK] Cohere Transcribe STT: '{result.text.strip()}'")
+
+
+@pytest.mark.skipif(_IN_CI, reason="CI: NeMo models require GPU and nemo_toolkit[asr] — skip in CI")
+@pytest.mark.skipif(not _HAS_NEMO, reason="nemo_toolkit not installed — run: uv sync --extra nemo")
+class TestNemotronSTT:
+    """E2E: NVIDIA Nemotron 3.5 ASR Streaming via the NeMo backend"""
+
+    def test_nemotron_transcribe(self, client, test_assets):
+        audio_file = test_assets["audio_dir"] / "en-AU-WilliamNeural.mp3"
+        _ensure_model(client, _NEMOTRON_MODEL, max_wait=1800)
+
+        result = _transcribe(client, audio_file, _NEMOTRON_MODEL, language="en")
+
+        assert result is not None
+        assert len(result.text.strip()) > 0, "Nemotron transcription should not be empty"
+        print(f"\n[OK] Nemotron 3.5 ASR: '{result.text.strip()}'")
+
+
+@pytest.mark.skipif(not _HAS_PHONON, reason="ptts not installed — run: uv sync --extra phonon")
+class TestPhononTTS:
+    """E2E: Phonon 31M (CPU, Rust/GGUF runtime)"""
+
+    def test_phonon_synthesize_wav(self, client):
+        _ensure_model(client, _PHONON_MODEL, max_wait=600)
+
+        audio = _tts(client, "Hello from Phonon.", model=_PHONON_MODEL, response_format=TTSRequestResponseFormat.WAV)
+
+        assert len(audio) > 1000, "Phonon should return audio"
+        assert audio[:4] == b"RIFF", "Phonon WAV output should start with a RIFF header"
+        print(f"\n[OK] Phonon synthesized {len(audio)} bytes of WAV")
+
+    def test_phonon_lists_voices(self, client):
+        _ensure_model(client, _PHONON_MODEL, max_wait=600)
+
+        resp = client.get_httpx_client().get(f"/v1/audio/voices?model={_PHONON_MODEL}")
+        assert resp.status_code == 200
+        voices = resp.json()
+        voice_list = voices.get("voices", voices if isinstance(voices, list) else [])
+        assert len(voice_list) > 50, f"Phonon should expose its shipped voice catalogue, got {len(voice_list)}"
+        print(f"\n[OK] Phonon voices: {len(voice_list)}")
+
+    def test_phonon_streams(self, client):
+        _ensure_model(client, _PHONON_MODEL, max_wait=600)
+
+        audio = _tts(client, "Streaming from Phonon works.", model=_PHONON_MODEL, response_format=TTSRequestResponseFormat.PCM, stream=True)
+
+        assert len(audio) > 1000, "Phonon streaming should produce audio"
+        print(f"\n[OK] Phonon streamed {len(audio)} bytes of PCM")
+
+    def test_phonon_streams_wav(self, client):
+        """Open-ended WAV headers must be valid uint32 RIFF chunks (regression: 36+0xFFFFFFFF overflowed)."""
+        _ensure_model(client, _PHONON_MODEL, max_wait=600)
+
+        audio = _tts(client, "Streaming WAV from Phonon works.", model=_PHONON_MODEL, response_format=TTSRequestResponseFormat.WAV, stream=True)
+
+        assert len(audio) > 1000, "Phonon WAV streaming should produce audio"
+        assert audio[:4] == b"RIFF" and audio[8:12] == b"WAVE", "streamed WAV must start with a RIFF/WAVE header"
+        assert audio[36:40] == b"data", "streamed WAV must declare its data chunk"
+        print(f"\n[OK] Phonon streamed {len(audio)} bytes of WAV")
+
+    def test_phonon_rejects_unknown_voice(self, client):
+        _ensure_model(client, _PHONON_MODEL, max_wait=600)
+
+        resp = client.get_httpx_client().post("/v1/audio/speech", json={"model": _PHONON_MODEL, "input": "hi", "voice": "definitely-not-a-voice", "response_format": "wav"})
+        assert resp.status_code in (400, 422, 500)
+        assert "Unknown Phonon voice" in str(resp.json())
 
 
 if __name__ == "__main__":

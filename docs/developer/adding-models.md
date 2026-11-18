@@ -25,7 +25,11 @@ If the model uses an **existing backend** (e.g. another HuggingFace Whisper vari
 }
 ```
 
-Valid `backend` values: `ctranslate2`, `transformers`, `piper`, `kokoro`, `qwen3-tts`, `simple`
+Valid `backend` values: `faster_whisper`, `whisperx`, `transformers`, `nemo`, `voxtral_stt`, `kokoro`, `faster_qwen3_tts`, `piper`, `chatterbox`, `omnivoice`, `supertonic`, `voxcpm`, `phonon`.
+
+Models that need an out-of-process engine (vLLM-Omni, SGLang-Omni, a vendored runtime) must also set `"runtime": "external"` plus a `"runtime_note"`. Never add a catalog entry whose `runtime` is `in_process` unless a working adapter exists — `tests/unit/test_catalog_coverage.py` enforces this.
+
+Every entry also needs `"license"` (SPDX id when one exists, otherwise the upstream license id) and `"commercial_use"` (bool), and should set `"maintenance_status"` (`active`/`retired`/`deprecated`) when upstream stops maintaining it.
 
 After adding, verify:
 ```bash

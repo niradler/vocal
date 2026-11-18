@@ -94,9 +94,8 @@ All default values (model names, URLs, sample rates, timeouts) live in **`vocal_
 
 ```python
 from vocal_core.config import vocal_settings
-
-model = vocal_settings.STT_DEFAULT_MODEL  # ✅
-model = "Systran/faster-whisper-tiny"  # ❌
+model = vocal_settings.STT_DEFAULT_MODEL   # ✅
+model = "Systran/faster-whisper-tiny"       # ❌
 ```
 
 ### Logging
@@ -105,7 +104,6 @@ All modules use stdlib `logging` — never `print()`:
 
 ```python
 import logging
-
 logger = logging.getLogger(__name__)
 logger.info("Loading model from %s", path)
 ```
@@ -125,6 +123,26 @@ Use `pathlib.Path` everywhere — handles Windows/Linux separators automatically
 ### Adapter Pattern
 
 Every STT/TTS backend implements a base class in `adapters/stt/base.py` or `adapters/tts/base.py`. Services dispatch by `ModelInfo.backend`. New backends = implement base class + add to service dispatch. See [`docs/developer/adding-models.md`](docs/developer/adding-models.md).
+
+### Model Catalog Invariants
+
+`supported_models.json` is the product's claim about what Vocal supports. Keep it honest:
+
+- Every entry declares `license` (SPDX id when one exists, otherwise the upstream license id), `commercial_use` (bool) and `maintenance_status` (`active`/`retired`/`deprecated`).
+- `runtime` is `in_process` only when an adapter can actually run the model. Models that need vLLM-Omni, SGLang-Omni or a vendored runtime must use `"runtime": "external"` plus a `runtime_note`, and the services reject them with an actionable error via `assert_in_process_runtime()`.
+- Do not add a catalog entry without an adapter — `tests/unit/test_catalog_coverage.py` fails on any `in_process` entry whose backend has no implementation.
+- Refresh HF-derived facts (size, params, languages, downloads) with `make generate-supported-models`; it preserves curated fields.
+
+### Dependency Locking
+
+`uv.lock` is committed. CI runs `uv sync --locked`, so any dependency change must ship a regenerated lock.
+
+- PyTorch comes from the `pytorch` index (`cu132`), and **torch, torchaudio and torchvision must stay on mutually compatible versions** — a torchvision built for an older torch breaks `transformers` at import with `operator torchvision::nms does not exist`.
+- `chatterbox-tts` pins `safetensors==0.5.3`, so `safetensors` is force-upgraded through `[tool.uv] override-dependencies`.
+- `faster-whisper` calls `av.open(metadata_errors=...)`, which PyAV 19 removed — `av` is pinned to `<19` in the overrides.
+- `openapi-python-client` 0.30 emits `httpx2` imports; the SDK stays on 0.29.x so generated code and the hand-written client share `httpx`.
+- `transformers` is pinned to `>=5.22,<5.23`: 5.23 registers native `qwen3_tts` configs that break `faster-qwen3-tts`, and validates sub-config token ids in a way the qwen3-tts talker config cannot satisfy. See `docs/deps.md`.
+- `torchaudio` decoding needs `torchcodec` + FFmpeg shared DLLs; adapters decode with `soundfile` (falling back to `ffmpeg`) instead, so a broken torchcodec never reaches inference. All four torch packages (torch, torchaudio, torchvision, torchcodec) resolve from the `pytorch` cu132 index.
 
 ---
 
@@ -272,6 +290,10 @@ Auto-updates: all `pyproject.toml` + `__init__.py` files.
 | Model not found | Check `~/.cache/vocal/models/` — download with `vocal models pull <id>` |
 | SDK out of date | Run `make generate-sdk` after any API route change |
 | `asyncio.get_event_loop()` warning | Use `asyncio.get_running_loop()` instead — already fixed in `TransformersSTTAdapter` |
+| `operator torchvision::nms does not exist` | torchvision is older than torch — add a matching `torchvision` on the pytorch index |
+| `open() got an unexpected keyword argument 'metadata_errors'` | PyAV 19 dropped `metadata_errors`, which faster-whisper calls — the lock pins `av>=17,<19` |
+| NeMo `PermissionError: manifest.json` on Windows | NeMo's lhotse tempdir cleanup races on Windows; the NeMo adapter passes a numpy array instead of a path |
+| Model rejects with "external inference engine" | That catalog entry is `runtime: external` — serve it with the engine in `runtime_note` |
 
 ---
 

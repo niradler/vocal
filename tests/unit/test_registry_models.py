@@ -1,6 +1,8 @@
 """Unit tests for ModelInfo, ModelBackend, ModelTask, and format_bytes."""
 
-from vocal_core.registry import ModelBackend, ModelInfo, ModelProvider, ModelStatus, ModelTask, format_bytes
+import pytest
+
+from vocal_core.registry import ModelBackend, ModelInfo, ModelProvider, ModelRuntime, ModelStatus, ModelTask, assert_in_process_runtime, format_bytes
 from vocal_core.registry.capabilities import (
     capability_overrides_from_mapping,
     infer_model_capabilities,
@@ -18,15 +20,37 @@ def test_model_backend_values():
     assert ModelBackend.PIPER == "piper"
     assert ModelBackend.NEMO == "nemo"
     assert ModelBackend.CHATTERBOX == "chatterbox"
-    assert ModelBackend.XTTS == "xtts"
-    assert ModelBackend.FISH_SPEECH == "fish_speech"
-    assert ModelBackend.ORPHEUS == "orpheus"
-    assert ModelBackend.DIA == "dia"
+    assert ModelBackend.SUPERTONIC == "supertonic"
+    assert ModelBackend.VOXCPM == "voxcpm"
 
 
 def test_model_task_values():
     assert ModelTask.STT == "stt"
     assert ModelTask.TTS == "tts"
+
+
+def test_assert_in_process_runtime_rejects_external_models():
+    external = ModelInfo(
+        id="bosonai/higgs-tts-3-4b",
+        name="Higgs TTS 3 4B",
+        provider=ModelProvider.HUGGINGFACE,
+        backend=ModelBackend.CUSTOM,
+        task=ModelTask.TTS,
+        runtime=ModelRuntime.EXTERNAL,
+        runtime_note="Serve with vllm-omni",
+    )
+    with pytest.raises(ValueError, match="external inference engine"):
+        assert_in_process_runtime(external)
+
+    in_process = ModelInfo(
+        id="gradium/phonon-31m-en",
+        name="Phonon 31M English",
+        provider=ModelProvider.HUGGINGFACE,
+        backend=ModelBackend.PHONON,
+        task=ModelTask.TTS,
+    )
+    assert in_process.runtime == ModelRuntime.IN_PROCESS
+    assert_in_process_runtime(in_process)
 
 
 def test_model_status_values():
@@ -224,20 +248,38 @@ def test_infer_chatterbox_capabilities():
     assert capabilities["reference_audio_max_seconds"] == 30.0
 
 
-def test_infer_xtts_capabilities():
+def test_infer_qwen_voice_design_capabilities():
     capabilities = infer_model_capabilities(
         task="tts",
-        backend="xtts",
-        model_id="coqui/XTTS-v2",
+        backend="faster_qwen3_tts",
+        model_id="Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+    )
+    assert capabilities["supports_voice_design"] is True
+    assert capabilities["supports_voice_clone"] is False
+    assert capabilities["voice_mode"] == "instruction"
+    assert capabilities["requires_gpu"] is True
+
+
+def test_infer_supertonic_capabilities():
+    capabilities = infer_model_capabilities(
+        task="tts",
+        backend="supertonic",
+        model_id="Supertone/supertonic-3",
+    )
+    assert capabilities["supports_voice_list"] is True
+    assert capabilities["supports_voice_clone"] is False
+    assert capabilities["requires_gpu"] is False
+    assert capabilities["voice_mode"] == "voice_id"
+
+
+def test_infer_voxcpm_capabilities():
+    capabilities = infer_model_capabilities(
+        task="tts",
+        backend="voxcpm",
+        model_id="openbmb/VoxCPM2",
     )
     assert capabilities["supports_voice_clone"] is True
+    assert capabilities["supports_voice_design"] is True
     assert capabilities["clone_mode"] == "reference_audio"
-
-
-def test_infer_dia_capabilities():
-    capabilities = infer_model_capabilities(
-        task="tts",
-        backend="dia",
-        model_id="nari-labs/Dia-1.6B",
-    )
-    assert capabilities["supports_voice_clone"] is True
+    assert capabilities["voice_mode"] == "instruction"
+    assert capabilities["requires_gpu"] is True

@@ -10,24 +10,25 @@ from .base import STTAdapter, TranscriptionResult, TranscriptionSegment
 logger = logging.getLogger(__name__)
 
 TRANSFORMERS_AVAILABLE = importlib.util.find_spec("transformers") is not None and importlib.util.find_spec("torch") is not None
-QWEN_ASR_AVAILABLE = importlib.util.find_spec("qwen_asr") is not None
 
 
 class TransformersSTTAdapter(STTAdapter):
     """
     HuggingFace Transformers STT adapter.
 
-    Supports Whisper variants via transformers pipeline, and Qwen3-ASR via the
-    dedicated qwen_asr package (which wraps the model's custom architecture).
+    Supports Whisper variants via the transformers pipeline, plus prompt/processor-driven
+    families loaded natively: Qwen3-ASR (``*-hf`` checkpoints), Cohere Transcribe and
+    IBM Granite Speech 5.0 / TurboCTC.
     """
 
     def __init__(self) -> None:
         self.pipe: Any = None
-        self._qwen_model: Any = None
+        self._prompt_model: Any = None
+        self._prompt_processor: Any = None
+        self._prompt_kind: str | None = None
         self.model_path: Path | None = None
         self.device: str = "cpu"
         self._is_ctc: bool = False
-        self._is_qwen_asr: bool = False
 
     async def load_model(self, model_path: Path, device: str = "auto", **kwargs) -> None:
         if not TRANSFORMERS_AVAILABLE:
@@ -48,7 +49,13 @@ class TransformersSTTAdapter(STTAdapter):
         model_type = self._read_model_type(model_path)
 
         if model_type == "qwen3_asr":
-            self._load_qwen_asr(model_path, resolved)
+            self._load_qwen3_asr(model_path, resolved, dtype)
+        elif model_type == "cohere_asr":
+            self._load_cohere_asr(model_path, resolved, dtype)
+        elif model_type == "granite_speech":
+            self._load_granite_speech(model_path, resolved, dtype)
+        elif model_type == "granite_speech5_ctc":
+            self._load_granite_ctc(model_path, resolved, dtype)
         else:
             self._load_pipeline(model_path, resolved, dtype, model_type)
 
@@ -67,115 +74,42 @@ class TransformersSTTAdapter(STTAdapter):
                 return _json.load(f).get("model_type", "")
         return ""
 
-    @staticmethod
-    def _apply_qwen_asr_shims() -> None:  # noqa: C901
-        import torch
+    def _load_qwen3_asr(self, model_path: Path, device: str, dtype: Any) -> None:
+        """Load Qwen3-ASR through transformers' native implementation.
 
-        from vocal_core.adapters._compat import apply_transformers_shims
+        Only the ``*-hf`` checkpoints match the native architecture; the original repos ship
+        custom-code weights that need the (transformers 4.x pinned) ``qwen-asr`` package.
+        """
+        from transformers import AutoProcessor, Qwen3ASRForConditionalGeneration
 
-        apply_transformers_shims()
+        logger.info("Loading Qwen3-ASR model from %s", model_path)
+        self._prompt_processor = AutoProcessor.from_pretrained(str(model_path))
+        self._prompt_model = Qwen3ASRForConditionalGeneration.from_pretrained(str(model_path), torch_dtype=dtype, device_map=device)
+        self._prompt_kind = "qwen3_asr"
 
-        # --- qwen_asr-specific patches (not shared with TTS) -----------------
-        from qwen_asr.core.transformers_backend.configuration_qwen3_asr import Qwen3ASRConfig as _ASRConfig
-        from qwen_asr.core.transformers_backend.modeling_qwen3_asr import Qwen3ASRThinkerForConditionalGeneration as _ASRModel
-        from qwen_asr.core.transformers_backend.modeling_qwen3_asr import Qwen3ASRThinkerTextRotaryEmbedding as _RotEmb
+    def _load_cohere_asr(self, model_path: Path, device: str, dtype: Any) -> None:
+        from transformers import AutoProcessor, CohereAsrForConditionalGeneration
 
-        # transformers 5.x validates token ids inside PretrainedConfig.__init__,
-        # which calls get_text_config() before qwen_asr has assigned
-        # `thinker_config`. Fall back to the base implementation during init.
-        if not getattr(_ASRConfig, "_vocal_text_config_shim", False):
-            _original_get_text_config = _ASRConfig.get_text_config
+        logger.info("Loading Cohere ASR model from %s", model_path)
+        self._prompt_processor = AutoProcessor.from_pretrained(str(model_path))
+        self._prompt_model = CohereAsrForConditionalGeneration.from_pretrained(str(model_path), torch_dtype=dtype, device_map=device)
+        self._prompt_kind = "cohere"
 
-            def _safe_get_text_config(self, *args, **kwargs):
-                if not hasattr(self, "thinker_config"):
-                    return super(_ASRConfig, self).get_text_config(*args, **kwargs)
-                return _original_get_text_config(self, *args, **kwargs)
+    def _load_granite_speech(self, model_path: Path, device: str, dtype: Any) -> None:
+        from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
 
-            _ASRConfig.get_text_config = _safe_get_text_config
-            _ASRConfig._vocal_text_config_shim = True
+        logger.info("Loading Granite Speech model from %s", model_path)
+        self._prompt_processor = AutoProcessor.from_pretrained(str(model_path))
+        self._prompt_model = AutoModelForSpeechSeq2Seq.from_pretrained(str(model_path), torch_dtype=dtype, device_map=device)
+        self._prompt_kind = "granite"
 
-        # transformers 5.x generation no longer passes `cache_position` on the
-        # prefill step, but qwen_asr subscripts it. Keep it None (the model
-        # computes correct positions itself) and only use it for the
-        # prefill-vs-decode decision it was added for.
-        if not getattr(_ASRModel, "_vocal_gen_shim", False):
-            _base_prepare = super(_ASRModel, _ASRModel).prepare_inputs_for_generation
+    def _load_granite_ctc(self, model_path: Path, device: str, dtype: Any) -> None:
+        from transformers import AutoModelForCTC, AutoProcessor
 
-            def _prepare_inputs_for_generation(
-                self,
-                input_ids,
-                past_key_values=None,
-                attention_mask=None,
-                inputs_embeds=None,
-                cache_position=None,
-                position_ids=None,
-                use_cache=True,
-                input_features=None,
-                feature_attention_mask=None,
-                **kwargs,
-            ):
-                model_inputs = _base_prepare(
-                    self,
-                    input_ids,
-                    past_key_values=past_key_values,
-                    attention_mask=attention_mask,
-                    inputs_embeds=inputs_embeds,
-                    cache_position=cache_position,
-                    position_ids=position_ids,
-                    use_cache=use_cache,
-                    input_features=input_features,
-                    feature_attention_mask=feature_attention_mask,
-                    **kwargs,
-                )
-                model_inputs["position_ids"] = None
-                if cache_position is not None and cache_position[0] != 0:
-                    model_inputs["input_features"] = None
-                return model_inputs
-
-            _ASRModel.prepare_inputs_for_generation = _prepare_inputs_for_generation
-            _ASRModel._vocal_gen_shim = True
-
-        try:
-            from qwen_asr.core.transformers_backend.configuration_qwen3_asr import Qwen3ASRThinkerConfig as _ThinkerCfg
-
-            if not hasattr(_ThinkerCfg, "pad_token_id"):
-                _ThinkerCfg.pad_token_id = None
-        except (ImportError, AttributeError):
-            pass
-
-        if not hasattr(_RotEmb, "compute_default_rope_parameters"):
-
-            def _default_rope_params(self, config):
-                base = getattr(config, "rope_theta", 10000.0)
-                dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
-                inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2, dtype=torch.float32) / dim))
-                return inv_freq, 1.0
-
-            _RotEmb.compute_default_rope_parameters = _default_rope_params
-
-    def _load_qwen_asr(self, model_path: Path, device: str) -> None:
-        if not QWEN_ASR_AVAILABLE:
-            raise ImportError("qwen_asr is required for Qwen3-ASR models. Install with: pip install qwen-asr")
-        import torch
-
-        self._apply_qwen_asr_shims()
-
-        from qwen_asr import Qwen3ASRModel
-
-        # Derive HF model name from directory (org--repo → org/repo)
-        dir_name = model_path.name
-        if "--" in dir_name:
-            model_name = dir_name.replace("--", "/", 1)
-        else:
-            model_name = str(model_path)
-
-        dtype = torch.float16 if device == "cuda" else torch.float32
-        self._qwen_model = Qwen3ASRModel.from_pretrained(
-            model_name,
-            torch_dtype=dtype,
-            device_map=device,
-        )
-        self._is_qwen_asr = True
+        logger.info("Loading Granite Speech CTC model from %s", model_path)
+        self._prompt_processor = AutoProcessor.from_pretrained(str(model_path))
+        self._prompt_model = AutoModelForCTC.from_pretrained(str(model_path), torch_dtype=dtype, device_map=device)
+        self._prompt_kind = "granite_ctc"
 
     def _load_pipeline(self, model_path: Path, device: str, dtype: Any, model_type: str) -> None:
         from transformers import pipeline
@@ -191,8 +125,9 @@ class TransformersSTTAdapter(STTAdapter):
 
     async def unload_model(self) -> None:
         self.pipe = None
-        self._qwen_model = None
-        self._is_qwen_asr = False
+        self._prompt_model = None
+        self._prompt_processor = None
+        self._prompt_kind = None
         self.model_path = None
         if self.device == "cuda":
             try:
@@ -203,7 +138,7 @@ class TransformersSTTAdapter(STTAdapter):
                 pass
 
     def is_loaded(self) -> bool:
-        return self.pipe is not None or self._qwen_model is not None
+        return self.pipe is not None or self._prompt_model is not None
 
     def get_model_info(self) -> dict[str, Any]:
         return {
@@ -237,8 +172,8 @@ class TransformersSTTAdapter(STTAdapter):
 
             loop = asyncio.get_running_loop()
 
-            if self._is_qwen_asr:
-                result = await loop.run_in_executor(None, self._run_qwen_asr, audio_path, language, word_timestamps)
+            if self._prompt_kind is not None:
+                result = await loop.run_in_executor(None, self._run_prompt_model, audio_path, language)
             else:
                 generate_kwargs: dict[str, Any] = {}
                 if not self._is_ctc:
@@ -287,6 +222,19 @@ class TransformersSTTAdapter(STTAdapter):
         "mk": "Macedonian",
     }
 
+    # Cohere Transcribe supports 14 languages; the processor expects ISO codes.
+    _COHERE_LANGUAGES = frozenset({"en", "fr", "de", "it", "es", "pt", "el", "nl", "pl", "zh", "ja", "ko", "vi", "ar"})
+
+    # Granite Speech 5.0 2B takes a language-id prompt naming the language in English.
+    _GRANITE_LANGUAGE_NAMES = {
+        "en": "English",
+        "fr": "French",
+        "de": "German",
+        "es": "Spanish",
+        "pt": "Portuguese",
+        "ja": "Japanese",
+    }
+
     @staticmethod
     def _get_audio_duration(audio_path: str) -> float:
         """Estimate audio duration in seconds."""
@@ -310,42 +258,138 @@ class TransformersSTTAdapter(STTAdapter):
         except Exception:
             return 0.0
 
-    def _run_qwen_asr(self, audio_path: str, language: str | None, word_timestamps: bool) -> TranscriptionResult:
-        qwen_lang = self._QWEN_LANG_MAP.get(language, language) if language else None
-        results = self._qwen_model.transcribe(
-            audio=audio_path,
-            language=qwen_lang,
-            return_time_stamps=word_timestamps,
-        )
-        if not results:
-            return TranscriptionResult(text="", language=language or "unknown", duration=0.0)
+    def _run_prompt_model(self, audio_path: str, language: str | None) -> TranscriptionResult:
+        """Dispatch prompt/processor-driven ASR families (Qwen3-ASR, Cohere Transcribe, IBM Granite Speech)."""
+        if self._prompt_kind == "qwen3_asr":
+            text = self._run_qwen3_asr(audio_path, language)
+        elif self._prompt_kind == "cohere":
+            text = self._run_cohere_asr(audio_path, language)
+        elif self._prompt_kind == "granite":
+            text = self._run_granite_speech(audio_path, language)
+        else:
+            text = self._run_granite_ctc(audio_path)
 
-        r = results[0]
-        segments = None
-        duration = 0.0
+        return TranscriptionResult(text=text, language=language or "unknown", duration=self._get_audio_duration(audio_path), segments=None)
 
-        if r.time_stamps:
-            segments = []
-            for i, ts in enumerate(r.time_stamps):
-                start = float(ts.get("start", 0.0)) if isinstance(ts, dict) else 0.0
-                end = float(ts.get("end", 0.0)) if isinstance(ts, dict) else 0.0
-                text = ts.get("text", "") if isinstance(ts, dict) else str(ts)
-                duration = max(duration, end)
-                segments.append(TranscriptionSegment(id=i, start=start, end=end, text=text))
+    def _run_qwen3_asr(self, audio_path: str, language: str | None) -> str:
+        """Transcribe with the native Qwen3-ASR processor + chat prompt."""
+        import numpy as np
+        import torch
 
-        if duration == 0.0:
-            duration = self._get_audio_duration(audio_path)
+        sampling_rate = 16000
+        audio = self._load_mono_audio(audio_path, sampling_rate)
+        # The encoder requires whole 100-frame windows (1 s of audio).
+        padded = int(np.ceil(len(audio) / sampling_rate) * sampling_rate)
+        if len(audio) < padded:
+            audio = np.pad(audio, (0, padded - len(audio))).astype(np.float32)
 
-        return TranscriptionResult(
-            text=r.text.strip(),
-            language=r.language or language or "unknown",
-            duration=duration,
-            segments=segments,
-        )
+        messages = [
+            {"role": "system", "content": ""},
+            {"role": "user", "content": [{"type": "audio", "audio": ""}]},
+        ]
+        prompt = self._prompt_processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+        if language:
+            prompt = f"{prompt}language {self._QWEN_LANG_MAP.get(language, language)}<asr_text>"
+
+        inputs = self._prompt_processor(text=[prompt], audio=[audio], return_tensors="pt", padding=True)
+        inputs = inputs.to(self._prompt_model.device).to(self._prompt_model.dtype)
+        with torch.no_grad():
+            outputs = self._prompt_model.generate(**inputs, max_new_tokens=256, do_sample=False)
+        new_tokens = outputs[:, inputs["input_ids"].shape[1] :]
+        text = str(self._prompt_processor.batch_decode(new_tokens, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0])
+        return text.split("<asr_text>")[-1].strip()
+
+    @staticmethod
+    def _load_mono_audio(audio_path: str, sampling_rate: int) -> Any:
+        """Decode audio to mono float32 at ``sampling_rate`` without touching torchcodec.
+
+        ``soundfile`` cannot open container formats such as ``.m4a``; those are transcoded to a
+        temporary WAV with ffmpeg first (same approach as the NeMo adapter).
+        """
+        import os
+        import subprocess
+        import tempfile
+
+        import numpy as np
+        import soundfile as sf
+
+        try:
+            audio, source_rate = sf.read(audio_path, dtype="float32", always_2d=False)
+        except Exception:
+            fd, tmp_wav = tempfile.mkstemp(suffix=".wav")
+            os.close(fd)
+            try:
+                subprocess.run(
+                    ["ffmpeg", "-y", "-v", "quiet", "-i", audio_path, tmp_wav],
+                    check=True,
+                    timeout=120,
+                )
+                audio, source_rate = sf.read(tmp_wav, dtype="float32", always_2d=False)
+            finally:
+                Path(tmp_wav).unlink(missing_ok=True)
+
+        if audio.ndim > 1:
+            audio = audio.mean(axis=1)
+        if source_rate != sampling_rate:
+            import librosa
+
+            audio = librosa.resample(np.asarray(audio, dtype=np.float32), orig_sr=source_rate, target_sr=sampling_rate)
+        return np.asarray(audio, dtype=np.float32)
+
+    def _run_cohere_asr(self, audio_path: str, language: str | None) -> str:
+        if language and language not in self._COHERE_LANGUAGES:
+            raise ValueError(f"Cohere Transcribe does not support language '{language}'. Supported: {', '.join(sorted(self._COHERE_LANGUAGES))}")
+
+        audio = self._load_mono_audio(audio_path, 16000)
+        process_kwargs: dict[str, Any] = {"sampling_rate": 16000, "return_tensors": "pt"}
+        if language:
+            process_kwargs["language"] = language
+
+        inputs = self._prompt_processor(audio, **process_kwargs)
+        inputs = inputs.to(self._prompt_model.device, dtype=self._prompt_model.dtype)
+        outputs = self._prompt_model.generate(**inputs, max_new_tokens=256)
+        return str(self._prompt_processor.decode(outputs, skip_special_tokens=True)).strip()
+
+    def _run_granite_speech(self, audio_path: str, language: str | None) -> str:
+        import torch
+
+        audio = torch.from_numpy(self._load_mono_audio(audio_path, 16000)).unsqueeze(0)
+        tokenizer = self._prompt_processor.tokenizer
+
+        # IBM documents a language-id prompt for multilingual ASR (README: "ASR with language ID").
+        instruction = "transcribe the speech with proper punctuation and capitalization."
+        if language:
+            name = self._GRANITE_LANGUAGE_NAMES.get(language)
+            if name is None:
+                raise ValueError(f"Granite Speech 5.0 2B does not support language '{language}'. Supported: {', '.join(sorted(self._GRANITE_LANGUAGE_NAMES))}")
+            instruction = f"The speech is in {name}. Transcribe it exactly; do not translate. can you transcribe the speech into a written format?"
+
+        chat = [{"role": "user", "content": f"<|audio|>{instruction}"}]
+        prompt = tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=True)
+
+        inputs = self._prompt_processor(prompt, audio, device=self._prompt_model.device, return_tensors="pt").to(self._prompt_model.device)
+        outputs = self._prompt_model.generate(**inputs, max_new_tokens=200, do_sample=False, num_beams=1)
+        prompt_tokens = inputs["input_ids"].shape[-1]
+        new_tokens = outputs[0, prompt_tokens:].unsqueeze(0)
+        return str(tokenizer.batch_decode(new_tokens, add_special_tokens=False, skip_special_tokens=True)[0]).strip()
+
+    def _run_granite_ctc(self, audio_path: str) -> str:
+        sampling_rate = int(self._prompt_processor.feature_extractor.sampling_rate)
+        audio = self._load_mono_audio(audio_path, sampling_rate)
+        inputs = self._prompt_processor(audio, sampling_rate=sampling_rate, device=self._prompt_model.device, return_tensors="pt")
+        inputs = inputs.to(self._prompt_model.device, dtype=self._prompt_model.dtype)
+        outputs = self._prompt_model.generate(**inputs)
+        text = str(self._prompt_processor.batch_decode(outputs, skip_special_tokens=True)[0]).strip()
+        return "" if text == "<|nospeech|>" else text
 
     def _run_pipeline(self, audio_path: str, generate_kwargs: dict) -> TranscriptionResult:
+        # Hand the pipeline a decoded array so it never reaches for torchcodec/ffmpeg backends
+        # that may be missing on Windows.
+        feature_extractor = getattr(self.pipe, "feature_extractor", None)
+        sampling_rate = int(getattr(feature_extractor, "sampling_rate", 16000) or 16000)
+        audio = self._load_mono_audio(audio_path, sampling_rate)
         raw = self.pipe(
-            audio_path,
+            {"array": audio, "sampling_rate": sampling_rate},
             return_timestamps=True,
             generate_kwargs=generate_kwargs if generate_kwargs else None,
         )

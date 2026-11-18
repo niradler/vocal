@@ -70,7 +70,6 @@ class STTAdapter:
     async def transcribe_stream(self, audio_queue) -> AsyncIterator[TranscriptionSegment]: ...
     async def unload_model(self) -> None: ...
 
-
 # TTS
 class TTSAdapter:
     async def load_model(self, model_path: Path | str, **kwargs) -> None: ...
@@ -161,7 +160,6 @@ All modules use stdlib `logging` via `vocal_core.logging`:
 
 ```python
 import logging
-
 logger = logging.getLogger(__name__)
 ```
 

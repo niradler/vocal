@@ -181,7 +181,6 @@ API_BASE_URL=http://127.0.0.1:8001 UV_PROJECT_ENVIRONMENT=/tmp/vocal_venv_linux 
 # tests/unit/test_my_feature.py
 def test_my_setting_default():
     from vocal_core.config import VocalSettings
-
     s = VocalSettings()
     assert s.MY_SETTING == "expected_default"
 ```
@@ -192,7 +191,6 @@ def test_my_setting_default():
 # tests/contract/test_my_endpoint.py
 def test_my_endpoint_returns_200(client):
     from vocal_sdk.api.my_module import my_endpoint
-
     result = my_endpoint.sync(client=client)
     assert result is not None
 ```
@@ -206,7 +204,6 @@ The `client` fixture is in `tests/contract/conftest.py` — it provides an SDK c
 class TestMyFeature:
     def test_my_flow(self, client, api_base):
         import requests
-
         resp = requests.post(f"{api_base}/v1/audio/transcriptions", ...)
         assert resp.status_code == 200
 ```
