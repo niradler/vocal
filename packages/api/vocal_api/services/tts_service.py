@@ -191,6 +191,8 @@ class TTSService:
         voice: str | None = None,
         speed: float = 1.0,
         output_format: str = "pcm",
+        language: str | None = None,
+        **kwargs,
     ) -> AsyncGenerator[bytes, None]:
         """
         Stream audio bytes as they are generated.
@@ -201,14 +203,16 @@ class TTSService:
             voice: Voice ID to use
             speed: Speech speed multiplier
             output_format: Output audio format
+            language: Language code for multilingual models
 
         Yields:
             bytes chunks of audio data
         """
+        extra = {k: v for k, v in ({"language": language} | kwargs).items() if v is not None}
         if model_id == "pyttsx3":
             adapter = await self._get_or_create_simple_adapter()
             self.last_used[model_id] = time.time()
-            async for chunk in adapter.synthesize_stream(text=text, voice=voice, speed=speed, output_format=output_format):
+            async for chunk in adapter.synthesize_stream(text=text, voice=voice, speed=speed, output_format=output_format, **extra):
                 yield chunk
             return
 
@@ -231,7 +235,7 @@ class TTSService:
             # Fail with ValueError (-> 400) before any audio is generated.
             adapter.validate_voice(voice)
 
-        async for chunk in adapter.synthesize_stream(text=text, voice=voice, speed=speed, output_format=output_format):
+        async for chunk in adapter.synthesize_stream(text=text, voice=voice, speed=speed, output_format=output_format, **extra):
             yield chunk
 
     async def get_voices(self, model_id: str | None = None) -> list[Voice]:

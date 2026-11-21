@@ -20,6 +20,8 @@ class TTSRequest:
         model (str): TTS model to use (e.g., 'hexgrad/Kokoro-82M', 'pyttsx3')
         input_ (str): The text to synthesize
         voice (None | str | Unset): Voice ID to use (model-specific, see /v1/audio/voices)
+        language (None | str | Unset): Language code for multilingual models (ISO 639-1, e.g. 'en', 'zh'). Model default
+            if omitted.
         speed (float | Unset): Speech speed multiplier Default: 1.0.
         response_format (TTSRequestResponseFormat | Unset): Audio format: mp3, opus, aac, flac, wav, pcm Default:
             TTSRequestResponseFormat.MP3.
@@ -29,6 +31,7 @@ class TTSRequest:
     model: str
     input_: str
     voice: None | str | Unset = UNSET
+    language: None | str | Unset = UNSET
     speed: float | Unset = 1.0
     response_format: TTSRequestResponseFormat | Unset = TTSRequestResponseFormat.MP3
     stream: bool | Unset = False
@@ -44,6 +47,12 @@ class TTSRequest:
             voice = UNSET
         else:
             voice = self.voice
+
+        language: None | str | Unset
+        if isinstance(self.language, Unset):
+            language = UNSET
+        else:
+            language = self.language
 
         speed = self.speed
 
@@ -63,6 +72,8 @@ class TTSRequest:
         )
         if voice is not UNSET:
             field_dict["voice"] = voice
+        if language is not UNSET:
+            field_dict["language"] = language
         if speed is not UNSET:
             field_dict["speed"] = speed
         if response_format is not UNSET:
@@ -88,6 +99,15 @@ class TTSRequest:
 
         voice = _parse_voice(d.pop("voice", UNSET))
 
+        def _parse_language(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        language = _parse_language(d.pop("language", UNSET))
+
         speed = d.pop("speed", UNSET)
 
         _response_format = d.pop("response_format", UNSET)
@@ -103,6 +123,7 @@ class TTSRequest:
             model=model,
             input_=input_,
             voice=voice,
+            language=language,
             speed=speed,
             response_format=response_format,
             stream=stream,

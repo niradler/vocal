@@ -119,6 +119,10 @@ class TTSRequest(BaseModel):
     model: str = Field(..., description="TTS model to use (e.g., 'hexgrad/Kokoro-82M', 'pyttsx3')")
     input: str = Field(..., min_length=1, description="The text to synthesize")
     voice: str | None = Field(None, description="Voice ID to use (model-specific, see /v1/audio/voices)")
+    language: str | None = Field(
+        None,
+        description="Language code for multilingual models (ISO 639-1, e.g. 'en', 'zh'). Model default if omitted.",
+    )
     speed: float = Field(1.0, ge=0.25, le=4.0, description="Speech speed multiplier")
     response_format: AudioFormat = Field("mp3", description="Audio format: mp3, opus, aac, flac, wav, pcm")
     stream: bool = Field(False, description="Stream audio chunks as they are generated")
@@ -171,6 +175,7 @@ async def text_to_speech(request: TTSRequest, service: TTSService = Depends(get_
     - **model**: TTS model (e.g., 'hexgrad/Kokoro-82M', 'pyttsx3')
     - **input**: Text to convert to speech
     - **voice**: Optional voice ID (use /v1/audio/voices to list available voices)
+    - **language**: Optional language code for multilingual models (ISO 639-1)
     - **speed**: Speech speed multiplier (0.25 to 4.0, default: 1.0)
     - **response_format**: Audio format (mp3, opus, aac, flac, wav, pcm)
     - **stream**: Stream audio chunks as they are generated
@@ -192,6 +197,7 @@ async def text_to_speech(request: TTSRequest, service: TTSService = Depends(get_
                 voice=request.voice,
                 speed=request.speed,
                 output_format=fmt,
+                language=request.language,
             )
             return StreamingResponse(
                 generator,
@@ -209,6 +215,7 @@ async def text_to_speech(request: TTSRequest, service: TTSService = Depends(get_
             voice=request.voice,
             speed=request.speed,
             output_format=fmt,
+            language=request.language,
         )
 
         return Response(

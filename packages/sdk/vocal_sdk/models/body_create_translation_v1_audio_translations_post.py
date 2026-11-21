@@ -8,6 +8,7 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
 from .. import types
+from ..models.transcription_format import TranscriptionFormat
 from ..types import UNSET, File, Unset
 
 T = TypeVar("T", bound="BodyCreateTranslationV1AudioTranslationsPost")
@@ -19,10 +20,18 @@ class BodyCreateTranslationV1AudioTranslationsPost:
     Attributes:
         file (File):
         model (None | str | Unset):
+        language (None | str | Unset): Source language code (ISO 639-1). Auto-detect if omitted.
+        prompt (None | str | Unset): Style prompt
+        response_format (TranscriptionFormat | Unset): Output format for transcription
+        temperature (float | Unset):  Default: 0.0.
     """
 
     file: File
     model: None | str | Unset = UNSET
+    language: None | str | Unset = UNSET
+    prompt: None | str | Unset = UNSET
+    response_format: TranscriptionFormat | Unset = UNSET
+    temperature: float | Unset = 0.0
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -34,6 +43,24 @@ class BodyCreateTranslationV1AudioTranslationsPost:
         else:
             model = self.model
 
+        language: None | str | Unset
+        if isinstance(self.language, Unset):
+            language = UNSET
+        else:
+            language = self.language
+
+        prompt: None | str | Unset
+        if isinstance(self.prompt, Unset):
+            prompt = UNSET
+        else:
+            prompt = self.prompt
+
+        response_format: str | Unset = UNSET
+        if not isinstance(self.response_format, Unset):
+            response_format = self.response_format.value
+
+        temperature = self.temperature
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -43,6 +70,14 @@ class BodyCreateTranslationV1AudioTranslationsPost:
         )
         if model is not UNSET:
             field_dict["model"] = model
+        if language is not UNSET:
+            field_dict["language"] = language
+        if prompt is not UNSET:
+            field_dict["prompt"] = prompt
+        if response_format is not UNSET:
+            field_dict["response_format"] = response_format
+        if temperature is not UNSET:
+            field_dict["temperature"] = temperature
 
         return field_dict
 
@@ -56,6 +91,39 @@ class BodyCreateTranslationV1AudioTranslationsPost:
                 files.append(("model", (None, str(self.model).encode(), "text/plain")))
             else:
                 files.append(("model", (None, str(self.model).encode(), "text/plain")))
+
+        if not isinstance(self.language, Unset):
+            if isinstance(self.language, str):
+                files.append(
+                    ("language", (None, str(self.language).encode(), "text/plain"))
+                )
+            else:
+                files.append(
+                    ("language", (None, str(self.language).encode(), "text/plain"))
+                )
+
+        if not isinstance(self.prompt, Unset):
+            if isinstance(self.prompt, str):
+                files.append(
+                    ("prompt", (None, str(self.prompt).encode(), "text/plain"))
+                )
+            else:
+                files.append(
+                    ("prompt", (None, str(self.prompt).encode(), "text/plain"))
+                )
+
+        if not isinstance(self.response_format, Unset):
+            files.append(
+                (
+                    "response_format",
+                    (None, str(self.response_format.value).encode(), "text/plain"),
+                )
+            )
+
+        if not isinstance(self.temperature, Unset):
+            files.append(
+                ("temperature", (None, str(self.temperature).encode(), "text/plain"))
+            )
 
         for prop_name, prop in self.additional_properties.items():
             files.append((prop_name, (None, str(prop).encode(), "text/plain")))
@@ -76,9 +144,40 @@ class BodyCreateTranslationV1AudioTranslationsPost:
 
         model = _parse_model(d.pop("model", UNSET))
 
+        def _parse_language(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        language = _parse_language(d.pop("language", UNSET))
+
+        def _parse_prompt(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        prompt = _parse_prompt(d.pop("prompt", UNSET))
+
+        _response_format = d.pop("response_format", UNSET)
+        response_format: TranscriptionFormat | Unset
+        if isinstance(_response_format, Unset):
+            response_format = UNSET
+        else:
+            response_format = TranscriptionFormat(_response_format)
+
+        temperature = d.pop("temperature", UNSET)
+
         body_create_translation_v1_audio_translations_post = cls(
             file=file,
             model=model,
+            language=language,
+            prompt=prompt,
+            response_format=response_format,
+            temperature=temperature,
         )
 
         body_create_translation_v1_audio_translations_post.additional_properties = d

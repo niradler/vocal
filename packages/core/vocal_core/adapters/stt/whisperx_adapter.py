@@ -107,6 +107,7 @@ class WhisperXSTTAdapter(STTAdapter):
         task: str = "transcribe",
         temperature: float = 0.0,
         word_timestamps: bool = False,
+        prompt: str | None = None,
         batch_size: int | None = None,
         **kwargs,
     ) -> TranscriptionResult:
@@ -125,7 +126,7 @@ class WhisperXSTTAdapter(STTAdapter):
 
             resolved_batch = batch_size if batch_size is not None else vocal_settings.WHISPERX_BATCH_SIZE
             loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(None, self._run_transcribe, audio_path, language, resolved_batch, word_timestamps)
+            result = await loop.run_in_executor(None, self._run_transcribe, audio_path, language, resolved_batch, word_timestamps, prompt, task)
             return result
         finally:
             if temp_path:
@@ -137,6 +138,8 @@ class WhisperXSTTAdapter(STTAdapter):
         language: str | None,
         batch_size: int,
         word_timestamps: bool,
+        prompt: str | None = None,
+        task: str = "transcribe",
     ) -> TranscriptionResult:
         import whisperx
 
@@ -145,6 +148,10 @@ class WhisperXSTTAdapter(STTAdapter):
         transcribe_kwargs: dict[str, Any] = {"batch_size": batch_size}
         if language:
             transcribe_kwargs["language"] = language
+        if task != "transcribe":
+            transcribe_kwargs["task"] = task
+        if prompt:
+            transcribe_kwargs["initial_prompt"] = prompt
 
         result = self.model.transcribe(audio, **transcribe_kwargs)
         detected_language = result.get("language", language or "unknown")

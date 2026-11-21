@@ -80,6 +80,7 @@ def _tts(
     model: str = "pyttsx3",
     response_format: TTSRequestResponseFormat = TTSRequestResponseFormat.MP3,
     voice: str | None = None,
+    language: str | None = None,
     speed: float = 1.0,
     stream: bool = False,
 ) -> bytes:
@@ -88,6 +89,7 @@ def _tts(
         input_=text,
         response_format=response_format,
         voice=voice if voice is not None else UNSET,
+        language=language if language is not None else UNSET,
         speed=speed,
         stream=stream,
     )
@@ -422,6 +424,7 @@ class TestAudioTranscription:
 
         assert result is not None
         assert isinstance(result.text, str), "Should have text"
+        assert result.task == "transcribe", "JSON response should carry the task"
 
         segs = [] if isinstance(result.segments, Unset) or result.segments is None else result.segments
         if segs:
@@ -471,6 +474,41 @@ class TestAudioTranscription:
 
         print(f"\n[OK] srt format: {len(result)} chars")
 
+    def test_transcribe_vtt_and_verbose_json(self, client, test_model, test_assets, ensure_stt_model):
+        """VTT subtitles and verbose_json word timestamps match the OpenAI contract."""
+        audio_file = test_assets["audio_dir"] / "Recording.m4a"
+        payload = audio_file.read_bytes()
+        raw_client = client.get_httpx_client()
+
+        vtt = raw_client.post(
+            "/v1/audio/transcriptions",
+            files={"file": (audio_file.name, payload, "audio/mp4")},
+            data={"model": test_model, "response_format": "vtt"},
+        )
+        assert vtt.status_code == 200, vtt.text
+        assert "text/vtt" in vtt.headers["content-type"]
+        assert vtt.text.lstrip().startswith("WEBVTT")
+        assert " --> " in vtt.text
+
+        verbose = raw_client.post(
+            "/v1/audio/transcriptions",
+            files={"file": (audio_file.name, payload, "audio/mp4")},
+            data={
+                "model": test_model,
+                "response_format": "verbose_json",
+                "timestamp_granularities[]": ["word", "segment"],
+                "prompt": "This is a test recording.",
+            },
+        )
+        assert verbose.status_code == 200, verbose.text
+        body = verbose.json()
+        assert body["task"] == "transcribe"
+        assert body["text"].strip()
+        assert body["segments"], "verbose_json should include segments"
+        assert body["words"], "verbose_json should include word timestamps when requested"
+
+        print(f"\n[OK] vtt + verbose_json ({len(body['words'])} words)")
+
     def test_translate_audio_to_english(self, client, test_model, test_assets, ensure_stt_model):
         """Test /v1/audio/translations — non-English audio translated to English text"""
         audio_file = test_assets["audio_dir"] / "Recording.m4a"
@@ -484,9 +522,19 @@ class TestAudioTranscription:
             result = create_translation_v1_audio_translations_post.sync(client=client, body=body)
 
         assert result is not None, "Translation result should not be None"
+        assert result.task == "translate", "Translation response should report task=translate"
         assert isinstance(result.text, str), "Translation should have text"
         assert len(result.text.strip()) > 0, "Translation should not be empty"
         assert result.duration > 0, "Translation should have positive duration"
+
+        text_resp = client.get_httpx_client().post(
+            "/v1/audio/translations",
+            files={"file": (audio_file.name, audio_file.read_bytes(), "audio/mp4")},
+            data={"model": test_model, "response_format": "text"},
+        )
+        assert text_resp.status_code == 200, text_resp.text
+        assert "text/plain" in text_resp.headers["content-type"]
+        assert text_resp.text.strip() and not text_resp.text.lstrip().startswith("{")
 
         print(f"\n[OK] Translation -> '{result.text.strip()}' ({result.duration:.2f}s)")
 
@@ -506,6 +554,15 @@ class TestTextToSpeech:
 
         print(f"\n[OK] Synthesized '{text}'")
         print(f"  Size: {len(audio_data)} bytes")
+
+    def test_synthesize_with_language(self, client):
+        """Multilingual TTS models accept a language code; pyttsx3 ignores it safely."""
+        audio_data = _tts(client, "Hello, language test.", language="en")
+
+        assert isinstance(audio_data, bytes), "Audio should be bytes"
+        assert len(audio_data) > 0, "Audio should not be empty"
+
+        print(f"\n[OK] language=en accepted ({len(audio_data)} bytes)")
 
     def test_synthesize_with_speed(self, client):
         """Test TTS with different speed"""

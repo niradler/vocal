@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import PlainTextResponse, Response
@@ -16,6 +16,8 @@ from ..models.transcription import (
 from ..services import TranscriptionService
 
 router = APIRouter(prefix="/v1/audio", tags=["transcription"])
+
+TimestampGranularity = Literal["word", "segment"]
 
 
 def _srt_timestamp(seconds: float) -> str:
@@ -53,19 +55,32 @@ def _render_subtitles(result: TranscriptionResponse, fmt: TranscriptionFormat) -
     return "\n".join(lines)
 
 
+def _render_result(result: TranscriptionResponse, fmt: TranscriptionFormat) -> Response | TranscriptionResponse:
+    """Render JSON, plain text or subtitles, as requested by `response_format`."""
+    if fmt is TranscriptionFormat.TEXT:
+        return PlainTextResponse(result.text, media_type="text/plain; charset=utf-8")
+    if fmt in (TranscriptionFormat.SRT, TranscriptionFormat.VTT):
+        media_type = "text/vtt; charset=utf-8" if fmt is TranscriptionFormat.VTT else "text/plain; charset=utf-8"
+        return Response(_render_subtitles(result, fmt), media_type=media_type)
+    return result
+
+
+_AUDIO_RESPONSES = {
+    200: {
+        "description": "JSON, plain text or subtitles, depending on `response_format`",
+        "content": {
+            "application/json": {"schema": {"$ref": "#/components/schemas/TranscriptionResponse"}},
+            "text/plain": {"schema": {"type": "string"}},
+            "text/vtt": {"schema": {"type": "string"}},
+        },
+    }
+}
+
+
 @router.post(
     "/transcriptions",
     response_model=TranscriptionResponse,
-    responses={
-        200: {
-            "description": "JSON, plain text or subtitles, depending on `response_format`",
-            "content": {
-                "application/json": {"schema": {"$ref": "#/components/schemas/TranscriptionResponse"}},
-                "text/plain": {"schema": {"type": "string"}},
-                "text/vtt": {"schema": {"type": "string"}},
-            },
-        }
-    },
+    responses=_AUDIO_RESPONSES,
     summary="Transcribe audio",
     description="Transcribe audio file to text using specified model",
 )
@@ -76,8 +91,12 @@ async def create_transcription(
     prompt: Annotated[str | None, Form(description="Style prompt")] = None,
     response_format: Annotated[TranscriptionFormat, Form(description="Output format")] = TranscriptionFormat.JSON,
     temperature: Annotated[float, Form(ge=0.0, le=1.0)] = 0.0,
+    timestamp_granularities: Annotated[
+        list[TimestampGranularity] | None,
+        Form(alias="timestamp_granularities[]", description="Timestamp granularities (verbose_json only)"),
+    ] = None,
     service: TranscriptionService = Depends(get_transcription_service),
-) -> Response:
+) -> Response | TranscriptionResponse:
     """
     Transcribe an audio file.
 
@@ -102,16 +121,12 @@ async def create_transcription(
         prompt=prompt,
         response_format=response_format,
         temperature=temperature,
+        timestamp_granularities=timestamp_granularities or ["segment"],
     )
 
     try:
         result = await service.transcribe(file, request)
-        if response_format is TranscriptionFormat.TEXT:
-            return PlainTextResponse(result.text, media_type="text/plain; charset=utf-8")
-        if response_format in (TranscriptionFormat.SRT, TranscriptionFormat.VTT):
-            media_type = "text/vtt; charset=utf-8" if response_format is TranscriptionFormat.VTT else "text/plain; charset=utf-8"
-            return Response(_render_subtitles(result, response_format), media_type=media_type)
-        return result
+        return _render_result(result, response_format)
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:
@@ -121,18 +136,31 @@ async def create_transcription(
 @router.post(
     "/translations",
     response_model=TranscriptionResponse,
+    responses=_AUDIO_RESPONSES,
     summary="Translate audio to English",
     description="Translate audio to English text",
 )
 async def create_translation(
     file: Annotated[UploadFile, File()],
     model: Annotated[str | None, Form()] = None,
+    language: Annotated[str | None, Form(description="Source language code (ISO 639-1). Auto-detect if omitted.")] = None,
+    prompt: Annotated[str | None, Form(description="Style prompt")] = None,
+    response_format: Annotated[TranscriptionFormat, Form(description="Output format")] = TranscriptionFormat.JSON,
+    temperature: Annotated[float, Form(ge=0.0, le=1.0)] = 0.0,
     service: TranscriptionService = Depends(get_transcription_service),
-) -> TranscriptionResponse:
-    """Translate audio to English."""
+) -> Response | TranscriptionResponse:
+    """Translate audio to English using the selected model."""
     model = model or vocal_settings.STT_DEFAULT_MODEL
+    request = TranscriptionRequest(
+        model=model,
+        language=language,
+        prompt=prompt,
+        response_format=response_format,
+        temperature=temperature,
+    )
     try:
-        return await service.translate(file, model)
+        result = await service.translate(file, request)
+        return _render_result(result, response_format)
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:

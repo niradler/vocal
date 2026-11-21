@@ -155,6 +155,7 @@ class TransformersSTTAdapter(STTAdapter):
         task: str = "transcribe",
         temperature: float = 0.0,
         word_timestamps: bool = False,
+        prompt: str | None = None,
         **kwargs,
     ) -> TranscriptionResult:
         if not self.is_loaded():
@@ -181,6 +182,10 @@ class TransformersSTTAdapter(STTAdapter):
                         generate_kwargs["language"] = language
                     if task == "translate":
                         generate_kwargs["task"] = "translate"
+                    if prompt:
+                        prompt_ids = self._build_prompt_ids(prompt)
+                        if prompt_ids is not None:
+                            generate_kwargs["prompt_ids"] = prompt_ids
                 result = await loop.run_in_executor(None, self._run_pipeline, audio_path, generate_kwargs)
 
             return result
@@ -381,6 +386,20 @@ class TransformersSTTAdapter(STTAdapter):
         outputs = self._prompt_model.generate(**inputs)
         text = str(self._prompt_processor.batch_decode(outputs, skip_special_tokens=True)[0]).strip()
         return "" if text == "<|nospeech|>" else text
+
+    def _build_prompt_ids(self, prompt: str):
+        """Tokenize an OpenAI-style prompt for Whisper generation (None when unsupported)."""
+        tokenizer = getattr(self.pipe, "tokenizer", None)
+        get_prompt_ids = getattr(tokenizer, "get_prompt_ids", None)
+        if not callable(get_prompt_ids):
+            return None
+        try:
+            prompt_ids = get_prompt_ids(prompt, return_tensors="pt")
+            device = getattr(getattr(self.pipe, "model", None), "device", None)
+            return prompt_ids.to(device) if device is not None else prompt_ids
+        except Exception as exc:
+            logger.warning("Ignoring prompt for this model: %s", exc)
+            return None
 
     def _run_pipeline(self, audio_path: str, generate_kwargs: dict) -> TranscriptionResult:
         # Hand the pipeline a decoded array so it never reaches for torchcodec/ffmpeg backends

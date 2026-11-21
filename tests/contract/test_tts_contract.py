@@ -28,6 +28,20 @@ class TestTTSSpeech:
         resp = text_to_speech_v1_audio_speech_post.sync_detailed(client=client, body=body)
         assert "audio" in resp.headers.get("content-type", "")
 
+    def test_language_option_accepted(self, client):
+        body = TTSRequest(model="pyttsx3", input_="Hello.", language="en")
+        resp = text_to_speech_v1_audio_speech_post.sync_detailed(client=client, body=body)
+        assert resp.status_code == 200
+        assert len(resp.content) > 0
+
+    def test_language_option_accepted_when_streaming(self, client):
+        raw = client.get_httpx_client().post(
+            "/v1/audio/speech",
+            json={"model": "pyttsx3", "input": "Hello.", "language": "en", "stream": True, "response_format": "pcm"},
+        )
+        assert raw.status_code == 200
+        assert len(raw.content) > 0
+
     def test_duration_header(self, client):
         body = TTSRequest(model="pyttsx3", input_="duration test")
         resp = text_to_speech_v1_audio_speech_post.sync_detailed(client=client, body=body)

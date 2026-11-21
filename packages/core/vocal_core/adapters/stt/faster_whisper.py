@@ -134,6 +134,7 @@ class FasterWhisperAdapter(STTAdapter):
         task: str = "transcribe",
         temperature: float = 0.0,
         word_timestamps: bool = False,
+        prompt: str | None = None,
         beam_size: int = 5,
         vad_filter: bool = True,
         **kwargs,
@@ -147,6 +148,7 @@ class FasterWhisperAdapter(STTAdapter):
             task: 'transcribe' or 'translate'
             temperature: Sampling temperature (0.0 for greedy)
             word_timestamps: Enable word-level timestamps
+            prompt: Optional text to bias decoding (OpenAI `prompt` -> faster-whisper `initial_prompt`)
             beam_size: Beam size (5 is a good balance, 1 for faster greedy decoding)
             vad_filter: Enable Voice Activity Detection for better performance
             **kwargs: Additional faster-whisper parameters
@@ -175,6 +177,8 @@ class FasterWhisperAdapter(STTAdapter):
                 "beam_size": beam_size,
                 "vad_filter": vad_filter,
             }
+            if prompt:
+                transcribe_kwargs["initial_prompt"] = prompt
             transcribe_kwargs.update(kwargs)
 
             segments, info = self.model.transcribe(audio_path, **transcribe_kwargs)

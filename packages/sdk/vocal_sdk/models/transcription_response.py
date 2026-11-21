@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
+from ..models.transcription_response_task import TranscriptionResponseTask
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
@@ -22,12 +23,14 @@ class TranscriptionResponse:
 
     Example:
         {'duration': 2.5, 'language': 'en', 'segments': [{'end': 2.5, 'id': 0, 'start': 0.0, 'text': 'Hello, how are you
-            today?'}], 'text': 'Hello, how are you today?'}
+            today?'}], 'task': 'transcribe', 'text': 'Hello, how are you today?'}
 
     Attributes:
         text (str): Full transcribed text
         language (str): Detected or specified language
         duration (float): Audio duration in seconds
+        task (TranscriptionResponseTask | Unset): Task that produced this result Default:
+            TranscriptionResponseTask.TRANSCRIBE.
         segments (list[TranscriptionSegment] | None | Unset):
         words (list[TranscriptionWord] | None | Unset):
     """
@@ -35,6 +38,7 @@ class TranscriptionResponse:
     text: str
     language: str
     duration: float
+    task: TranscriptionResponseTask | Unset = TranscriptionResponseTask.TRANSCRIBE
     segments: list[TranscriptionSegment] | None | Unset = UNSET
     words: list[TranscriptionWord] | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
@@ -45,6 +49,10 @@ class TranscriptionResponse:
         language = self.language
 
         duration = self.duration
+
+        task: str | Unset = UNSET
+        if not isinstance(self.task, Unset):
+            task = self.task.value
 
         segments: list[dict[str, Any]] | None | Unset
         if isinstance(self.segments, Unset):
@@ -79,6 +87,8 @@ class TranscriptionResponse:
                 "duration": duration,
             }
         )
+        if task is not UNSET:
+            field_dict["task"] = task
         if segments is not UNSET:
             field_dict["segments"] = segments
         if words is not UNSET:
@@ -97,6 +107,13 @@ class TranscriptionResponse:
         language = d.pop("language")
 
         duration = d.pop("duration")
+
+        _task = d.pop("task", UNSET)
+        task: TranscriptionResponseTask | Unset
+        if isinstance(_task, Unset):
+            task = UNSET
+        else:
+            task = TranscriptionResponseTask(_task)
 
         def _parse_segments(data: object) -> list[TranscriptionSegment] | None | Unset:
             if data is None:
@@ -150,6 +167,7 @@ class TranscriptionResponse:
             text=text,
             language=language,
             duration=duration,
+            task=task,
             segments=segments,
             words=words,
         )
