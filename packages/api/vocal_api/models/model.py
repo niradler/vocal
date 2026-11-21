@@ -31,6 +31,8 @@ class ModelBackend(str, Enum):
     SUPERTONIC = "supertonic"
     VOXCPM = "voxcpm"
     PHONON = "phonon"
+    QWEN3_OMNI_STT = "qwen3_omni_stt"
+    QWEN3_OMNI_TTS = "qwen3_omni_tts"
     CUSTOM = "custom"
 
 

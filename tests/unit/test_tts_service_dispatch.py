@@ -59,6 +59,18 @@ def test_voxtral_tts_dispatch_returns_voxtral_or_import_error():
             svc._create_adapter("voxtral_tts")
 
 
+def test_qwen3_omni_tts_dispatch_returns_proxy_or_import_error():
+    from vocal_core.adapters.tts import QWEN3_OMNI_TTS_AVAILABLE, Qwen3OmniTTSAdapter
+
+    svc = _make_service()
+    if QWEN3_OMNI_TTS_AVAILABLE:
+        adapter = svc._create_adapter("qwen3_omni_tts")
+        assert isinstance(adapter, Qwen3OmniTTSAdapter)
+    else:
+        with pytest.raises(ImportError, match="httpx"):
+            svc._create_adapter("qwen3_omni_tts")
+
+
 def test_supertonic_dispatch_returns_supertonic_or_import_error():
     from vocal_core.adapters.tts import SUPERTONIC_AVAILABLE, SupertonicTTSAdapter
 

@@ -13,6 +13,8 @@ class ModelBackend(StrEnum):
     ONNX = "onnx"
     PHONON = "phonon"
     PIPER = "piper"
+    QWEN3_OMNI_STT = "qwen3_omni_stt"
+    QWEN3_OMNI_TTS = "qwen3_omni_tts"
     SUPERTONIC = "supertonic"
     TRANSFORMERS = "transformers"
     VOXCPM = "voxcpm"

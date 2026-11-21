@@ -338,6 +338,10 @@ def infer_model_capabilities(  # noqa: C901
             inferred_requires_gpu = overrides.requires_gpu if overrides.requires_gpu is not None else False
             inferred_supports_voice_list = overrides.supports_voice_list if overrides.supports_voice_list is not None else True
             inferred_voice_mode = overrides.voice_mode or "voice_id"
+        elif backend == "qwen3_omni_tts":
+            inferred_requires_gpu = overrides.requires_gpu if overrides.requires_gpu is not None else True
+            inferred_supports_voice_list = overrides.supports_voice_list if overrides.supports_voice_list is not None else True
+            inferred_voice_mode = overrides.voice_mode or "voice_id"
 
     return {
         "supports_streaming": inferred_supports_streaming,

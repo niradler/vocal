@@ -9605,6 +9605,22 @@ wheels = [
 ]
 
 [[package]]
+name = "qwen-omni-utils"
+version = "0.0.9"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "av" },
+    { name = "librosa" },
+    { name = "packaging" },
+    { name = "pillow" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a2/27/81a51b10ef6d1a4f158498089530eb4307689d75adf6bd34f6632eda3099/qwen_omni_utils-0.0.9.tar.gz", hash = "sha256:c598269c7069afb4d154f8ea523972e8d8794a978fffed89cb4d87c326f97447", size = 8632, upload-time = "2026-02-10T09:45:30.538Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/38/a8/dfc07e5b9005decbd2f08ac564250775fea9526473ae1bc90fbf45e8036f/qwen_omni_utils-0.0.9-py3-none-any.whl", hash = "sha256:f111db07af669c83333411c5177131e18e831fe666d6a55a1af263952ada8939", size = 9657, upload-time = "2026-02-10T09:45:28.888Z" },
+]
+
+[[package]]
 name = "qwen-tts-hf"
 version = "0.1.1.post1"
 source = { registry = "https://pypi.org/simple" }
@@ -11951,6 +11967,10 @@ piper = [
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
 ]
+qwen3-omni = [
+    { name = "accelerate" },
+    { name = "qwen-omni-utils" },
+]
 qwen3-tts = [
     { name = "faster-qwen3-tts" },
     { name = "torch" },
@@ -11982,6 +12002,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-xdist" },
+    { name = "qwen-omni-utils" },
     { name = "ruff" },
     { name = "setuptools" },
     { name = "websockets" },
@@ -11990,6 +12011,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "accelerate", marker = "extra == 'qwen3-omni'", specifier = ">=1.7.0" },
     { name = "chatterbox-tts", marker = "extra == 'chatterbox'", specifier = ">=0.1.7" },
     { name = "en-core-web-sm", marker = "extra == 'kokoro'", url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" },
     { name = "faster-qwen3-tts", marker = "extra == 'qwen3-tts'", specifier = ">=0.5.4" },
@@ -11999,6 +12021,7 @@ requires-dist = [
     { name = "omnivoice", marker = "extra == 'omnivoice'", specifier = ">=0.2.1" },
     { name = "piper-tts", marker = "extra == 'piper'", specifier = ">=1.8.0" },
     { name = "ptts", marker = "extra == 'phonon'", specifier = ">=0.7.1" },
+    { name = "qwen-omni-utils", marker = "extra == 'qwen3-omni'", specifier = ">=0.0.6" },
     { name = "scipy", marker = "extra == 'piper'", specifier = ">=1.17.1" },
     { name = "supertonic", marker = "extra == 'supertonic'", specifier = "==1.3.1" },
     { name = "torch", marker = "extra == 'kokoro'", specifier = ">=2.15.0", index = "https://download.pytorch.org/whl/cu132" },
@@ -12014,7 +12037,7 @@ requires-dist = [
     { name = "voxcpm", marker = "extra == 'voxcpm'", specifier = ">=2.0.3" },
     { name = "whisperx", marker = "extra == 'whisperx'", specifier = ">=3.8.6" },
 ]
-provides-extras = ["piper", "kokoro", "qwen3-tts", "nemo", "whisperx", "chatterbox", "supertonic", "voxcpm", "voxtral", "omnivoice", "phonon"]
+provides-extras = ["piper", "kokoro", "qwen3-tts", "nemo", "whisperx", "chatterbox", "supertonic", "voxcpm", "voxtral", "omnivoice", "phonon", "qwen3-omni"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -12028,6 +12051,7 @@ dev = [
     { name = "pytest", specifier = ">=9.2.0" },
     { name = "pytest-asyncio", specifier = ">=1.5.0" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
+    { name = "qwen-omni-utils", specifier = ">=0.0.6" },
     { name = "ruff", specifier = ">=0.17.5" },
     { name = "setuptools", specifier = ">=70.0.0,<82" },
     { name = "websockets", specifier = ">=17.4" },

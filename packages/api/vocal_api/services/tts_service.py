@@ -10,6 +10,7 @@ from vocal_core.adapters.tts import (
     KOKORO_AVAILABLE,
     OMNIVOICE_AVAILABLE,
     PHONON_AVAILABLE,
+    QWEN3_OMNI_TTS_AVAILABLE,
     SUPERTONIC_AVAILABLE,
     VOXCPM_AVAILABLE,
     VOXTRAL_TTS_AVAILABLE,
@@ -19,6 +20,7 @@ from vocal_core.adapters.tts import (
     OmniVoiceTTSAdapter,
     PhononTTSAdapter,
     PiperTTSAdapter,
+    Qwen3OmniTTSAdapter,
     SimpleTTSAdapter,
     SupertonicTTSAdapter,
     TTSAdapter,
@@ -46,6 +48,7 @@ _DEFAULT_SAMPLE_RATES = {
     "chatterbox": 24000,
     "faster_qwen3_tts": 24000,
     "omnivoice": 24000,
+    "qwen3_omni_tts": 24000,
     "voxtral_tts": 24000,
 }
 
@@ -379,6 +382,10 @@ class TTSService:
             if not OMNIVOICE_AVAILABLE:
                 raise ImportError(optional_dependency_install_hint("omnivoice"))
             return OmniVoiceTTSAdapter()
+        if backend == "qwen3_omni_tts":
+            if not QWEN3_OMNI_TTS_AVAILABLE:
+                raise ImportError(optional_dependency_install_hint("qwen3-omni", "httpx"))
+            return Qwen3OmniTTSAdapter()
         if backend == "supertonic":
             if not SUPERTONIC_AVAILABLE:
                 raise ImportError(optional_dependency_install_hint("supertonic", "supertonic==1.3.1"))
@@ -391,4 +398,4 @@ class TTSService:
             if not PHONON_AVAILABLE:
                 raise ImportError(optional_dependency_install_hint("phonon", "ptts"))
             return PhononTTSAdapter()
-        raise ValueError(f"Unsupported TTS backend: '{backend}'. Supported backends: kokoro, faster_qwen3_tts, piper, chatterbox, voxtral_tts, omnivoice, supertonic, voxcpm, phonon")
+        raise ValueError(f"Unsupported TTS backend: '{backend}'. Supported backends: kokoro, faster_qwen3_tts, piper, chatterbox, voxtral_tts, omnivoice, qwen3_omni_tts, supertonic, voxcpm, phonon")

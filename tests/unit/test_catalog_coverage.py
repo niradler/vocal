@@ -55,6 +55,8 @@ IMPLEMENTED_BACKENDS = {
     "supertonic",
     "voxcpm",
     "phonon",
+    "qwen3_omni_stt",
+    "qwen3_omni_tts",
 }
 
 
@@ -83,7 +85,7 @@ def test_every_model_declares_license_and_commercial_use():
 def test_non_commercial_licenses_are_flagged():
     data = _load_catalog()
     for m in data["models"]:
-        if m["license"].startswith(("cc-by-nc", "coqui-public", "fish-audio", "boson-")):
+        if m["license"].startswith(("cc-by-nc", "coqui-public", "fish-audio", "boson-", "qwen-research")):
             assert m["commercial_use"] is False, f"{m['id']} has a non-commercial license but commercial_use is true"
 
 
@@ -148,6 +150,12 @@ def test_chatterbox_is_marked_retired():
         "ming-3.0-tts",
         "higgs-tts-3",
         "fish-drama-3",
+        "qwen2.5-omni-3b-stt",
+        "qwen2.5-omni-3b-tts",
+        "qwen2.5-omni-7b-stt",
+        "qwen2.5-omni-7b-tts",
+        "qwen3-omni-stt",
+        "qwen3-omni-tts",
     ],
 )
 def test_alias_exists_in_catalog(alias):
@@ -183,7 +191,7 @@ def test_chatterbox_models_have_voice_clone():
 
 def test_tts_models_have_task_tts():
     data = _load_catalog()
-    tts_backends = {"kokoro", "faster_qwen3_tts", "piper", "chatterbox", "omnivoice", "supertonic", "voxcpm", "phonon"}
+    tts_backends = {"kokoro", "faster_qwen3_tts", "piper", "chatterbox", "omnivoice", "supertonic", "voxcpm", "phonon", "qwen3_omni_tts"}
     for m in data["models"]:
         if m.get("backend") in tts_backends:
             assert m.get("task") == "tts", f"Model {m['id']} has wrong task"
@@ -212,7 +220,7 @@ async def test_incomplete_download_does_not_verify(tmp_path):
 
 def test_stt_models_have_task_stt():
     data = _load_catalog()
-    stt_backends = {"faster_whisper", "whisperx", "nemo", "transformers"}
+    stt_backends = {"faster_whisper", "whisperx", "nemo", "transformers", "qwen3_omni_stt"}
     for m in data["models"]:
         if m.get("backend") in stt_backends:
             assert m.get("task") == "stt", f"Model {m['id']} has wrong task"

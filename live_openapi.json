@@ -892,6 +892,8 @@
           "supertonic",
           "voxcpm",
           "phonon",
+          "qwen3_omni_stt",
+          "qwen3_omni_tts",
           "custom"
         ],
         "title": "ModelBackend",

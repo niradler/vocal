@@ -79,6 +79,10 @@ omnivoice = [
 phonon = [
     "ptts>=0.7.1",
 ]
+qwen3-omni = [
+    "qwen-omni-utils>=0.0.6",
+    "accelerate>=1.7.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -147,6 +151,7 @@ dev = [
     "pytest-xdist>=3.8.0",
     "mistral-common>=1.13.1",
     "omnivoice>=0.2.1",
+    "qwen-omni-utils>=0.0.6",
     "ruff>=0.17.5",
     "setuptools>=70.0.0,<82",
 

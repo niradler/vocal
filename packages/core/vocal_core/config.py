@@ -14,6 +14,11 @@ class VocalSettings(BaseSettings):
     TTS_DEFAULT_VOICE: str | None = None
     TTS_DEFAULT_CLONE_MODEL: str = "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
 
+    # Qwen-Omni TTS is served by vLLM-Omni / SGLang-Omni (the transformers
+    # in-process talker path is broken on transformers 5.18+); Vocal proxies
+    # /v1/audio/speech to this engine URL.
+    QWEN_OMNI_TTS_URL: str = "http://localhost:8080"
+
     # Empty -> ptts.DEFAULT_MODEL (a commit-pinned wheel reference).
     PHONON_MODEL_REF: str = ""
     PHONON_QUANT: str = "q8_0"
