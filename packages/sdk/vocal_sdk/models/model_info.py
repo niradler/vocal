@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, TypeVar, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-from ..types import UNSET, Unset
-
 from ..models.model_backend import ModelBackend
+from ..models.model_maintenance_status import ModelMaintenanceStatus
 from ..models.model_provider import ModelProvider
+from ..models.model_runtime import ModelRuntime
 from ..models.model_status import ModelStatus
 from ..models.model_task import ModelTask
-from typing import cast
+from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.model_info_files_type_0_item import ModelInfoFilesType0Item
@@ -39,6 +39,10 @@ class ModelInfo:
         languages (list[str] | Unset): Supported languages
         source_url (None | str | Unset):
         license_ (None | str | Unset):
+        commercial_use (bool | None | Unset): Whether the model weights license permits commercial use
+        runtime (ModelRuntime | Unset): How a model is executed
+        runtime_note (None | str | Unset): Engine/serving requirement outside Vocal's bundled adapters, if any
+        maintenance_status (ModelMaintenanceStatus | Unset): Upstream maintenance state of the model
         recommended_vram (None | str | Unset):
         local_path (None | str | Unset):
         modified_at (None | str | Unset): Last modified date on HuggingFace
@@ -50,6 +54,8 @@ class ModelInfo:
         sha (None | str | Unset): Git commit SHA
         files (list[ModelInfoFilesType0Item] | None | Unset): List of model files
         supports_streaming (bool | Unset): Whether the model supports true streaming output Default: False.
+        supports_live_streaming (bool | Unset): Whether the model supports true chunk-by-chunk live audio streaming
+            Default: False.
         supports_voice_list (bool | Unset): Whether the model exposes selectable voices Default: False.
         supports_voice_clone (bool | Unset): Whether the model supports reference-audio voice cloning Default: False.
         supports_voice_design (bool | Unset): Whether the model supports prompt/instruction-based voice design Default:
@@ -59,6 +65,7 @@ class ModelInfo:
         clone_mode (None | str | Unset): How /v1/audio/clone works for this model
         reference_audio_min_seconds (float | None | Unset): Recommended minimum reference audio length for cloning
         reference_audio_max_seconds (float | None | Unset): Recommended maximum reference audio length for cloning
+        output_formats (list[str] | Unset): Audio formats /v1/audio/speech accepts for this model (empty for STT)
     """
 
     id: str
@@ -74,6 +81,10 @@ class ModelInfo:
     languages: list[str] | Unset = UNSET
     source_url: None | str | Unset = UNSET
     license_: None | str | Unset = UNSET
+    commercial_use: bool | None | Unset = UNSET
+    runtime: ModelRuntime | Unset = UNSET
+    runtime_note: None | str | Unset = UNSET
+    maintenance_status: ModelMaintenanceStatus | Unset = UNSET
     recommended_vram: None | str | Unset = UNSET
     local_path: None | str | Unset = UNSET
     modified_at: None | str | Unset = UNSET
@@ -85,6 +96,7 @@ class ModelInfo:
     sha: None | str | Unset = UNSET
     files: list[ModelInfoFilesType0Item] | None | Unset = UNSET
     supports_streaming: bool | Unset = False
+    supports_live_streaming: bool | Unset = False
     supports_voice_list: bool | Unset = False
     supports_voice_clone: bool | Unset = False
     supports_voice_design: bool | Unset = False
@@ -93,6 +105,7 @@ class ModelInfo:
     clone_mode: None | str | Unset = UNSET
     reference_audio_min_seconds: float | None | Unset = UNSET
     reference_audio_max_seconds: float | None | Unset = UNSET
+    output_formats: list[str] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -135,6 +148,26 @@ class ModelInfo:
             license_ = UNSET
         else:
             license_ = self.license_
+
+        commercial_use: bool | None | Unset
+        if isinstance(self.commercial_use, Unset):
+            commercial_use = UNSET
+        else:
+            commercial_use = self.commercial_use
+
+        runtime: str | Unset = UNSET
+        if not isinstance(self.runtime, Unset):
+            runtime = self.runtime.value
+
+        runtime_note: None | str | Unset
+        if isinstance(self.runtime_note, Unset):
+            runtime_note = UNSET
+        else:
+            runtime_note = self.runtime_note
+
+        maintenance_status: str | Unset = UNSET
+        if not isinstance(self.maintenance_status, Unset):
+            maintenance_status = self.maintenance_status.value
 
         recommended_vram: None | str | Unset
         if isinstance(self.recommended_vram, Unset):
@@ -202,6 +235,8 @@ class ModelInfo:
 
         supports_streaming = self.supports_streaming
 
+        supports_live_streaming = self.supports_live_streaming
+
         supports_voice_list = self.supports_voice_list
 
         supports_voice_clone = self.supports_voice_clone
@@ -234,6 +269,10 @@ class ModelInfo:
         else:
             reference_audio_max_seconds = self.reference_audio_max_seconds
 
+        output_formats: list[str] | Unset = UNSET
+        if not isinstance(self.output_formats, Unset):
+            output_formats = self.output_formats
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -260,6 +299,14 @@ class ModelInfo:
             field_dict["source_url"] = source_url
         if license_ is not UNSET:
             field_dict["license"] = license_
+        if commercial_use is not UNSET:
+            field_dict["commercial_use"] = commercial_use
+        if runtime is not UNSET:
+            field_dict["runtime"] = runtime
+        if runtime_note is not UNSET:
+            field_dict["runtime_note"] = runtime_note
+        if maintenance_status is not UNSET:
+            field_dict["maintenance_status"] = maintenance_status
         if recommended_vram is not UNSET:
             field_dict["recommended_vram"] = recommended_vram
         if local_path is not UNSET:
@@ -282,6 +329,8 @@ class ModelInfo:
             field_dict["files"] = files
         if supports_streaming is not UNSET:
             field_dict["supports_streaming"] = supports_streaming
+        if supports_live_streaming is not UNSET:
+            field_dict["supports_live_streaming"] = supports_live_streaming
         if supports_voice_list is not UNSET:
             field_dict["supports_voice_list"] = supports_voice_list
         if supports_voice_clone is not UNSET:
@@ -298,11 +347,13 @@ class ModelInfo:
             field_dict["reference_audio_min_seconds"] = reference_audio_min_seconds
         if reference_audio_max_seconds is not UNSET:
             field_dict["reference_audio_max_seconds"] = reference_audio_max_seconds
+        if output_formats is not UNSET:
+            field_dict["output_formats"] = output_formats
 
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.model_info_files_type_0_item import ModelInfoFilesType0Item
 
         d = dict(src_dict)
@@ -352,6 +403,38 @@ class ModelInfo:
             return cast(None | str | Unset, data)
 
         license_ = _parse_license_(d.pop("license", UNSET))
+
+        def _parse_commercial_use(data: object) -> bool | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(bool | None | Unset, data)
+
+        commercial_use = _parse_commercial_use(d.pop("commercial_use", UNSET))
+
+        _runtime = d.pop("runtime", UNSET)
+        runtime: ModelRuntime | Unset
+        if isinstance(_runtime, Unset):
+            runtime = UNSET
+        else:
+            runtime = ModelRuntime(_runtime)
+
+        def _parse_runtime_note(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        runtime_note = _parse_runtime_note(d.pop("runtime_note", UNSET))
+
+        _maintenance_status = d.pop("maintenance_status", UNSET)
+        maintenance_status: ModelMaintenanceStatus | Unset
+        if isinstance(_maintenance_status, Unset):
+            maintenance_status = UNSET
+        else:
+            maintenance_status = ModelMaintenanceStatus(_maintenance_status)
 
         def _parse_recommended_vram(data: object) -> None | str | Unset:
             if data is None:
@@ -453,6 +536,8 @@ class ModelInfo:
 
         supports_streaming = d.pop("supports_streaming", UNSET)
 
+        supports_live_streaming = d.pop("supports_live_streaming", UNSET)
+
         supports_voice_list = d.pop("supports_voice_list", UNSET)
 
         supports_voice_clone = d.pop("supports_voice_clone", UNSET)
@@ -501,6 +586,8 @@ class ModelInfo:
             d.pop("reference_audio_max_seconds", UNSET)
         )
 
+        output_formats = cast(list[str], d.pop("output_formats", UNSET))
+
         model_info = cls(
             id=id,
             name=name,
@@ -515,6 +602,10 @@ class ModelInfo:
             languages=languages,
             source_url=source_url,
             license_=license_,
+            commercial_use=commercial_use,
+            runtime=runtime,
+            runtime_note=runtime_note,
+            maintenance_status=maintenance_status,
             recommended_vram=recommended_vram,
             local_path=local_path,
             modified_at=modified_at,
@@ -526,6 +617,7 @@ class ModelInfo:
             sha=sha,
             files=files,
             supports_streaming=supports_streaming,
+            supports_live_streaming=supports_live_streaming,
             supports_voice_list=supports_voice_list,
             supports_voice_clone=supports_voice_clone,
             supports_voice_design=supports_voice_design,
@@ -534,6 +626,7 @@ class ModelInfo:
             clone_mode=clone_mode,
             reference_audio_min_seconds=reference_audio_min_seconds,
             reference_audio_max_seconds=reference_audio_max_seconds,
+            output_formats=output_formats,
         )
 
         model_info.additional_properties = d

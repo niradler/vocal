@@ -6,6 +6,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+# Audio formats every converting adapter (kokoro, piper, qwen3-tts, voxtral)
+# accepts; WAV-only adapters synthesize raw waveforms and cannot convert.
+ALL_AUDIO_FORMATS = ["mp3", "opus", "aac", "flac", "wav", "pcm"]
+WAV_ONLY_TTS_BACKENDS = frozenset({"chatterbox", "voxcpm", "supertonic", "omnivoice"})
+
 
 class CapabilityOverrides(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -20,6 +25,7 @@ class CapabilityOverrides(BaseModel):
     clone_mode: str | None = None
     reference_audio_min_seconds: float | None = None
     reference_audio_max_seconds: float | None = None
+    output_formats: list[str] | None = None
 
 
 class RepoFileRecord(BaseModel):
@@ -56,6 +62,10 @@ class StoredModelRecord(CapabilityOverrides):
     alias: str | None = None
     actual_parameter_count: int | None = None
     hf_repo_id: str | None = None
+    commercial_use: bool | None = None
+    runtime: str | None = None
+    runtime_note: str | None = None
+    maintenance_status: str | None = None
 
 
 class HuggingFaceCardRecord(BaseModel):
@@ -140,6 +150,10 @@ def model_record_from_mapping(
         "alias",
         "actual_parameter_count",
         "hf_repo_id",
+        "commercial_use",
+        "runtime",
+        "runtime_note",
+        "maintenance_status",
         "supports_streaming",
         "supports_live_streaming",
         "supports_voice_list",
@@ -150,6 +164,7 @@ def model_record_from_mapping(
         "clone_mode",
         "reference_audio_min_seconds",
         "reference_audio_max_seconds",
+        "output_formats",
     )
     for field_name in optional_fields:
         if field_name in data:
@@ -215,6 +230,16 @@ def huggingface_snapshot_from_info(info: Any) -> HuggingFaceSnapshot:
     return HuggingFaceSnapshot.model_validate(payload)
 
 
+def license_metadata_from_record(record: StoredModelRecord) -> dict[str, Any]:
+    """Project licensing/runtime metadata onto ModelInfo fields."""
+    return {
+        "commercial_use": record.commercial_use,
+        "runtime": record.runtime or "in_process",
+        "runtime_note": record.runtime_note,
+        "maintenance_status": record.maintenance_status or "active",
+    }
+
+
 def infer_model_capabilities(  # noqa: C901
     *,
     task: str,
@@ -239,6 +264,21 @@ def infer_model_capabilities(  # noqa: C901
     inferred_requires_gpu = overrides.requires_gpu if overrides.requires_gpu is not None else False
     inferred_min_seconds = overrides.reference_audio_min_seconds
     inferred_max_seconds = overrides.reference_audio_max_seconds
+
+    # Output formats reflect what the adapter itself accepts. The base
+    # synthesize_stream fallback batches through synthesize(), so the same
+    # list applies to streaming; realtime voice agents additionally need pcm.
+    if task == "tts":
+        if overrides.output_formats is not None:
+            inferred_output_formats = list(overrides.output_formats)
+        elif backend in WAV_ONLY_TTS_BACKENDS:
+            inferred_output_formats = ["wav"]
+        elif backend == "phonon":
+            inferred_output_formats = ["wav", "pcm"]
+        else:
+            inferred_output_formats = list(ALL_AUDIO_FORMATS)
+    else:
+        inferred_output_formats = []
 
     if task == "stt":
         if backend == "voxtral_stt":
@@ -271,11 +311,6 @@ def infer_model_capabilities(  # noqa: C901
             inferred_clone_mode = overrides.clone_mode or "reference_audio"
             inferred_min_seconds = overrides.reference_audio_min_seconds if overrides.reference_audio_min_seconds is not None else 3.0
             inferred_max_seconds = overrides.reference_audio_max_seconds if overrides.reference_audio_max_seconds is not None else 30.0
-        elif backend in {"xtts", "fish_speech", "dia"}:
-            inferred_supports_voice_clone = overrides.supports_voice_clone if overrides.supports_voice_clone is not None else True
-            inferred_clone_mode = overrides.clone_mode or "reference_audio"
-            inferred_min_seconds = overrides.reference_audio_min_seconds if overrides.reference_audio_min_seconds is not None else 3.0
-            inferred_max_seconds = overrides.reference_audio_max_seconds if overrides.reference_audio_max_seconds is not None else 30.0
         elif backend == "voxtral_tts":
             inferred_requires_gpu = overrides.requires_gpu if overrides.requires_gpu is not None else True
             inferred_supports_voice_list = overrides.supports_voice_list if overrides.supports_voice_list is not None else True
@@ -288,6 +323,25 @@ def infer_model_capabilities(  # noqa: C901
             inferred_voice_mode = overrides.voice_mode or "instruction"
             inferred_min_seconds = overrides.reference_audio_min_seconds if overrides.reference_audio_min_seconds is not None else 3.0
             inferred_max_seconds = overrides.reference_audio_max_seconds if overrides.reference_audio_max_seconds is not None else 30.0
+        elif backend == "supertonic":
+            inferred_supports_voice_list = overrides.supports_voice_list if overrides.supports_voice_list is not None else True
+            inferred_voice_mode = overrides.voice_mode or "voice_id"
+        elif backend == "voxcpm":
+            inferred_requires_gpu = overrides.requires_gpu if overrides.requires_gpu is not None else True
+            inferred_supports_voice_clone = overrides.supports_voice_clone if overrides.supports_voice_clone is not None else True
+            inferred_supports_voice_design = overrides.supports_voice_design if overrides.supports_voice_design is not None else True
+            inferred_clone_mode = overrides.clone_mode or "reference_audio"
+            inferred_voice_mode = overrides.voice_mode or "instruction"
+            inferred_min_seconds = overrides.reference_audio_min_seconds if overrides.reference_audio_min_seconds is not None else 3.0
+            inferred_max_seconds = overrides.reference_audio_max_seconds if overrides.reference_audio_max_seconds is not None else 30.0
+        elif backend == "phonon":
+            inferred_requires_gpu = overrides.requires_gpu if overrides.requires_gpu is not None else False
+            inferred_supports_voice_list = overrides.supports_voice_list if overrides.supports_voice_list is not None else True
+            inferred_voice_mode = overrides.voice_mode or "voice_id"
+        elif backend == "qwen3_omni_tts":
+            inferred_requires_gpu = overrides.requires_gpu if overrides.requires_gpu is not None else True
+            inferred_supports_voice_list = overrides.supports_voice_list if overrides.supports_voice_list is not None else True
+            inferred_voice_mode = overrides.voice_mode or "voice_id"
 
     return {
         "supports_streaming": inferred_supports_streaming,
@@ -300,4 +354,5 @@ def infer_model_capabilities(  # noqa: C901
         "clone_mode": inferred_clone_mode,
         "reference_audio_min_seconds": inferred_min_seconds,
         "reference_audio_max_seconds": inferred_max_seconds,
+        "output_formats": inferred_output_formats,
     }

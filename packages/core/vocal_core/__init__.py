@@ -11,14 +11,17 @@ from .logging import get_logger, setup_logging
 from .registry import (
     ModelBackend,
     ModelInfo,
+    ModelMaintenanceStatus,
     ModelProvider,
     ModelRegistry,
+    ModelRuntime,
     ModelStatus,
     ModelTask,
+    assert_in_process_runtime,
     format_bytes,
 )
 
-__version__ = "0.3.8"
+__version__ = "0.4.0"
 
 __all__ = [
     "ModelRegistry",
@@ -27,6 +30,9 @@ __all__ = [
     "ModelBackend",
     "ModelProvider",
     "ModelTask",
+    "ModelRuntime",
+    "ModelMaintenanceStatus",
+    "assert_in_process_runtime",
     "format_bytes",
     "BaseAdapter",
     "STTAdapter",

@@ -7,7 +7,7 @@ from ..model_info import ModelInfo
 # Weight file names/suffixes that indicate actual model weights (not just configs).
 # Shared by ModelRegistry and HuggingFaceProvider.verify_model.
 WEIGHT_NAMES = frozenset({"pytorch_model.bin", "model.bin", "model.gguf"})
-WEIGHT_SUFFIXES = frozenset({".safetensors", ".pt", ".pth", ".nemo", ".ckpt"})
+WEIGHT_SUFFIXES = frozenset({".safetensors", ".pt", ".pth", ".nemo", ".ckpt", ".onnx"})
 
 
 class ModelProvider(ABC):

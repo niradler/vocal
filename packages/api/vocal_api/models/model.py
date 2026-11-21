@@ -25,13 +25,12 @@ class ModelBackend(str, Enum):
     FASTER_QWEN3_TTS = "faster_qwen3_tts"
     PIPER = "piper"
     CHATTERBOX = "chatterbox"
-    XTTS = "xtts"
-    FISH_SPEECH = "fish_speech"
-    ORPHEUS = "orpheus"
-    DIA = "dia"
     VOXTRAL_STT = "voxtral_stt"
     VOXTRAL_TTS = "voxtral_tts"
     OMNIVOICE = "omnivoice"
+    SUPERTONIC = "supertonic"
+    VOXCPM = "voxcpm"
+    PHONON = "phonon"
     QWEN3_OMNI_STT = "qwen3_omni_stt"
     QWEN3_OMNI_TTS = "qwen3_omni_tts"
     CUSTOM = "custom"
@@ -52,6 +51,21 @@ class ModelTask(str, Enum):
     TTS = "tts"
 
 
+class ModelRuntime(str, Enum):
+    """How a model is executed"""
+
+    IN_PROCESS = "in_process"
+    EXTERNAL = "external"
+
+
+class ModelMaintenanceStatus(str, Enum):
+    """Upstream maintenance state of the model"""
+
+    ACTIVE = "active"
+    RETIRED = "retired"
+    DEPRECATED = "deprecated"
+
+
 class ModelInfo(BaseModel):
     """Model information schema"""
 
@@ -69,6 +83,10 @@ class ModelInfo(BaseModel):
     status: ModelStatus = Field(description="Current model status")
     source_url: HttpUrl | None = None
     license: str | None = None
+    commercial_use: bool | None = Field(default=None, description="Whether the model weights license permits commercial use")
+    runtime: ModelRuntime = Field(default=ModelRuntime.IN_PROCESS, description="'in_process' when Vocal runs the model itself, 'external' when it needs an out-of-process engine")
+    runtime_note: str | None = Field(default=None, description="Engine/serving requirement outside Vocal's bundled adapters, if any")
+    maintenance_status: ModelMaintenanceStatus = Field(default=ModelMaintenanceStatus.ACTIVE, description="Upstream maintenance state (active/retired/deprecated)")
     recommended_vram: str | None = None
     task: ModelTask = Field(description="Task type")
     local_path: str | None = None
@@ -81,6 +99,7 @@ class ModelInfo(BaseModel):
     sha: str | None = Field(default=None, description="Git commit SHA")
     files: list[dict] | None = Field(default=None, description="List of model files")
     supports_streaming: bool = Field(default=False, description="Whether the model supports true streaming output")
+    supports_live_streaming: bool = Field(default=False, description="Whether the model supports true chunk-by-chunk live audio streaming")
     supports_voice_list: bool = Field(default=False, description="Whether the model exposes selectable voices")
     supports_voice_clone: bool = Field(default=False, description="Whether the model supports reference-audio voice cloning")
     supports_voice_design: bool = Field(default=False, description="Whether the model supports prompt/instruction-based voice design")
@@ -89,6 +108,7 @@ class ModelInfo(BaseModel):
     clone_mode: str | None = Field(default=None, description="How /v1/audio/clone works for this model")
     reference_audio_min_seconds: float | None = Field(default=None, description="Recommended minimum reference audio length for cloning")
     reference_audio_max_seconds: float | None = Field(default=None, description="Recommended maximum reference audio length for cloning")
+    output_formats: list[str] = Field(default_factory=list, description="Audio formats /v1/audio/speech accepts for this model (empty for STT)")
 
 
 class ModelListResponse(BaseModel):

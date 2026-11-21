@@ -1,17 +1,16 @@
 from http import HTTPStatus
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
-from ...client import AuthenticatedClient, Client
-from ...types import Response
 from ... import errors
-
+from ...client import AuthenticatedClient, Client
 from ...models.body_create_transcription_v1_audio_transcriptions_post import (
     BodyCreateTranscriptionV1AudioTranscriptionsPost,
 )
 from ...models.http_validation_error import HTTPValidationError
 from ...models.transcription_response import TranscriptionResponse
+from ...types import Response
 
 
 def _get_kwargs(
@@ -27,6 +26,8 @@ def _get_kwargs(
 
     _kwargs["files"] = body.to_multipart()
 
+    headers["Content-Type"] = "multipart/form-data; boundary=+++"
+
     _kwargs["headers"] = headers
     return _kwargs
 
@@ -35,6 +36,8 @@ def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
 ) -> HTTPValidationError | TranscriptionResponse | None:
     if response.status_code == 200:
+        if response.headers.get("content-type", "").startswith("text/"):
+            return cast(str, response.text)
         response_200 = TranscriptionResponse.from_dict(response.json())
 
         return response_200
@@ -52,7 +55,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | TranscriptionResponse]:
+) -> Response[HTTPValidationError | TranscriptionResponse | str]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -65,7 +68,7 @@ def sync_detailed(
     *,
     client: AuthenticatedClient | Client,
     body: BodyCreateTranscriptionV1AudioTranscriptionsPost,
-) -> Response[HTTPValidationError | TranscriptionResponse]:
+) -> Response[HTTPValidationError | TranscriptionResponse | str]:
     """Transcribe audio
 
      Transcribe audio file to text using specified model
@@ -78,7 +81,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | TranscriptionResponse]
+        Response[HTTPValidationError | TranscriptionResponse | str]
     """
 
     kwargs = _get_kwargs(
@@ -122,7 +125,7 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient | Client,
     body: BodyCreateTranscriptionV1AudioTranscriptionsPost,
-) -> Response[HTTPValidationError | TranscriptionResponse]:
+) -> Response[HTTPValidationError | TranscriptionResponse | str]:
     """Transcribe audio
 
      Transcribe audio file to text using specified model
@@ -135,7 +138,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | TranscriptionResponse]
+        Response[HTTPValidationError | TranscriptionResponse | str]
     """
 
     kwargs = _get_kwargs(

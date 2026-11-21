@@ -66,6 +66,8 @@ Missing a backend? The error message will tell you exactly which command to run.
 - **Voice agent** — full STT → LLM → TTS loop, OpenAI Realtime protocol compatible
 - **Voice selection** — list and select voices per model
 - **Voice cloning** — clone a voice from a 3–30 s reference recording
+- **License-aware catalog** — every model carries its weights license and a `commercial_use` flag, so you know what you can ship
+- **Honest runtime labels** — `runtime: external` marks models that need vLLM-Omni/SGLang-Omni instead of pretending they run in-process
 - **Cross-platform** — Windows, macOS, Linux (WSL supported)
 - **GPU acceleration** — automatic CUDA detection with VRAM optimization
 

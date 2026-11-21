@@ -46,21 +46,6 @@ async def list_catalog(
     return ModelListResponse(models=models, total=len(models))
 
 
-@router.get(
-    "/{model_id:path}",
-    response_model=ModelInfo,
-    response_model_exclude_none=True,
-    summary="Get model info",
-    description="Get detailed information about a specific model",
-)
-async def get_model(model_id: str, service: ModelService = Depends(get_model_service)) -> ModelInfo:
-    """Get detailed model information"""
-    model = await service.get_model(model_id)
-    if not model:
-        raise HTTPException(404, f"Model {model_id} not found")
-    return model
-
-
 @router.post(
     "/{model_id:path}/download",
     response_model=ModelDownloadProgress,
@@ -126,6 +111,23 @@ async def get_download_status(model_id: str, service: ModelService = Depends(get
         raise HTTPException(404, "No active download for this model")
 
     return status
+
+
+# NOTE: the greedy {model_id:path} routes must be declared AFTER the specific
+# /download and /download/status suffixes, or they swallow those paths whole.
+@router.get(
+    "/{model_id:path}",
+    response_model=ModelInfo,
+    response_model_exclude_none=True,
+    summary="Get model info",
+    description="Get detailed information about a specific model",
+)
+async def get_model(model_id: str, service: ModelService = Depends(get_model_service)) -> ModelInfo:
+    """Get detailed model information"""
+    model = await service.get_model(model_id)
+    if not model:
+        raise HTTPException(404, f"Model {model_id} not found")
+    return model
 
 
 @router.delete("/{model_id:path}", summary="Delete model", description="Remove a downloaded model")

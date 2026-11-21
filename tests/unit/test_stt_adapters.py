@@ -98,3 +98,28 @@ def test_whisperx_load_raises_import_error_when_not_available(monkeypatch):
 
     with pytest.raises(ImportError, match="whisperx"):
         asyncio.run(adapter.load_model(__import__("pathlib").Path(".")))
+
+
+def test_run_pipeline_feeds_decoded_array_instead_of_a_path(monkeypatch):
+    """The whisper pipeline must receive a numpy array so it never reaches for torchcodec/ffmpeg."""
+    import numpy as np
+
+    captured = {}
+
+    class _Pipe:
+        feature_extractor = type("_FE", (), {"sampling_rate": 16000})()
+
+        def __call__(self, audio, **kwargs):
+            captured["audio"] = audio
+            return {"text": " hello ", "chunks": []}
+
+    adapter = TransformersSTTAdapter()
+    adapter.pipe = _Pipe()
+    monkeypatch.setattr(adapter, "_load_mono_audio", lambda path, rate: np.zeros(1600, dtype="float32"))
+
+    result = adapter._run_pipeline("ignored.wav", {})
+
+    assert result.text == "hello"
+    assert isinstance(captured["audio"], dict)
+    assert captured["audio"]["sampling_rate"] == 16000
+    assert captured["audio"]["array"].dtype == np.float32

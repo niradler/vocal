@@ -1,35 +1,17 @@
 import asyncio
 import importlib.util
-import json
 import logging
 import tempfile
 from pathlib import Path
 from typing import Any, BinaryIO
 
+from ...config import optional_dependency_install_hint
+from .._qwen_omni import detect_omni_generation
 from .base import STTAdapter, TranscriptionResult
 
 logger = logging.getLogger(__name__)
 
-QWEN3_OMNI_STT_AVAILABLE: bool = (
-    importlib.util.find_spec("transformers") is not None
-    and importlib.util.find_spec("torch") is not None
-    and importlib.util.find_spec("qwen_omni_utils") is not None
-)
-
-
-def _detect_omni_generation(model_path: Path) -> str:
-    """Detect whether this is a Qwen2.5-Omni or Qwen3-Omni model."""
-    cfg_file = model_path / "config.json"
-    if cfg_file.exists():
-        with open(cfg_file) as f:
-            model_type = json.load(f).get("model_type", "")
-        if "qwen2_5_omni" in model_type or "qwen2.5" in model_type.lower():
-            return "2.5"
-    # Check directory name
-    dir_lower = str(model_path).lower()
-    if "qwen2.5" in dir_lower or "qwen2_5" in dir_lower:
-        return "2.5"
-    return "3"
+QWEN3_OMNI_STT_AVAILABLE: bool = importlib.util.find_spec("transformers") is not None and importlib.util.find_spec("torch") is not None and importlib.util.find_spec("qwen_omni_utils") is not None
 
 
 class Qwen3OmniSTTAdapter(STTAdapter):
@@ -48,10 +30,7 @@ class Qwen3OmniSTTAdapter(STTAdapter):
 
     async def load_model(self, model_path: Path, device: str = "auto", **kwargs) -> None:
         if not QWEN3_OMNI_STT_AVAILABLE:
-            raise ImportError(
-                "transformers, torch, and qwen-omni-utils are required for Qwen-Omni. "
-                "Install with: pip install transformers torch qwen-omni-utils"
-            )
+            raise ImportError(optional_dependency_install_hint("qwen3-omni", "qwen-omni-utils"))
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._load_sync, model_path, device)
 
@@ -64,40 +43,29 @@ class Qwen3OmniSTTAdapter(STTAdapter):
 
         resolved = "cuda" if device == "auto" and torch.cuda.is_available() else ("cpu" if device == "auto" else device)
         dtype = torch.bfloat16 if resolved == "cuda" else torch.float32
-        model_name = self._resolve_model_name(model_path)
-        self._generation = _detect_omni_generation(model_path)
+        self._generation = detect_omni_generation(model_path)
 
         logger.info("Loading Qwen%s-Omni STT from %s on %s", self._generation, model_path, resolved)
 
         if self._generation == "2.5":
             from transformers import Qwen2_5OmniForConditionalGeneration, Qwen2_5OmniProcessor
 
-            self._processor = Qwen2_5OmniProcessor.from_pretrained(model_name)
-            self._model = Qwen2_5OmniForConditionalGeneration.from_pretrained(
-                model_name,
-                torch_dtype=dtype,
-                device_map="auto",
-            )
+            processor_cls, model_cls = Qwen2_5OmniProcessor, Qwen2_5OmniForConditionalGeneration
         else:
             from transformers import Qwen3OmniMoeForConditionalGeneration, Qwen3OmniMoeProcessor
 
-            self._processor = Qwen3OmniMoeProcessor.from_pretrained(model_name)
-            self._model = Qwen3OmniMoeForConditionalGeneration.from_pretrained(
-                model_name,
-                torch_dtype=dtype,
-                device_map="auto",
-            )
+            processor_cls, model_cls = Qwen3OmniMoeProcessor, Qwen3OmniMoeForConditionalGeneration
+
+        self._processor = processor_cls.from_pretrained(str(model_path))
+        self._model = model_cls.from_pretrained(
+            str(model_path),
+            torch_dtype=dtype,
+            device_map=resolved,
+        )
 
         self.model_path = model_path
         self.device = resolved
         logger.info("Qwen%s-Omni STT loaded on %s", self._generation, resolved)
-
-    @staticmethod
-    def _resolve_model_name(model_path: Path) -> str:
-        dir_name = model_path.name
-        if "--" in dir_name:
-            return dir_name.replace("--", "/", 1)
-        return str(model_path)
 
     async def unload_model(self) -> None:
         self._model = None
@@ -153,20 +121,26 @@ class Qwen3OmniSTTAdapter(STTAdapter):
                 Path(temp_path).unlink(missing_ok=True)
 
     def _transcribe_sync(self, audio_path: str, language: str | None, task: str) -> TranscriptionResult:
-        prompt = "Transcribe the speech in this audio."
+        # The omni model is chatty by default; a system role + directive prompt
+        # make it return only the transcription/translation, no preamble.
         if task == "translate":
             prompt = "Translate the speech in this audio to English."
+            system_text = "You are a speech translation engine. Output only the English translation of the audio, with no preamble, explanation, or quotation marks."
+        else:
+            prompt = "Transcribe the speech in this audio."
+            system_text = "You are a speech-to-text engine. Output only the exact transcription of the audio, with no preamble, explanation, or quotation marks."
         if language:
             prompt += f" The audio is in {self._LANG_MAP.get(language, language)}."
 
         conversation = [
+            {"role": "system", "content": [{"type": "text", "text": system_text}]},
             {
                 "role": "user",
                 "content": [
                     {"type": "audio", "audio": audio_path},
                     {"type": "text", "text": prompt},
                 ],
-            }
+            },
         ]
 
         from qwen_omni_utils import process_mm_info
@@ -176,19 +150,22 @@ class Qwen3OmniSTTAdapter(STTAdapter):
         text_input = self._processor.apply_chat_template(conversation, tokenize=False, add_generation_prompt=True)
         inputs = self._processor(
             text=text_input,
-            audios=audios,
+            audio=audios,
             images=images,
             videos=videos,
             padding=True,
             return_tensors="pt",
+            use_audio_in_video=False,
         )
-        inputs = inputs.to(self._model.device)
+        inputs = inputs.to(self._model.device, dtype=self._model.dtype)
 
-        text_ids = self._model.generate(
+        outputs = self._model.generate(
             **inputs,
-            max_new_tokens=512,
-            return_audio=False,
+            thinker_max_new_tokens=512,
+            generation_mode="text",
         )
+        # Text-only generation returns the token tensor directly on both generations.
+        text_ids = outputs[0] if isinstance(outputs, tuple) else outputs
 
         input_len = inputs["input_ids"].shape[-1]
         generated_ids = text_ids[:, input_len:]

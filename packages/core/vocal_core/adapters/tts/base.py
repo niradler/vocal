@@ -84,6 +84,14 @@ class TTSAdapter(BaseAdapter):
         """
         pass
 
+    def validate_voice(self, voice: str | None) -> None:
+        """Raise ``ValueError`` if this backend cannot synthesize ``voice``.
+
+        Called before a streaming response starts, because a generator error
+        cannot be turned into a 4xx once headers have been sent.
+        """
+        return None
+
     async def synthesize_stream(
         self,
         text: str,

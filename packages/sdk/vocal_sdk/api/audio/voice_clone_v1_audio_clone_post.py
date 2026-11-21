@@ -3,14 +3,13 @@ from typing import Any, cast
 
 import httpx
 
-from ...client import AuthenticatedClient, Client
-from ...types import Response
 from ... import errors
-
+from ...client import AuthenticatedClient, Client
 from ...models.body_voice_clone_v1_audio_clone_post import (
     BodyVoiceCloneV1AudioClonePost,
 )
 from ...models.http_validation_error import HTTPValidationError
+from ...types import Response
 
 
 def _get_kwargs(
@@ -25,6 +24,8 @@ def _get_kwargs(
     }
 
     _kwargs["files"] = body.to_multipart()
+
+    headers["Content-Type"] = "multipart/form-data; boundary=+++"
 
     _kwargs["headers"] = headers
     return _kwargs

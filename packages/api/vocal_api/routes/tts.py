@@ -181,6 +181,11 @@ async def text_to_speech(request: TTSRequest, service: TTSService = Depends(get_
 
     try:
         if request.stream:
+            # Resolve the adapter first: otherwise a missing backend becomes an
+            # empty 200 response instead of a proper 503, and an unknown voice
+            # would abort mid-stream instead of returning 400.
+            await service.ensure_ready(request.model, request.voice)
+            sample_rate = await service.get_sample_rate(request.model)
             generator = service.synthesize_stream(
                 model_id=request.model,
                 text=request.input,
@@ -191,7 +196,11 @@ async def text_to_speech(request: TTSRequest, service: TTSService = Depends(get_
             return StreamingResponse(
                 generator,
                 media_type=media_type,
-                headers={"Content-Disposition": f"attachment; filename=speech.{ext}"},
+                headers={
+                    "Content-Disposition": f"attachment; filename=speech.{ext}",
+                    "X-Sample-Rate": str(sample_rate),
+                    "Cache-Control": "no-store",
+                },
             )
 
         result = await service.synthesize(
@@ -248,7 +257,7 @@ async def list_voices(model: str | None = None, service: TTSService = Depends(ge
 async def voice_clone(
     reference_audio: Annotated[UploadFile, File(description="Reference audio recording for voice cloning (wav/mp3/m4a, 3-30s recommended)")],
     text: Annotated[str, Form(description="Text to synthesize in the cloned voice")],
-    model: Annotated[str, Form(description="TTS model to use for voice cloning (must support cloning, e.g. Qwen3-TTS base variants)")] = vocal_settings.TTS_DEFAULT_CLONE_MODEL,
+    model: Annotated[str | None, Form(description="TTS model to use for voice cloning (must support cloning, e.g. Qwen3-TTS base variants); defaults to the server clone default")] = None,
     reference_text: Annotated[str | None, Form(description="Optional transcript of the reference audio")] = None,
     language: Annotated[str, Form(description="Target language code (e.g. 'en', 'zh')")] = "en",
     response_format: Annotated[AudioFormat, Form(description="Output format")] = "wav",
@@ -269,6 +278,8 @@ async def voice_clone(
     **Note:** Voice cloning is hardware-intensive. Ensure the model is downloaded first
     via `POST /v1/models/{model_id}/download`.
     """
+    # Resolved at request time so settings changes apply without a restart.
+    model = model or vocal_settings.TTS_DEFAULT_CLONE_MODEL
     if not text.strip():
         raise HTTPException(status_code=422, detail="text must not be empty.")
 

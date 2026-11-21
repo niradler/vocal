@@ -47,6 +47,61 @@ class TestModelsList:
         assert kokoro["supports_voice_list"] is True
         assert kokoro["voice_mode"] == "voice_id"
 
+    def test_get_model_by_id(self, client):
+        resp = client.get_httpx_client().get("/v1/models/Systran/faster-whisper-tiny")
+        assert resp.status_code == 200
+        assert resp.json()["id"] == "Systran/faster-whisper-tiny"
+
+    def test_download_status_route_not_shadowed(self, client):
+        # Issue #20: the greedy /{model_id:path} route used to swallow
+        # /download/status whole. The specific route must answer instead —
+        # its 404 detail names the model, not the suffixed path.
+        resp = client.get_httpx_client().get("/v1/models/Systran/faster-whisper-tiny/download/status")
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "No active download for this model"
+
+    def test_catalog_exposes_output_formats(self, client):
+        raw = client.get_httpx_client().get("/v1/models/catalog")
+        assert raw.status_code == 200
+        models = {m["id"]: m for m in raw.json()["models"]}
+
+        chatterbox = models["ResembleAI/chatterbox"]
+        assert chatterbox["output_formats"] == ["wav"]
+
+        kokoro = models["hexgrad/Kokoro-82M"]
+        assert set(kokoro["output_formats"]) == {"mp3", "opus", "aac", "flac", "wav", "pcm"}
+
+        whisper = models["Systran/faster-whisper-tiny"]
+        assert whisper["output_formats"] == []
+
+    def test_catalog_exposes_licensing_and_runtime_metadata(self, client):
+        raw = client.get_httpx_client().get("/v1/models/catalog")
+        assert raw.status_code == 200
+        models = {m["id"]: m for m in raw.json()["models"]}
+
+        phonon = models["gradium/phonon-31m-en"]
+        assert phonon["license"] == "apache-2.0"
+        assert phonon["commercial_use"] is True
+        assert phonon["runtime"] == "in_process"
+        assert phonon["requires_gpu"] is False
+
+        drama = models["fishaudio/drama-3"]
+        assert drama["commercial_use"] is False
+        assert drama["runtime"] == "external"
+        assert drama["runtime_note"]
+
+        chatterbox = models["ResembleAI/chatterbox"]
+        assert chatterbox["maintenance_status"] == "retired"
+
+    def test_removed_backends_are_gone_from_catalog(self, client):
+        raw = client.get_httpx_client().get("/v1/models/catalog")
+        body = raw.json()
+        backend_values = {m["backend"] for m in body["models"]}
+        assert not backend_values & {"xtts", "fish_speech", "orpheus", "dia"}
+        ids = {m["id"] for m in body["models"]}
+        assert "coqui/XTTS-v2" not in ids
+        assert "nari-labs/Dia-1.6B" not in ids
+
 
 class TestModelGet:
     def test_get_known_stt_model(self, client):
@@ -65,14 +120,14 @@ class TestModelGet:
         assert result.task.value == "tts"
 
     def test_get_qwen3_asr_model(self, client):
-        model_id = "Qwen/Qwen3-ASR-0.6B"
+        model_id = "Qwen/Qwen3-ASR-0.6B-hf"
         result = get_model_v1_models_model_id_get.sync(model_id=model_id, client=client)
         assert result is not None
         assert result.task.value == "stt"
         assert result.backend.value == "transformers"
 
     def test_model_status_not_downloaded(self, client):
-        model_id = "Qwen/Qwen3-ASR-1.7B"
+        model_id = "Qwen/Qwen3-ASR-1.7B-hf"
         result = get_model_v1_models_model_id_get.sync(model_id=model_id, client=client)
         assert result is not None
         assert result.status in (ModelStatus.NOT_DOWNLOADED, ModelStatus.AVAILABLE)

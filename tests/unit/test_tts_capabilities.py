@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from vocal_core.adapters.tts import (
@@ -8,7 +10,10 @@ from vocal_core.adapters.tts import (
     OmniVoiceTTSAdapter,
     PiperTTSAdapter,
     SimpleTTSAdapter,
+    SupertonicTTSAdapter,
+    VoxCPMTTSAdapter,
 )
+from vocal_core.adapters.tts.chatterbox import chatterbox_kind
 
 
 def test_simple_tts_capabilities():
@@ -85,6 +90,27 @@ async def test_chatterbox_synthesize_raises_when_not_loaded():
         await adapter.synthesize("hello")
 
 
+def test_chatterbox_kind_selects_multilingual_v3():
+    assert chatterbox_kind(Path("ResembleAI--chatterbox-multilingual-v3")) == "multilingual_v3"
+    assert chatterbox_kind(Path("ResembleAI--chatterbox")) == "default"
+
+
+def test_supertonic_capabilities():
+    capabilities = SupertonicTTSAdapter().get_capabilities()
+    assert capabilities.supports_voice_list is True
+    assert capabilities.supports_voice_clone is False
+    assert capabilities.requires_gpu is False
+    assert capabilities.voice_mode == "voice_id"
+
+
+def test_voxcpm_capabilities():
+    capabilities = VoxCPMTTSAdapter().get_capabilities()
+    assert capabilities.supports_voice_clone is True
+    assert capabilities.supports_voice_design is True
+    assert capabilities.voice_mode == "instruction"
+    assert capabilities.requires_gpu is True
+
+
 def test_omnivoice_capabilities():
     adapter = OmniVoiceTTSAdapter()
     capabilities = adapter.get_capabilities()
@@ -109,3 +135,141 @@ async def test_omnivoice_synthesize_raises_when_not_loaded():
     adapter = OmniVoiceTTSAdapter()
     with pytest.raises(RuntimeError, match="not loaded"):
         await adapter.synthesize("hello")
+
+
+class TestOutputFormatInference:
+    """Registry-level output_formats must match what adapters actually accept."""
+
+    def test_wav_only_backends(self):
+        from vocal_core.registry.capabilities import infer_model_capabilities
+
+        for backend in ("chatterbox", "voxcpm", "supertonic", "omnivoice"):
+            caps = infer_model_capabilities(task="tts", backend=backend, model_id=f"org/{backend}-model")
+            assert caps["output_formats"] == ["wav"], backend
+
+    def test_phonon_wav_and_pcm(self):
+        from vocal_core.registry.capabilities import infer_model_capabilities
+
+        caps = infer_model_capabilities(task="tts", backend="phonon", model_id="gradium/phonon-31m-en")
+        assert caps["output_formats"] == ["wav", "pcm"]
+
+    def test_converting_backends_accept_all_formats(self):
+        from vocal_core.registry.capabilities import ALL_AUDIO_FORMATS, infer_model_capabilities
+
+        for backend in ("kokoro", "piper", "faster_qwen3_tts", "voxtral_tts"):
+            caps = infer_model_capabilities(task="tts", backend=backend, model_id=f"org/{backend}-model")
+            assert caps["output_formats"] == ALL_AUDIO_FORMATS, backend
+
+    def test_stt_has_no_output_formats(self):
+        from vocal_core.registry.capabilities import infer_model_capabilities
+
+        caps = infer_model_capabilities(task="stt", backend="faster_whisper", model_id="Systran/faster-whisper-tiny")
+        assert caps["output_formats"] == []
+
+    def test_curated_override_wins(self):
+        from vocal_core.registry.capabilities import CapabilityOverrides, infer_model_capabilities
+
+        caps = infer_model_capabilities(
+            task="tts",
+            backend="kokoro",
+            model_id="org/kokoro-custom",
+            overrides=CapabilityOverrides(output_formats=["wav"]),
+        )
+        assert caps["output_formats"] == ["wav"]
+
+
+class TestQwenOmniTTSProxy:
+    """Qwen-Omni TTS is a proxy to vLLM-Omni / SGLang-Omni (like Voxtral TTS)."""
+
+    def test_capabilities(self):
+        from vocal_core.adapters.tts import Qwen3OmniTTSAdapter
+
+        caps = Qwen3OmniTTSAdapter().get_capabilities()
+        assert caps.supports_voice_list is True
+        assert caps.supports_voice_clone is False
+        assert caps.voice_mode == "voice_id"
+        assert caps.requires_gpu is True
+
+    def test_not_loaded_initially(self):
+        from vocal_core.adapters.tts import Qwen3OmniTTSAdapter
+
+        assert Qwen3OmniTTSAdapter().is_loaded() is False
+
+    @pytest.mark.asyncio
+    async def test_synthesize_raises_when_not_loaded(self):
+        from vocal_core.adapters.tts import Qwen3OmniTTSAdapter
+
+        with pytest.raises(RuntimeError, match="not loaded"):
+            await Qwen3OmniTTSAdapter().synthesize("hello")
+
+    def test_validate_voice_per_generation(self):
+        from vocal_core.adapters.tts import Qwen3OmniTTSAdapter
+
+        adapter = Qwen3OmniTTSAdapter()
+        adapter._generation = "2.5"
+        adapter.validate_voice("Ethan")
+        adapter.validate_voice(None)
+        with pytest.raises(ValueError, match="Unknown speaker"):
+            adapter.validate_voice("Aiden")  # Qwen3-Omni only
+        adapter._generation = "3"
+        adapter.validate_voice("Aiden")
+
+    @pytest.mark.asyncio
+    async def test_load_resolves_model_id_and_generation(self, monkeypatch):
+        from vocal_core.adapters.tts import Qwen3OmniTTSAdapter
+        from vocal_core.config import vocal_settings
+
+        monkeypatch.setattr(vocal_settings, "QWEN_OMNI_TTS_URL", "http://localhost:9999/")
+        adapter = Qwen3OmniTTSAdapter()
+        await adapter.load_model(Path("Qwen--Qwen2.5-Omni-3B"))
+        assert adapter.is_loaded()
+        assert adapter.base_url == "http://localhost:9999"
+        assert adapter._model_id == "Qwen/Qwen2.5-Omni-3B"
+        assert adapter._generation == "2.5"
+        voices = await adapter.get_voices()
+        assert [v.id for v in voices] == ["Ethan", "Chelsie"]
+
+    @pytest.mark.asyncio
+    async def test_proxy_forwards_speech_request_to_engine(self, monkeypatch):
+        """End-to-end proxy check against a local stub of the engine's /v1/audio/speech."""
+        import json
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        from vocal_core.adapters.tts import Qwen3OmniTTSAdapter
+        from vocal_core.config import vocal_settings
+
+        received = {}
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length", 0))
+                received["path"] = self.path
+                received["body"] = json.loads(self.rfile.read(length))
+                self.send_response(200)
+                self.send_header("Content-Type", "audio/wav")
+                self.end_headers()
+                self.wfile.write(b"RIFF-fake-wav-bytes")
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        port = server.server_address[1]
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        monkeypatch.setattr(vocal_settings, "QWEN_OMNI_TTS_URL", f"http://127.0.0.1:{port}")
+        try:
+            adapter = Qwen3OmniTTSAdapter()
+            await adapter.load_model(Path("Qwen--Qwen2.5-Omni-3B"))
+            result = await adapter.synthesize("hello world", voice="Ethan", output_format="wav")
+            assert result.audio_data == b"RIFF-fake-wav-bytes"
+            assert result.format == "wav"
+            assert received["path"] == "/v1/audio/speech"
+            assert received["body"]["model"] == "Qwen/Qwen2.5-Omni-3B"
+            assert received["body"]["input"] == "hello world"
+            assert received["body"]["voice"] == "Ethan"
+            assert received["body"]["response_format"] == "wav"
+        finally:
+            server.shutdown()
+            server.server_close()

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <radialGradient id="glow" cx="78%" cy="20%" r="70%">
+      <stop offset="0%" stop-color="#76B900" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#1A1A1A" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="44" height="44" patternUnits="userSpaceOnUse">
+      <path d="M44 0H0v44" fill="none" stroke="#76B900" stroke-opacity="0.06"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="630" fill="#1A1A1A"/>
+  <rect width="1200" height="630" fill="url(#grid)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <g stroke="#76B900" stroke-opacity="0.35" stroke-width="1.2">
+    <path d="M880 180 960 260M960 260 1040 200M960 260 1010 360M1040 200 1100 300M1010 360 1100 300M880 180 900 340M900 340 1010 360"/>
+  </g>
+  <g fill="#76B900">
+    <circle cx="880" cy="180" r="6"/><circle cx="960" cy="260" r="8"/>
+    <circle cx="1040" cy="200" r="5"/><circle cx="1010" cy="360" r="6"/>
+    <circle cx="1100" cy="300" r="7"/><circle cx="900" cy="340" r="5"/>
+  </g>
+  <circle cx="1040" cy="200" r="5" fill="#00BFFF"/>
+  <rect x="80" y="120" width="64" height="64" rx="14" fill="#2A2A2A" stroke="#3a3a3a"/>
+  <path d="M92 152h6l6-16 8 32 6-16h6" stroke="#76B900" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="160" y="166" font-family="Roboto Mono, monospace" font-size="40" font-weight="700" fill="#FFFFFF">vocal<tspan fill="#76B900">.</tspan></text>
+  <text x="80" y="280" font-family="Roboto Mono, monospace" font-size="64" font-weight="700" fill="#FFFFFF">Speech AI that runs</text>
+  <text x="80" y="356" font-family="Roboto Mono, monospace" font-size="64" font-weight="700" fill="#FFFFFF">on <tspan fill="#76B900">your metal.</tspan></text>
+  <text x="80" y="420" font-family="Roboto Mono, monospace" font-size="24" fill="#BDBDBD">Ollama-style voice models · OpenAI-compatible API</text>
+  <text x="80" y="456" font-family="Roboto Mono, monospace" font-size="24" fill="#BDBDBD">Realtime voice agents · 100% self-hosted</text>
+  <rect x="80" y="510" width="220" height="52" rx="8" fill="#76B900"/>
+  <text x="110" y="543" font-family="Roboto Mono, monospace" font-size="22" font-weight="600" fill="#16200a">Open Console</text>
+  <text x="330" y="543" font-family="Roboto Mono, monospace" font-size="20" fill="#8a8a8a">localhost:8000/ui</text>
+</svg>

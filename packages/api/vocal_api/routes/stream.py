@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from vocal_core.adapters.vad import create_vad_adapter
+from vocal_core.audio import StreamingVADGate
 from vocal_core.config import vocal_settings
 
 from ..dependencies import get_transcription_service
@@ -15,26 +16,43 @@ from ..dependencies import get_transcription_service
 router = APIRouter(tags=["stream"])
 logger = logging.getLogger(__name__)
 
-_SILENCE_DURATION_S = vocal_settings.VAD_SILENCE_DURATION_S
 _MAX_CHUNK_DURATION_S = 10.0
+_PARTIAL_INTERVAL_S = vocal_settings.REALTIME_PARTIAL_INTERVAL_S
+_PARTIAL_MIN_AUDIO_S = vocal_settings.REALTIME_PARTIAL_MIN_AUDIO_S
+_PARTIAL_WINDOW_S = vocal_settings.REALTIME_PARTIAL_WINDOW_S
 
 
 def _estimate_frame_seconds(pcm_bytes: bytes, sample_rate: int) -> float:
     return len(pcm_bytes) / 2 / sample_rate
 
 
-async def _flush_pcm(websocket: WebSocket, pcm_frames: list[bytes], model: str, language: str | None, task: str, sample_rate: int, service) -> None:
-    pcm_data = b"".join(pcm_frames)
+def _write_wav(pcm_data: bytes, sample_rate: int) -> str:
+    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    tmp.close()
+    with wave.open(tmp.name, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(pcm_data)
+    return tmp.name
+
+
+async def _transcribe_pcm(service, pcm: bytes, model: str, language: str | None, task: str, sample_rate: int) -> str:
+    async def _single_chunk_gen():
+        yield pcm
+
+    parts: list[str] = []
+    async for seg in service.transcribe_live_stream(_single_chunk_gen(), model, sample_rate, language):
+        text = seg.text.strip()
+        if text:
+            parts.append(text)
+    return " ".join(parts).strip()
+
+
+async def _flush_pcm(websocket: WebSocket, pcm_data: bytes, model: str, language: str | None, task: str, sample_rate: int, service) -> None:
     tmp_path = None
     try:
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            tmp_path = tmp.name
-        with wave.open(tmp_path, "wb") as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(sample_rate)
-            wf.writeframes(pcm_data)
-
+        tmp_path = _write_wav(pcm_data, sample_rate)
         full_text: list[str] = []
         async for seg in service.transcribe_stream_path(tmp_path, model, language, task):
             text = seg.text.strip()
@@ -84,6 +102,52 @@ async def _live_stream_utterance(
             pass
 
 
+async def _partial_loop(websocket: WebSocket, gate: StreamingVADGate, model: str, language: str | None, task: str, sample_rate: int, service, state: dict) -> None:
+    """Emit provisional transcripts while the utterance is still in progress."""
+    last_emitted = ""
+    while gate.is_speaking:
+        await asyncio.sleep(max(0.15, _PARTIAL_INTERVAL_S))
+        if not gate.is_speaking:
+            return
+        pcm = gate.utterance_pcm
+        if len(pcm) / 2 / sample_rate < _PARTIAL_MIN_AUDIO_S:
+            continue
+        max_bytes = int(_PARTIAL_WINDOW_S * sample_rate) * 2
+        if len(pcm) > max_bytes:
+            pcm = pcm[-max_bytes:]
+        try:
+            text = await _transcribe_pcm(service, pcm, model, language, task, sample_rate)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.debug("Partial decode failed", exc_info=True)
+            continue
+        if not text or text == last_emitted:
+            continue
+        last_emitted = text
+        if not gate.is_speaking:
+            return
+        try:
+            await websocket.send_text(json.dumps({"type": "transcript.delta", "text": text, "partial": True}))
+        except Exception:
+            return
+    state["last_partial"] = last_emitted
+
+
+def _make_gate(vad, sample_rate: int, speech_threshold: float, silence_s: float) -> StreamingVADGate:
+    return StreamingVADGate(
+        vad,
+        sample_rate=sample_rate,
+        threshold=speech_threshold,
+        onset_ms=vocal_settings.VAD_ONSET_MS,
+        silence_ms=int(max(0.2, silence_s) * 1000),
+        min_speech_ms=vocal_settings.VAD_MIN_SPEECH_MS,
+        preroll_ms=vocal_settings.VAD_PREROLL_MS,
+        max_utterance_s=max(_MAX_CHUNK_DURATION_S, silence_s * 4),
+        commit_grace_ms=vocal_settings.VAD_COMMIT_GRACE_MS,
+    )
+
+
 async def _run_live_stream_loop(
     websocket: WebSocket,
     service,
@@ -96,45 +160,35 @@ async def _run_live_stream_loop(
     speech_threshold: float,
 ) -> None:
     """Receive loop for models that support native live streaming (e.g. Voxtral)."""
+    gate = _make_gate(vad, sample_rate, speech_threshold, silence_duration)
+    gate.max_utterance_s = max_chunk_duration
     chunk_q: asyncio.Queue | None = None
-    silence_count = 0
-    has_speech = False
-    total_duration = 0.0
+    stream_task: asyncio.Task | None = None
 
-    while True:
-        data = await websocket.receive_bytes()
-        frame_secs = _estimate_frame_seconds(data, sample_rate)
-        total_duration += frame_secs
-        is_speech = vad.is_speech(data, sample_rate, speech_threshold)
-
-        if is_speech:
-            has_speech = True
-            silence_count = 0
-            if chunk_q is None:
-                chunk_q = asyncio.Queue()
-                task = asyncio.create_task(_live_stream_utterance(websocket, chunk_q, model, language, sample_rate, service))
-                task.add_done_callback(lambda t: logger.error("Live stream task failed: %s", t.exception()) if not t.cancelled() and t.exception() else None)
-            await chunk_q.put(data)
-        else:
-            silence_count += 1
-
-        silence_secs = silence_count * frame_secs
-        should_flush = (has_speech and silence_secs >= silence_duration) or total_duration >= max_chunk_duration
-
-        if should_flush and chunk_q is not None:
-            await chunk_q.put(None)  # sentinel → chunk_gen stops → adapter finishes
-            # Do NOT await the task here — that would block receive_bytes(),
-            # starving Starlette of the receive() calls it needs to respond to WebSocket
-            # pings. Model load + inference can take >20 s, exceeding the client's
-            # ping_timeout and dropping the connection with "no close frame received".
-            vad.reset()
-            chunk_q = None
-            silence_count = 0
-            has_speech = False
-            total_duration = 0.0
+    try:
+        while True:
+            data = await websocket.receive_bytes()
+            for boundary in gate.feed(data):
+                if boundary.kind == "speech_started" and chunk_q is None:
+                    chunk_q = asyncio.Queue()
+                    stream_task = asyncio.create_task(_live_stream_utterance(websocket, chunk_q, model, language, sample_rate, service))
+                    stream_task.add_done_callback(lambda t: logger.error("Live stream task failed: %s", t.exception()) if not t.cancelled() and t.exception() else None)
+                elif boundary.kind == "speech_stopped" and chunk_q is not None:
+                    await chunk_q.put(None)  # sentinel -> generator ends -> adapter finishes
+                    chunk_q = None
+                    gate.reset()
+            if chunk_q is not None:
+                await chunk_q.put(data)
+    finally:
+        # An interrupted utterance must not leave the adapter's generator
+        # blocked on the queue forever.
+        if chunk_q is not None:
+            await chunk_q.put(None)
+        if stream_task is not None and not stream_task.done():
+            stream_task.cancel()
 
 
-async def _run_buffered_loop(
+async def _run_buffered_loop(  # noqa: C901
     websocket: WebSocket,
     service,
     model: str,
@@ -146,49 +200,79 @@ async def _run_buffered_loop(
     max_chunk_duration: float,
     speech_threshold: float,
 ) -> None:
-    """Receive loop for models that buffer audio and transcribe on silence."""
-    buffer: list[bytes] = []
-    silence_count = 0
-    has_speech = False
-    total_duration = 0.0
+    """Receive loop for models that buffer an utterance and transcribe on silence."""
+    gate = _make_gate(vad, sample_rate, speech_threshold, silence_duration)
+    gate.max_utterance_s = max_chunk_duration
+    partial_task: asyncio.Task | None = None
+    state: dict = {}
+    # Audio the VAD never claimed (quiet speech, unusual input), plus a
+    # byte budget that counts *all* received audio. Without it
+    # `max_chunk_duration` would only cap detected utterances: a client whose
+    # audio the VAD keeps claiming as speech would never get a result.
+    spill = bytearray()
+    flush_limit = int(max_chunk_duration * sample_rate) * 2
+    since_flush = 0
+
+    def schedule_flush(pcm: bytes) -> None:
+        flush_task = asyncio.create_task(_flush_pcm(websocket, pcm, model, language, task, sample_rate, service))
+        flush_task.add_done_callback(lambda t: logger.error("Flush task failed: %s", t.exception()) if not t.cancelled() and t.exception() else None)
 
     while True:
         data = await websocket.receive_bytes()
-        frame_secs = _estimate_frame_seconds(data, sample_rate)
-        total_duration += frame_secs
-        is_speech = vad.is_speech(data, sample_rate, speech_threshold)
+        since_flush += len(data)
+        committed = False
+        for boundary in gate.feed(data):
+            if boundary.kind == "speech_started":
+                state.clear()
+                spill.clear()
+                if _PARTIAL_INTERVAL_S > 0:
+                    partial_task = asyncio.create_task(_partial_loop(websocket, gate, model, language, task, sample_rate, service, state))
+            elif boundary.kind == "speech_stopped":
+                pcm = gate.take_utterance()
+                if partial_task is not None and not partial_task.done():
+                    partial_task.cancel()
+                partial_task = None
+                since_flush = 0
+                committed = True
+                schedule_flush(pcm)
 
-        buffer.append(data)
-        if is_speech:
-            has_speech = True
-            silence_count = 0
-        else:
-            silence_count += 1
+        if committed:
+            # The whole chunk was consumed by the turn that just committed;
+            # keeping it in the spill buffer would transcribe it twice.
+            spill.clear()
+        elif not gate.is_active:
+            spill.extend(data)
 
-        silence_secs = silence_count * frame_secs
-        should_flush = (has_speech and silence_secs >= silence_duration) or total_duration >= max_chunk_duration
-
-        if should_flush:
-            if has_speech:
-                await _flush_pcm(websocket, buffer, model, language, task, sample_rate, service)
-            vad.reset()
-            buffer = []
-            silence_count = 0
-            has_speech = False
-            total_duration = 0.0
+        if flush_limit and since_flush >= flush_limit:
+            if gate.is_active:
+                # Force-commit an open turn that the VAD refuses to close.
+                pcm = gate.take_utterance()
+                if partial_task is not None and not partial_task.done():
+                    partial_task.cancel()
+                partial_task = None
+                spill.clear()
+            else:
+                pcm, spill = bytes(spill), bytearray()
+            if pcm:
+                schedule_flush(pcm)
+            since_flush = 0
 
 
 @router.websocket("/v1/audio/stream")
 async def audio_stream(
     websocket: WebSocket,
-    model: str = vocal_settings.STT_DEFAULT_MODEL,
-    language: str | None = vocal_settings.STT_DEFAULT_LANGUAGE,
+    model: str | None = None,
+    language: str | None = None,
     task: str = "transcribe",
-    silence_duration: float = _SILENCE_DURATION_S,
+    silence_duration: float | None = None,
     max_chunk_duration: float = _MAX_CHUNK_DURATION_S,
     threshold: float | None = None,
 ) -> None:
     await websocket.accept()
+    # Resolved at connection time so settings changes apply to new sessions.
+    model = model or vocal_settings.STT_DEFAULT_MODEL
+    language = language or vocal_settings.STT_DEFAULT_LANGUAGE
+    silence_duration = silence_duration if silence_duration is not None else vocal_settings.VAD_SILENCE_DURATION_S
     service = get_transcription_service()
     sample_rate = vocal_settings.STT_SAMPLE_RATE
     speech_threshold = threshold if threshold is not None else vocal_settings.VAD_SPEECH_THRESHOLD

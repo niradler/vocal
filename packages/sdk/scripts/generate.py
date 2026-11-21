@@ -11,11 +11,54 @@ Usage:
 """
 
 import argparse
+import json
 import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.request
 from pathlib import Path
+
+
+def _normalize_binary_schemas(node):
+    """Rewrite ``contentMediaType: application/octet-stream`` to ``format: binary``.
+
+    FastAPI >= 0.16x renders ``UploadFile`` as a JSON-Schema-2020-12 ``contentMediaType``
+    string. openapi-python-client only treats ``format: binary`` as a file upload, so without
+    this rewrite every upload field (transcription, translation, voice clone) is generated as a
+    plain ``str`` and requests fail validation.
+    """
+    if isinstance(node, dict):
+        if node.get("contentMediaType") == "application/octet-stream" and node.get("type") == "string":
+            node.pop("contentMediaType", None)
+            node["format"] = "binary"
+        for value in node.values():
+            _normalize_binary_schemas(value)
+    elif isinstance(node, list):
+        for item in node:
+            _normalize_binary_schemas(item)
+    return node
+
+
+def fetch_and_normalize_spec(url: str, destination: Path) -> Path:
+    with urllib.request.urlopen(url, timeout=60) as response:
+        spec = json.loads(response.read().decode("utf-8"))
+    _normalize_binary_schemas(spec)
+    destination.write_text(json.dumps(spec, indent=2), encoding="utf-8")
+    return destination
+
+
+def load_and_normalize_spec(path: Path, destination: Path) -> Path:
+    """Normalize a saved spec file so ``--path`` regeneration matches ``--url``.
+
+    Without this, generating from a locally saved FastAPI spec silently emits ``str`` upload
+    fields again (see ``_normalize_binary_schemas``).
+    """
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    _normalize_binary_schemas(spec)
+    destination.write_text(json.dumps(spec, indent=2), encoding="utf-8")
+    return destination
+
 
 SDK_DIR = Path(__file__).parent.parent
 VOCAL_SDK_DIR = SDK_DIR / "vocal_sdk"
@@ -236,6 +279,34 @@ class _AudioAPI:
 '''
 
 
+def patch_transcription_formats() -> None:
+    """Let the generated transcription client return raw text formats.
+
+    ``/v1/audio/transcriptions`` returns ``text/plain`` for ``response_format``
+    ``text``/``srt``/``vtt`` and JSON otherwise. The generator only models the
+    JSON branch, so add a content-type check. Kept here (rather than edited by
+    hand) so it survives regeneration.
+    """
+    module = VOCAL_SDK_DIR / "api" / "transcription" / "create_transcription_v1_audio_transcriptions_post.py"
+    if not module.exists():
+        return
+    source = module.read_text(encoding="utf-8")
+    marker = "        response_200 = TranscriptionResponse.from_dict(response.json())"
+    if marker not in source or "content-type" in source:
+        return
+    source = source.replace(
+        marker,
+        '        if response.headers.get("content-type", "").startswith("text/"):\n            return cast(str, response.text)\n' + marker,
+        1,
+    )
+    source = source.replace("from typing import Any\n", "from typing import Any, cast\n", 1)
+    source = source.replace(
+        "Response[HTTPValidationError | TranscriptionResponse]",
+        "Response[HTTPValidationError | TranscriptionResponse | str]",
+    )
+    module.write_text(source, encoding="utf-8")
+
+
 def sync_generated(generated_pkg: Path) -> None:
     if not generated_pkg.exists() or not any(generated_pkg.iterdir()):
         print(f"Generated package at {generated_pkg} is missing or empty.")
@@ -255,6 +326,8 @@ def sync_generated(generated_pkg: Path) -> None:
     shutil.copytree(generated_pkg, VOCAL_SDK_DIR)
 
     (VOCAL_SDK_DIR / "compat.py").write_text(COMPAT_PY, encoding="utf-8")
+
+    patch_transcription_formats()
 
     init = VOCAL_SDK_DIR / "__init__.py"
     content = init.read_text(encoding="utf-8")
@@ -287,10 +360,17 @@ def main() -> None:
         source_flag, source_value = "--path", str(Path(args.path).resolve())
         print(f"Generating SDK from local file: {source_value}")
     else:
-        source_flag, source_value = "--url", args.url
-        print(f"Generating SDK from: {source_value}")
+        source_flag = "--path"
 
     with tempfile.TemporaryDirectory() as tmp:
+        if args.path:
+            normalized = load_and_normalize_spec(Path(args.path).resolve(), Path(tmp) / "openapi.json")
+            source_value = str(normalized)
+        else:
+            print(f"Fetching OpenAPI spec from: {args.url}")
+            normalized = fetch_and_normalize_spec(args.url, Path(tmp) / "openapi.json")
+            source_value = str(normalized)
+            shutil.copyfile(normalized, Path(__file__).parent.parent.parent.parent / "live_openapi.json")
         out_dir = Path(tmp) / "vocal_sdk"
         run_generator(source_flag, source_value, out_dir)
         sync_generated(out_dir)

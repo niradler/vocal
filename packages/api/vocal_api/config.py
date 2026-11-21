@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     CORS_ORIGINS: list[str] = ["*"]
+    # Allow browser requests from public origins (e.g. the GitHub Pages
+    # console) to this local server — Chrome's Private Network Access.
+    CORS_ALLOW_PRIVATE_NETWORK: bool = True
 
     MAX_UPLOAD_SIZE: int = 25 * 1024 * 1024
 

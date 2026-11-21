@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vocal — Open-Source Speech AI Platform</title>
+    <meta name="description" content="Vocal is an open-source, Ollama-style platform for voice models. Pull STT and TTS weights, serve OpenAI-compatible endpoints, and build realtime voice agents — all on your own hardware." />
+    <meta name="keywords" content="speech ai, text to speech, speech to text, tts, stt, voice models, self-hosted, open source, ollama, openai compatible, voice agents, kokoro, whisper" />
+    <meta name="theme-color" content="#1A1A1A" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vocal — Open-Source Speech AI Platform" />
+    <meta property="og:description" content="Pull voice models like Ollama. Serve OpenAI-compatible speech endpoints. Run realtime voice agents on your own GPU. Free and open source." />
+    <meta property="og:image" content="og.svg" />
+    <meta property="og:site_name" content="Vocal" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Vocal — Open-Source Speech AI Platform" />
+    <meta name="twitter:description" content="The Ollama-style platform for speech models. STT, TTS, voice cloning and realtime agents — self-hosted and open source." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231A1A1A'/%3E%3Cpath d='M6 16h3l3-8 4 16 3-8h3' stroke='%2376B900' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              accent: "#76B900",
+              charcoal: "#2A2A2A",
+              coal: "#1A1A1A",
+              coolgrey: "#4A4A4A",
+              electric: "#00BFFF",
+              circuit: "#6EFA5F",
+              lightgrey: "#BDBDBD",
+            },
+            fontFamily: { mono: ['"Roboto Mono"', "ui-monospace", "monospace"] },
+            maxWidth: { shell: "1280px" },
+          },
+        },
+      };
+    </script>
+    <link rel="stylesheet" href="theme.css" />
+    <style>
+      /* Landing-specific effects Tailwind CDN doesn't cover */
+      .hero-glow {
+        background:
+          radial-gradient(600px 320px at 78% 18%, rgba(118, 185, 0, 0.14), transparent 70%),
+          radial-gradient(520px 300px at 12% 82%, rgba(0, 191, 255, 0.08), transparent 70%);
+      }
+      .nav-blur {
+        background: rgba(26, 26, 26, 0.82);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+      }
+      .headline-glow {
+        text-shadow: 0 0 8px rgba(118, 185, 0, 0.3), 0 0 32px rgba(118, 185, 0, 0.15);
+      }
+      .canvas-frame {
+        box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.5), 0 0 60px rgba(118, 185, 0, 0.07);
+      }
+      .nav-link {
+        position: relative;
+        transition: color 200ms ease;
+      }
+      .nav-link::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        bottom: -4px;
+        width: 0;
+        height: 2px;
+        background: #76b900;
+        transition: width 200ms ease;
+      }
+      .nav-link:hover::after {
+        width: 100%;
+      }
+      .pipeline-node {
+        box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.5);
+      }
+      @keyframes flow-dash {
+        to { stroke-dashoffset: -24; }
+      }
+      .flow-edge {
+        stroke-dasharray: 6 6;
+        animation: flow-dash 1.2s linear infinite;
+      }
+    </style>
+  </head>
+  <body class="font-mono bg-coal text-white antialiased">
+    <!-- ===================== NAVBAR ===================== -->
+    <header class="fixed inset-x-0 top-0 z-[100] nav-blur border-b border-[#3a3a3a]">
+      <nav class="mx-auto flex h-16 max-w-shell items-center justify-between px-6" aria-label="Main">
+        <a href="./" class="flex cursor-pointer items-center gap-3 transition-all hover:opacity-90">
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+            <rect width="32" height="32" rx="7" fill="#2A2A2A" stroke="#3a3a3a" />
+            <path d="M6 16h3l3-8 4 16 3-8h3" stroke="#76B900" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <span class="text-lg font-bold tracking-tight">vocal<span class="text-accent">.</span></span>
+        </a>
+        <div class="hidden items-center gap-8 text-sm text-lightgrey md:flex">
+          <a href="#features" class="nav-link cursor-pointer hover:text-white">Features</a>
+          <a href="#quickstart" class="nav-link cursor-pointer hover:text-white">Quickstart</a>
+          <a href="/docs" data-local="docs" class="nav-link cursor-pointer hover:text-white">API Docs</a>
+          <a href="https://github.com/niradler/vocal" target="_blank" rel="noopener" class="nav-link cursor-pointer hover:text-white">GitHub</a>
+        </div>
+        <div class="flex items-center gap-3">
+          <a href="/ui" data-local="console" class="btn btn-primary btn-sm hidden sm:inline-flex">
+            Open Console
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          </a>
+          <button id="menu-btn" class="btn btn-ghost btn-icon md:hidden" aria-label="Toggle menu" aria-expanded="false">
+            <svg id="menu-icon-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+            <svg id="menu-icon-close" class="hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+          </button>
+        </div>
+      </nav>
+      <div id="mobile-menu" class="hidden border-t border-[#3a3a3a] bg-coal px-6 py-4 md:hidden">
+        <div class="flex flex-col gap-4 text-sm text-lightgrey">
+          <a href="#features" class="cursor-pointer transition-all hover:text-accent">Features</a>
+          <a href="#quickstart" class="cursor-pointer transition-all hover:text-accent">Quickstart</a>
+          <a href="/docs" data-local="docs" class="cursor-pointer transition-all hover:text-accent">API Docs</a>
+          <a href="https://github.com/niradler/vocal" target="_blank" rel="noopener" class="cursor-pointer transition-all hover:text-accent">GitHub</a>
+          <a href="/ui" data-local="console" class="btn btn-primary mt-2">Open Console</a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <!-- ===================== HERO ===================== -->
+      <section class="hero-glow grid-bg relative overflow-hidden pt-16">
+        <div class="mx-auto grid min-h-[100dvh] max-w-shell items-center gap-12 px-6 py-20 lg:grid-cols-2 lg:gap-8">
+          <div class="reveal">
+            <div class="mb-6 inline-flex items-center gap-2 rounded-full border border-[#3a3a3a] bg-charcoal px-4 py-1.5 text-xs tracking-widest text-lightgrey">
+              <span class="dot dot-live"></span>
+              OPEN SOURCE · SSPL-1.0 · SELF-HOSTED
+            </div>
+            <h1 class="headline-glow text-[clamp(2.5rem,5vw,4rem)] font-bold leading-[1.08] tracking-tight">
+              Speech AI that runs<br />on <span class="text-accent">your metal.</span>
+            </h1>
+            <p class="mt-6 max-w-[52ch] text-base leading-relaxed text-lightgrey">
+              Vocal is the Ollama-style platform for voice models. Pull STT and TTS weights with one command, serve OpenAI-compatible endpoints, and build realtime voice agents — no cloud round-trips, no accounts, no telemetry.
+            </p>
+            <div class="mt-8 flex flex-wrap items-center gap-4">
+              <a href="/ui" data-local="console" class="btn btn-primary">
+                Open Console
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </a>
+              <a href="https://github.com/niradler/vocal" target="_blank" rel="noopener" class="btn btn-ghost">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.55 0-.27-.01-1.17-.02-2.12-3.2.7-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.19 1.76 1.19 1.03 1.75 2.69 1.25 3.34.95.1-.74.4-1.25.72-1.54-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11.04 11.04 0 0 1 5.78 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.38-5.25 5.67.41.35.77 1.05.77 2.12 0 1.53-.01 2.76-.01 3.14 0 .3.2.66.8.55A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>
+                Star on GitHub
+              </a>
+            </div>
+            <dl class="mt-12 grid max-w-md grid-cols-3 gap-6 border-t border-[#3a3a3a] pt-8">
+              <div>
+                <dt class="text-xs uppercase tracking-widest text-[#8a8a8a]">Models</dt>
+                <dd class="mt-1 text-2xl font-bold text-accent glow-text">45</dd>
+              </div>
+              <div>
+                <dt class="text-xs uppercase tracking-widest text-[#8a8a8a]">Audio formats</dt>
+                <dd class="mt-1 text-2xl font-bold text-white">6</dd>
+              </div>
+              <div>
+                <dt class="text-xs uppercase tracking-widest text-[#8a8a8a]">Cloud calls</dt>
+                <dd class="mt-1 text-2xl font-bold text-electric">0</dd>
+              </div>
+            </dl>
+          </div>
+          <div class="reveal relative" style="transition-delay: 120ms">
+            <div class="canvas-frame relative aspect-square w-full overflow-hidden rounded-lg border border-[#3a3a3a] bg-[#161616]">
+              <canvas id="neural-canvas" class="h-full w-full" aria-label="Animated 3D neural network visualization" role="img"></canvas>
+              <div class="pointer-events-none absolute left-4 top-4 text-[10px] uppercase tracking-[0.25em] text-[#8a8a8a]">inference_graph // live</div>
+              <div class="pointer-events-none absolute bottom-4 right-4 flex items-center gap-2 text-[10px] uppercase tracking-[0.25em] text-accent">
+                <span class="dot dot-live"></span> streaming
+              </div>
+            </div>
+            <div class="data-flow-line mt-4"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== FEATURES (asymmetric bento) ===================== -->
+      <section id="features" class="mx-auto max-w-shell px-6 py-[clamp(4rem,8vw,8rem)]">
+        <div class="reveal mb-12 max-w-2xl">
+          <p class="text-xs uppercase tracking-[0.3em] text-accent">// capabilities</p>
+          <h2 class="mt-3 text-[clamp(1.75rem,3vw,2.5rem)] font-bold tracking-tight">Everything between audio and intelligence.</h2>
+          <p class="mt-4 text-lightgrey">One registry, one API surface, one console. Model management, batch inference and realtime pipelines share the same weights and the same GPU.</p>
+        </div>
+
+        <div class="grid gap-6 lg:grid-cols-12">
+          <!-- Big card: registry -->
+          <article class="tilt reveal card card-accent card-hover lg:col-span-7">
+            <div class="tilt-inner p-8">
+              <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-lg border border-[#3a3a3a] bg-coal text-accent">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+              </div>
+              <h3 class="text-xl font-bold">Ollama-style model registry</h3>
+              <p class="mt-3 max-w-[56ch] text-sm leading-relaxed text-lightgrey">
+                Pull, list, inspect and delete voice models with commands you already know. Every catalog entry ships with license, commercial-use and VRAM metadata — so you know what you can ship before you download it.
+              </p>
+              <div class="terminal mt-6">
+                <div class="terminal-bar">
+                  <span class="terminal-dot bg-[#ff5c5c]"></span>
+                  <span class="terminal-dot bg-[#ffc24b]"></span>
+                  <span class="terminal-dot bg-[#6efa5f]"></span>
+                  <span class="ml-2 text-[10px] uppercase tracking-widest text-[#8a8a8a]">vocal — shell</span>
+                </div>
+                <div class="p-4 text-[13px]">
+                  <p><span class="text-accent">$</span> vocal pull hexgrad/Kokoro-82M</p>
+                  <p class="text-[#8a8a8a]">pulling manifest… <span class="text-circuit">████████████████████ 100%</span></p>
+                  <p class="text-[#8a8a8a]">verifying weights… <span class="text-circuit">done</span></p>
+                  <p class="mt-2"><span class="text-accent">$</span> vocal serve</p>
+                  <p class="text-[#8a8a8a]">API ready at <span class="text-electric">http://localhost:8000</span></p>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <div class="grid gap-6 lg:col-span-5">
+            <!-- API card -->
+            <article class="tilt reveal card card-hover" style="transition-delay: 120ms">
+              <div class="tilt-inner p-8">
+                <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-lg border border-[#3a3a3a] bg-coal text-electric">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                </div>
+                <h3 class="text-lg font-bold">OpenAI-compatible endpoints</h3>
+                <p class="mt-3 text-sm leading-relaxed text-lightgrey">
+                  <span class="code-inline">/v1/audio/speech</span> and <span class="code-inline">/v1/audio/transcriptions</span> are drop-in replacements. Point your existing SDK at localhost and keep shipping.
+                </p>
+              </div>
+            </article>
+            <!-- Realtime card -->
+            <article class="tilt reveal card card-hover" style="transition-delay: 240ms">
+              <div class="tilt-inner p-8">
+                <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-lg border border-[#3a3a3a] bg-coal text-circuit">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                </div>
+                <h3 class="text-lg font-bold">Realtime voice agents</h3>
+                <p class="mt-3 text-sm leading-relaxed text-lightgrey">Server VAD, streaming transcription, LLM reasoning and sentence-pipelined TTS over one WebSocket — with barge-in and per-turn latency metrics.</p>
+                <div class="mt-5 flex items-center gap-1.5 text-[10px] uppercase tracking-wider">
+                  <span class="pipeline-node rounded border border-[#3a3a3a] bg-coal px-2 py-1 text-accent">VAD</span>
+                  <svg class="flow-edge text-accent" width="18" height="8" viewBox="0 0 18 8" fill="none" aria-hidden="true"><path d="M0 4h18" stroke="currentColor" stroke-width="1.5"/></svg>
+                  <span class="pipeline-node rounded border border-[#3a3a3a] bg-coal px-2 py-1 text-accent">STT</span>
+                  <svg class="flow-edge text-accent" width="18" height="8" viewBox="0 0 18 8" fill="none" aria-hidden="true"><path d="M0 4h18" stroke="currentColor" stroke-width="1.5"/></svg>
+                  <span class="pipeline-node rounded border border-[#3a3a3a] bg-coal px-2 py-1 text-electric">LLM</span>
+                  <svg class="flow-edge text-electric" width="18" height="8" viewBox="0 0 18 8" fill="none" aria-hidden="true"><path d="M0 4h18" stroke="currentColor" stroke-width="1.5"/></svg>
+                  <span class="pipeline-node rounded border border-[#3a3a3a] bg-coal px-2 py-1 text-circuit">TTS</span>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== QUICKSTART / FINAL CTA ===================== -->
+      <section id="quickstart" class="border-t border-[#2e2e2e] bg-[#1d1d1d]">
+        <div class="mx-auto max-w-shell px-6 py-[clamp(4rem,8vw,8rem)]">
+          <div class="reveal mx-auto max-w-3xl text-center">
+            <p class="text-xs uppercase tracking-[0.3em] text-accent">// quickstart</p>
+            <h2 class="headline-glow mt-3 text-[clamp(1.75rem,3.5vw,2.75rem)] font-bold tracking-tight">Your first voice model is one command away.</h2>
+            <div class="terminal mx-auto mt-8 max-w-xl text-left">
+              <div class="terminal-bar">
+                <span class="terminal-dot bg-[#ff5c5c]"></span>
+                <span class="terminal-dot bg-[#ffc24b]"></span>
+                <span class="terminal-dot bg-[#6efa5f]"></span>
+                <span class="ml-2 text-[10px] uppercase tracking-widest text-[#8a8a8a]">quickstart</span>
+              </div>
+              <div class="p-5 text-sm">
+                <p><span class="text-accent">$</span> pip install vocal-ai</p>
+                <p><span class="text-accent">$</span> vocal serve</p>
+                <p class="text-[#8a8a8a]">→ console at <span class="text-electric">http://localhost:8000/ui</span></p>
+              </div>
+            </div>
+            <p class="mx-auto mt-6 max-w-[60ch] text-sm text-lightgrey">
+              The console runs entirely in your browser and talks to your local server. You can also use the hosted console on GitHub Pages — it connects straight to the Vocal instance running on your machine.
+            </p>
+            <div class="mt-8 flex flex-wrap items-center justify-center gap-4">
+              <a href="/ui" data-local="console" class="btn btn-primary">
+                Open Console
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              </a>
+              <a href="/ui#/models" data-local="models" class="btn btn-ghost">Browse 45 models</a>
+              <a href="https://github.com/niradler/vocal" target="_blank" rel="noopener" class="btn btn-ghost">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.55 0-.27-.01-1.17-.02-2.12-3.2.7-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.19 1.76 1.19 1.03 1.75 2.69 1.25 3.34.95.1-.74.4-1.25.72-1.54-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11.04 11.04 0 0 1 5.78 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.38-5.25 5.67.41.35.77 1.05.77 2.12 0 1.53-.01 2.76-.01 3.14 0 .3.2.66.8.55A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>
+                GitHub
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ===================== FOOTER ===================== -->
+    <footer class="border-t border-[#2e2e2e] bg-coal">
+      <div class="mx-auto max-w-shell px-6 py-16">
+        <div class="grid gap-12 md:grid-cols-12">
+          <div class="md:col-span-5">
+            <a href="./" class="flex cursor-pointer items-center gap-3 transition-all hover:opacity-90">
+              <svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#2A2A2A" stroke="#3a3a3a"/><path d="M6 16h3l3-8 4 16 3-8h3" stroke="#76B900" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span class="text-lg font-bold">vocal<span class="text-accent">.</span></span>
+            </a>
+            <p class="mt-4 max-w-[36ch] text-sm text-[#8a8a8a]">The open-source speech AI platform. Your models, your hardware, your data.</p>
+            <div class="mt-6 flex items-center gap-3">
+              <a href="https://github.com/niradler/vocal" target="_blank" rel="noopener" aria-label="GitHub" class="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg border border-[#3a3a3a] text-lightgrey transition-all hover:border-accent hover:text-accent">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.55 0-.27-.01-1.17-.02-2.12-3.2.7-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.19 1.76 1.19 1.03 1.75 2.69 1.25 3.34.95.1-.74.4-1.25.72-1.54-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11.04 11.04 0 0 1 5.78 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.38-5.25 5.67.41.35.77 1.05.77 2.12 0 1.53-.01 2.76-.01 3.14 0 .3.2.66.8.55A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>
+              </a>
+            </div>
+          </div>
+          <nav class="md:col-span-2" aria-label="Project">
+            <h4 class="text-xs font-semibold uppercase tracking-widest text-white">Project</h4>
+            <ul class="mt-4 flex flex-col gap-2.5 text-sm text-[#8a8a8a]">
+              <li><a href="/ui" data-local="console" class="cursor-pointer transition-all hover:text-accent">Console</a></li>
+              <li><a href="/docs" data-local="docs" class="cursor-pointer transition-all hover:text-accent">API Reference</a></li>
+              <li><a href="/ui#/models" data-local="models" class="cursor-pointer transition-all hover:text-accent">Model Catalog</a></li>
+              <li><a href="https://github.com/niradler/vocal/releases" target="_blank" rel="noopener" class="cursor-pointer transition-all hover:text-accent">Releases</a></li>
+            </ul>
+          </nav>
+          <nav class="md:col-span-2" aria-label="Resources">
+            <h4 class="text-xs font-semibold uppercase tracking-widest text-white">Resources</h4>
+            <ul class="mt-4 flex flex-col gap-2.5 text-sm text-[#8a8a8a]">
+              <li><a href="https://github.com/niradler/vocal/tree/master/docs" target="_blank" rel="noopener" class="cursor-pointer transition-all hover:text-accent">Documentation</a></li>
+              <li><a href="https://github.com/niradler/vocal/tree/master/packages/sdk" target="_blank" rel="noopener" class="cursor-pointer transition-all hover:text-accent">Python SDK</a></li>
+              <li><a href="https://github.com/niradler/vocal/issues" target="_blank" rel="noopener" class="cursor-pointer transition-all hover:text-accent">Issues</a></li>
+              <li><a href="https://github.com/niradler/vocal/blob/master/AGENTS.md" target="_blank" rel="noopener" class="cursor-pointer transition-all hover:text-accent">Contributing</a></li>
+            </ul>
+          </nav>
+          <nav class="md:col-span-3" aria-label="Legal">
+            <h4 class="text-xs font-semibold uppercase tracking-widest text-white">Legal</h4>
+            <ul class="mt-4 flex flex-col gap-2.5 text-sm text-[#8a8a8a]">
+              <li><button data-legal="privacy" class="cursor-pointer transition-all hover:text-accent">Privacy Policy</button></li>
+              <li><button data-legal="terms" class="cursor-pointer transition-all hover:text-accent">Terms of Use</button></li>
+              <li><a href="https://github.com/niradler/vocal/blob/master/LICENSE" target="_blank" rel="noopener" class="cursor-pointer transition-all hover:text-accent">License (SSPL-1.0)</a></li>
+              <li><a href="https://github.com/niradler/vocal/issues/new" target="_blank" rel="noopener" class="cursor-pointer transition-all hover:text-accent">Contact</a></li>
+            </ul>
+          </nav>
+        </div>
+        <div class="data-flow-line mt-12"></div>
+        <div class="mt-6 flex flex-col items-center justify-between gap-3 text-xs text-[#8a8a8a] sm:flex-row">
+          <p>© 2026 Vocal Contributors. All rights reserved.</p>
+          <p>Built for the open speech community.</p>
+        </div>
+      </div>
+    </footer>
+
+    <!-- Legal modal -->
+    <div id="legal-overlay" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="legal-title">
+      <div class="modal">
+        <div class="flex items-center justify-between border-b border-[#3a3a3a] px-6 py-4">
+          <h3 id="legal-title" class="text-base font-bold"></h3>
+          <button id="legal-close" class="btn btn-ghost btn-icon" aria-label="Close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+          </button>
+        </div>
+        <div id="legal-body" class="px-6 py-5 text-sm leading-relaxed text-lightgrey"></div>
+      </div>
+    </div>
+
+    <script>
+      // ---------- hosted-vs-local link rewriting ----------
+      // When this page is served from GitHub Pages (or any static host), the
+      // console lives next to it as app.html and docs live on GitHub.
+      (function () {
+        const hosted = location.protocol === "file:" || !(location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.hostname === "[::1]");
+        if (!hosted) return;
+        const targets = { console: "app.html", models: "app.html#/models", docs: "https://github.com/niradler/vocal/tree/master/docs" };
+        document.querySelectorAll("[data-local]").forEach((a) => {
+          const t = targets[a.dataset.local];
+          if (!t) return;
+          a.href = t;
+          if (t.startsWith("http")) {
+            a.target = "_blank";
+            a.rel = "noopener";
+          }
+        });
+      })();
+
+      // ---------- mobile nav ----------
+      const menuBtn = document.getElementById("menu-btn");
+      const mobileMenu = document.getElementById("mobile-menu");
+      menuBtn.addEventListener("click", () => {
+        const open = mobileMenu.classList.toggle("hidden") === false;
+        menuBtn.setAttribute("aria-expanded", String(open));
+        document.getElementById("menu-icon-open").classList.toggle("hidden", open);
+        document.getElementById("menu-icon-close").classList.toggle("hidden", !open);
+      });
+      mobileMenu.querySelectorAll("a").forEach((a) =>
+        a.addEventListener("click", () => {
+          mobileMenu.classList.add("hidden");
+          menuBtn.setAttribute("aria-expanded", "false");
+          document.getElementById("menu-icon-open").classList.remove("hidden");
+          document.getElementById("menu-icon-close").classList.add("hidden");
+        })
+      );
+
+      // ---------- reveal on scroll ----------
+      const revealObserver = new IntersectionObserver(
+        (entries) => entries.forEach((e) => e.isIntersecting && e.target.classList.add("revealed")),
+        { threshold: 0.12 }
+      );
+      document.querySelectorAll(".reveal").forEach((el) => revealObserver.observe(el));
+
+      // ---------- 3D tilt micro-interaction ----------
+      if (window.matchMedia("(hover: hover)").matches && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        document.querySelectorAll(".tilt").forEach((card) => {
+          const inner = card.querySelector(".tilt-inner");
+          card.addEventListener("pointermove", (ev) => {
+            const r = card.getBoundingClientRect();
+            const px = (ev.clientX - r.left) / r.width - 0.5;
+            const py = (ev.clientY - r.top) / r.height - 0.5;
+            inner.style.transform = `rotateY(${px * 7}deg) rotateX(${-py * 7}deg)`;
+          });
+          card.addEventListener("pointerleave", () => {
+            inner.style.transform = "rotateY(0deg) rotateX(0deg)";
+          });
+        });
+      }
+
+      // ---------- legal modals ----------
+      const legalTexts = {
+        privacy: {
+          title: "Privacy Policy",
+          body: "Vocal is self-hosted software. Audio you submit is processed on the machine running the server and is not transmitted to Vocal contributors or any third party by the platform itself. Temporary audio files created during transcription and voice cloning are deleted after processing. Model weights are downloaded directly from Hugging Face at your request. If you configure an external LLM endpoint for the voice agent, transcript text is sent to that endpoint under its own privacy terms. The web console stores preferences locally in your browser only.",
+        },
+        terms: {
+          title: "Terms of Use",
+          body: "Vocal is provided under the Server Side Public License (SSPL-1.0), without warranty of any kind. You are responsible for complying with the licenses of the individual model weights you download — the catalog displays each model's license and commercial-use flag, and some models restrict commercial deployment. You are responsible for obtaining any consents required for voice cloning and for lawful use of synthesized audio.",
+        },
+      };
+      const legalOverlay = document.getElementById("legal-overlay");
+      document.querySelectorAll("[data-legal]").forEach((btn) =>
+        btn.addEventListener("click", () => {
+          const t = legalTexts[btn.dataset.legal];
+          document.getElementById("legal-title").textContent = t.title;
+          document.getElementById("legal-body").textContent = t.body;
+          legalOverlay.classList.remove("hidden");
+        })
+      );
+      const closeLegal = () => legalOverlay.classList.add("hidden");
+      document.getElementById("legal-close").addEventListener("click", closeLegal);
+      legalOverlay.addEventListener("click", (e) => e.target === legalOverlay && closeLegal());
+      document.addEventListener("keydown", (e) => e.key === "Escape" && closeLegal());
+
+      // ---------- 3D neural network canvas ----------
+      // Dependency-free: a layered node/edge graph rotated in 3D and projected
+      // with perspective, plus data pulses travelling along edges.
+      (function () {
+        const canvas = document.getElementById("neural-canvas");
+        const ctx = canvas.getContext("2d");
+        const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        let W = 0, H = 0, dpr = 1;
+        let running = true, visible = true;
+        let rotY = 0.5, rotX = -0.12;
+        let targetRX = -0.12, targetRY = 0;
+        let nodes = [], edges = [], pulses = [];
+
+        function build() {
+          nodes = []; edges = []; pulses = [];
+          const layers = [5, 7, 8, 7, 4];
+          const spanX = 340, spanY = 250, spanZ = 150;
+          layers.forEach((count, li) => {
+            const x = -spanX / 2 + (spanX * li) / (layers.length - 1);
+            for (let i = 0; i < count; i++) {
+              const y = -spanY / 2 + (spanY * (i + 0.5)) / count + (Math.random() - 0.5) * 22;
+              const z = (Math.random() - 0.5) * spanZ;
+              nodes.push({ x, y, z, layer: li, blue: Math.random() < 0.16, r: 2.4 + Math.random() * 1.8, phase: Math.random() * Math.PI * 2 });
+            }
+          });
+          let offset = 0;
+          for (let li = 0; li < layers.length - 1; li++) {
+            const a0 = offset, a1 = offset + layers[li];
+            const b0 = a1, b1 = a1 + layers[li + 1];
+            for (let a = a0; a < a1; a++) for (let b = b0; b < b1; b++) edges.push([a, b]);
+            offset = a1;
+          }
+        }
+
+        function resize() {
+          const rect = canvas.getBoundingClientRect();
+          dpr = Math.min(window.devicePixelRatio || 1, 2);
+          W = rect.width; H = rect.height;
+          canvas.width = Math.round(W * dpr);
+          canvas.height = Math.round(H * dpr);
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+
+        function project(n, ry, rx) {
+          const cy = Math.cos(ry), sy = Math.sin(ry);
+          const cx = Math.cos(rx), sx = Math.sin(rx);
+          let x = n.x * cy + n.z * sy;
+          let z = -n.x * sy + n.z * cy;
+          let y = n.y * cx - z * sx;
+          z = n.y * sx + z * cx;
+          const f = 760 / (760 + z);
+          return { x: W / 2 + x * f * (W / 520), y: H / 2 + y * f * (H / 480), f, z };
+        }
+
+        function spawnPulse() {
+          if (pulses.length > 26) return;
+          pulses.push({ e: Math.floor(Math.random() * edges.length), t: 0, speed: 0.008 + Math.random() * 0.014, blue: Math.random() < 0.25 });
+        }
+
+        let last = performance.now();
+        function frame(now) {
+          requestAnimationFrame(frame);
+          if (!running || !visible) { last = now; return; }
+          const dt = Math.min(50, now - last); last = now;
+          rotY += dt * 0.00016;
+          targetRY *= 0.94; targetRX += (-0.12 - targetRX) * 0.06;
+          const ry = rotY + targetRY, rx = targetRX;
+
+          ctx.clearRect(0, 0, W, H);
+          const proj = nodes.map((n) => project(n, ry, rx));
+
+          // edges
+          ctx.lineWidth = 1;
+          for (const [a, b] of edges) {
+            const pa = proj[a], pb = proj[b];
+            const depth = (pa.f + pb.f) / 2;
+            ctx.strokeStyle = `rgba(118,185,0,${0.05 + depth * 0.09})`;
+            ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke();
+          }
+
+          // pulses (data flow)
+          if (!reduced && Math.random() < 0.3) spawnPulse();
+          pulses = pulses.filter((p) => p.t <= 1);
+          for (const p of pulses) {
+            p.t += p.speed * (dt / 16.7);
+            const [a, b] = edges[p.e];
+            const pa = proj[a], pb = proj[b];
+            const x = pa.x + (pb.x - pa.x) * p.t;
+            const y = pa.y + (pb.y - pa.y) * p.t;
+            const col = p.blue ? "0,191,255" : "110,250,95";
+            ctx.fillStyle = `rgba(${col},${0.85 * (1 - Math.abs(p.t - 0.5))})`;
+            ctx.shadowColor = `rgba(${col},0.9)`;
+            ctx.shadowBlur = 8;
+            ctx.beginPath(); ctx.arc(x, y, 1.8, 0, Math.PI * 2); ctx.fill();
+            ctx.shadowBlur = 0;
+          }
+
+          // nodes
+          for (let i = 0; i < nodes.length; i++) {
+            const n = nodes[i], p = proj[i];
+            const breathe = reduced ? 1 : 0.75 + 0.25 * Math.sin(now * 0.0016 + n.phase);
+            const col = n.blue ? "0,191,255" : "118,185,0";
+            const r = n.r * p.f * breathe;
+            ctx.shadowColor = `rgba(${col},0.8)`;
+            ctx.shadowBlur = 10 * p.f;
+            ctx.fillStyle = `rgba(${col},${0.5 + p.f * 0.4})`;
+            ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = "rgba(255,255,255,0.85)";
+            ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0.6, r * 0.32), 0, Math.PI * 2); ctx.fill();
+          }
+        }
+
+        canvas.addEventListener("pointermove", (ev) => {
+          const r = canvas.getBoundingClientRect();
+          targetRY = ((ev.clientX - r.left) / r.width - 0.5) * 0.7;
+          targetRX = -0.12 + ((ev.clientY - r.top) / r.height - 0.5) * 0.4;
+        });
+        canvas.addEventListener("pointerleave", () => { targetRY = 0; });
+        document.addEventListener("visibilitychange", () => { running = !document.hidden; });
+        new IntersectionObserver((es) => { visible = es[0].isIntersecting; }, { threshold: 0.05 }).observe(canvas);
+        new ResizeObserver(resize).observe(canvas);
+
+        build(); resize(); requestAnimationFrame(frame);
+      })();
+    </script>
+  </body>
+</html>

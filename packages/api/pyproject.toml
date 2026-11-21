@@ -1,6 +1,6 @@
 [project]
 name = "vocal-api"
-version = "0.3.8"
+version = "0.4.0"
 description = "FastAPI server for Vocal - Ollama-style Voice Model Management"
 requires-python = ">=3.11"
 license = { text = "SSPL-1.0" }
@@ -19,11 +19,11 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
 ]
 dependencies = [
-    "fastapi>=0.135.1",
-    "uvicorn[standard]>=0.41.0",
-    "pydantic>=2.12.5",
-    "python-multipart>=0.0.22",
-    "vocal-core>=0.3.8",
+    "fastapi>=0.163.2",
+    "uvicorn[standard]>=0.54.0",
+    "pydantic>=2.14.3",
+    "python-multipart>=0.0.34",
+    "vocal-core>=0.4.0",
     "aiofiles>=25.1.0",
 ]
 

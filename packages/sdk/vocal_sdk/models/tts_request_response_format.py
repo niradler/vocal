@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class TTSRequestResponseFormat(str, Enum):
+class TTSRequestResponseFormat(StrEnum):
     AAC = "aac"
     FLAC = "flac"
     MP3 = "mp3"

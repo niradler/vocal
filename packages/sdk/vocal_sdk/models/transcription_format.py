@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class TranscriptionFormat(str, Enum):
+class TranscriptionFormat(StrEnum):
     JSON = "json"
     SRT = "srt"
     TEXT = "text"
