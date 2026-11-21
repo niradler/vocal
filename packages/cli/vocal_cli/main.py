@@ -310,6 +310,7 @@ def speak(
     ),
     models: bool = typer.Option(False, "--models", help="Interactively select from downloaded TTS models"),
     voice: str | None = typer.Option(None, "--voice", help="Voice ID or instruction (model-specific, e.g. 'female, young adult, american accent')"),
+    language: str | None = typer.Option(None, "--language", "-l", help="Language code for multilingual models (e.g. 'en', 'zh')"),
     speed: float = typer.Option(1.0, "--speed", "-s", min=0.25, max=4.0, help="Speech speed multiplier"),
     response_format: str = typer.Option("wav", "--format", "-f", help="Output audio format: wav, mp3, flac, pcm, aac, opus"),
     api_url: str = typer.Option("http://localhost:8000", "--api-url", envvar="VOCAL_API_URL", help="Vocal API URL"),
@@ -340,6 +341,7 @@ def speak(
             model=model,
             input_=text,
             voice=voice if voice is not None else UNSET,
+            language=language if language is not None else UNSET,
             speed=speed,
             response_format=fmt,
         )

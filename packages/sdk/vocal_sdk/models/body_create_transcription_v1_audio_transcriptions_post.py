@@ -8,6 +8,9 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
 from .. import types
+from ..models.body_create_transcription_v1_audio_transcriptions_post_timestamp_granularities_type_0_item import (
+    BodyCreateTranscriptionV1AudioTranscriptionsPostTimestampGranularitiesType0Item,
+)
 from ..models.transcription_format import TranscriptionFormat
 from ..types import UNSET, File, Unset
 
@@ -24,6 +27,8 @@ class BodyCreateTranscriptionV1AudioTranscriptionsPost:
         prompt (None | str | Unset): Style prompt
         response_format (TranscriptionFormat | Unset): Output format for transcription
         temperature (float | Unset):  Default: 0.0.
+        timestamp_granularities (list[BodyCreateTranscriptionV1AudioTranscriptionsPostTimestampGranularitiesType0Item] |
+            None | Unset): Timestamp granularities (verbose_json only)
     """
 
     file: File
@@ -32,6 +37,13 @@ class BodyCreateTranscriptionV1AudioTranscriptionsPost:
     prompt: None | str | Unset = UNSET
     response_format: TranscriptionFormat | Unset = UNSET
     temperature: float | Unset = 0.0
+    timestamp_granularities: (
+        list[
+            BodyCreateTranscriptionV1AudioTranscriptionsPostTimestampGranularitiesType0Item
+        ]
+        | None
+        | Unset
+    ) = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -61,6 +73,22 @@ class BodyCreateTranscriptionV1AudioTranscriptionsPost:
 
         temperature = self.temperature
 
+        timestamp_granularities: list[str] | None | Unset
+        if isinstance(self.timestamp_granularities, Unset):
+            timestamp_granularities = UNSET
+        elif isinstance(self.timestamp_granularities, list):
+            timestamp_granularities = []
+            for (
+                timestamp_granularities_type_0_item_data
+            ) in self.timestamp_granularities:
+                timestamp_granularities_type_0_item = (
+                    timestamp_granularities_type_0_item_data.value
+                )
+                timestamp_granularities.append(timestamp_granularities_type_0_item)
+
+        else:
+            timestamp_granularities = self.timestamp_granularities
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -78,6 +106,8 @@ class BodyCreateTranscriptionV1AudioTranscriptionsPost:
             field_dict["response_format"] = response_format
         if temperature is not UNSET:
             field_dict["temperature"] = temperature
+        if timestamp_granularities is not UNSET:
+            field_dict["timestamp_granularities[]"] = timestamp_granularities
 
         return field_dict
 
@@ -125,6 +155,35 @@ class BodyCreateTranscriptionV1AudioTranscriptionsPost:
                 ("temperature", (None, str(self.temperature).encode(), "text/plain"))
             )
 
+        if not isinstance(self.timestamp_granularities, Unset):
+            if isinstance(self.timestamp_granularities, list):
+                for (
+                    timestamp_granularities_type_0_item_element
+                ) in self.timestamp_granularities:
+                    files.append(
+                        (
+                            "timestamp_granularities[]",
+                            (
+                                None,
+                                str(
+                                    timestamp_granularities_type_0_item_element.value
+                                ).encode(),
+                                "text/plain",
+                            ),
+                        )
+                    )
+            else:
+                files.append(
+                    (
+                        "timestamp_granularities[]",
+                        (
+                            None,
+                            str(self.timestamp_granularities).encode(),
+                            "text/plain",
+                        ),
+                    )
+                )
+
         for prop_name, prop in self.additional_properties.items():
             files.append((prop_name, (None, str(prop).encode(), "text/plain")))
 
@@ -171,6 +230,51 @@ class BodyCreateTranscriptionV1AudioTranscriptionsPost:
 
         temperature = d.pop("temperature", UNSET)
 
+        def _parse_timestamp_granularities(
+            data: object,
+        ) -> (
+            list[
+                BodyCreateTranscriptionV1AudioTranscriptionsPostTimestampGranularitiesType0Item
+            ]
+            | None
+            | Unset
+        ):
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, list):
+                    raise TypeError()
+                timestamp_granularities_type_0 = []
+                _timestamp_granularities_type_0 = data
+                for (
+                    timestamp_granularities_type_0_item_data
+                ) in _timestamp_granularities_type_0:
+                    timestamp_granularities_type_0_item = BodyCreateTranscriptionV1AudioTranscriptionsPostTimestampGranularitiesType0Item(
+                        timestamp_granularities_type_0_item_data
+                    )
+
+                    timestamp_granularities_type_0.append(
+                        timestamp_granularities_type_0_item
+                    )
+
+                return timestamp_granularities_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(
+                list[
+                    BodyCreateTranscriptionV1AudioTranscriptionsPostTimestampGranularitiesType0Item
+                ]
+                | None
+                | Unset,
+                data,
+            )
+
+        timestamp_granularities = _parse_timestamp_granularities(
+            d.pop("timestamp_granularities[]", UNSET)
+        )
+
         body_create_transcription_v1_audio_transcriptions_post = cls(
             file=file,
             model=model,
@@ -178,6 +282,7 @@ class BodyCreateTranscriptionV1AudioTranscriptionsPost:
             prompt=prompt,
             response_format=response_format,
             temperature=temperature,
+            timestamp_granularities=timestamp_granularities,
         )
 
         body_create_transcription_v1_audio_transcriptions_post.additional_properties = d

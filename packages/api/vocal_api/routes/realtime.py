@@ -114,6 +114,11 @@ class _Session:
         return self.current_item_id
 
 
+def _as_dict(value: object) -> dict:
+    """Return value when it is a JSON object, otherwise an empty dict."""
+    return value if isinstance(value, dict) else {}
+
+
 def _make_event(event_type: str, **kwargs) -> str:
     return json.dumps({"type": event_type, "event_id": f"evt_{uuid.uuid4().hex[:16]}", **kwargs})
 
@@ -174,6 +179,10 @@ def _session_config(session: _Session) -> dict:
             "commit_grace_ms": session.gate.commit_grace_ms if session.gate else 0,
         },
         "transcription": {"language": session.language},
+        "audio": {
+            "input": {"transcription": {"language": session.language}},
+            "output": {"model": session.tts_model, "voice": session.tts_voice},
+        },
         "created_at": session.created_at,
     }
 
@@ -323,6 +332,7 @@ async def _speak_sentences(  # noqa: C901
                 text=sentence,
                 voice=session.tts_voice,
                 output_format="pcm",
+                language=session.language,
             ):
                 if cancel.is_set():
                     return
@@ -524,25 +534,43 @@ async def _cancel_active_response(ws: WebSocket, session: _Session, reason: str 
 
 
 async def _handle_session_update(ws: WebSocket, session: _Session, event: dict, event_type: str, tts_service=None) -> None:  # noqa: C901
-    sess_cfg = event.get("session", {})
+    sess_cfg = _as_dict(event.get("session"))
     previous_type = session.session_type
     if "type" in sess_cfg:
         session.session_type = sess_cfg["type"]
         if session.session_type != previous_type:
             session.apply_mode_defaults()
+
+    # Voice + language are accepted in Vocal's flat shape and in the nested
+    # OpenAI Realtime shape (audio.input.transcription / audio.output).
+    audio_cfg = _as_dict(sess_cfg.get("audio"))
+    audio_input = _as_dict(audio_cfg.get("input"))
+    audio_output = _as_dict(audio_cfg.get("output"))
+    transcription_cfg = _as_dict(sess_cfg.get("input_audio_transcription")) or _as_dict(audio_input.get("transcription"))
+
     if "model" in sess_cfg:
         session.model = sess_cfg["model"]
-    if "language" in sess_cfg:
-        session.language = sess_cfg["language"] or None
+    elif transcription_cfg.get("model"):
+        session.model = transcription_cfg["model"]
+
+    language = sess_cfg.get("language", transcription_cfg.get("language"))
+    if language is not None:
+        session.language = language or None
     if "input_sample_rate" in sess_cfg:
         session.input_sample_rate = int(sess_cfg["input_sample_rate"])
     if "system_prompt" in sess_cfg:
         session.system_prompt = sess_cfg["system_prompt"]
     if "tts_model" in sess_cfg:
         session.tts_model = sess_cfg["tts_model"]
+    elif audio_output.get("model"):
+        session.tts_model = audio_output["model"]
     if "tts_voice" in sess_cfg:
         session.tts_voice = sess_cfg["tts_voice"] or None
-    td = sess_cfg.get("turn_detection") or {}
+    elif "voice" in sess_cfg:
+        session.tts_voice = sess_cfg["voice"] or None
+    elif "voice" in audio_output:
+        session.tts_voice = audio_output["voice"] or None
+    td = _as_dict(sess_cfg.get("turn_detection")) or _as_dict(audio_input.get("turn_detection"))
     if session.gate is not None:
         session.gate.configure(
             threshold=td.get("threshold"),

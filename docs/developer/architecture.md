@@ -118,11 +118,11 @@ Routes and services check these flags to return clean 422 errors before attempti
 ## OpenAI Compatibility
 
 Vocal maintains OpenAI API compatibility on:
-- `POST /v1/audio/transcriptions` — same request/response shape
-- `POST /v1/audio/speech` — same request shape, same audio response
-- `POST /v1/audio/translations` — same as transcriptions with `task=translate`
+- `POST /v1/audio/transcriptions` — same request shape (`language`, `prompt`, `temperature`, `response_format`, `timestamp_granularities[]`) and JSON / plain-text / SRT / VTT output
+- `POST /v1/audio/speech` — same request shape, same audio response (`voice`, `language`, `speed`, `response_format`, `stream`)
+- `POST /v1/audio/translations` — translate to English with the selected model (`language`, `prompt`, `temperature`, `response_format`)
 - `GET /v1/models` — compatible listing format
-- `WS /v1/realtime` — full OpenAI Realtime Transcription Session protocol
+- `WS /v1/realtime` — full OpenAI Realtime Transcription Session protocol, including nested `audio.input.transcription.language` and `audio.output.voice` session config
 
 Extensions beyond OpenAI (Vocal-specific):
 - `GET /v1/audio/voices` — voice listing per model

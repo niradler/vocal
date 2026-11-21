@@ -3,6 +3,7 @@ import tempfile
 import time
 from collections.abc import AsyncGenerator
 from pathlib import Path
+from typing import Literal
 
 import aiofiles
 from fastapi import UploadFile
@@ -111,13 +112,15 @@ class TranscriptionService:
                     task="transcribe",
                     temperature=request.temperature,
                     word_timestamps=word_timestamps,
+                    prompt=request.prompt,
                 )
-            return self._convert_result(result)
+            return self._convert_result(result, task="transcribe")
         finally:
             if temp_path and Path(temp_path).exists():
                 Path(temp_path).unlink()
 
-    async def translate(self, file: UploadFile, model_id: str) -> TranscriptionResponse:
+    async def translate(self, file: UploadFile, request: TranscriptionRequest) -> TranscriptionResponse:
+        model_id = request.model
         model_info = await self.registry.get_model(model_id)
         if not model_info:
             raise ValueError(f"Model {model_id} not found in registry")
@@ -141,8 +144,14 @@ class TranscriptionService:
                 await f.write(content)
 
             async with self._inference_lock(model_id):
-                result = await adapter.transcribe(audio=temp_path, task="translate")
-            return self._convert_result(result)
+                result = await adapter.transcribe(
+                    audio=temp_path,
+                    language=request.language,
+                    task="translate",
+                    temperature=request.temperature,
+                    prompt=request.prompt,
+                )
+            return self._convert_result(result, task="translate")
         finally:
             if temp_path and Path(temp_path).exists():
                 Path(temp_path).unlink()
@@ -233,7 +242,7 @@ class TranscriptionService:
                 self.adapters[model_id] = adapter
             return self.adapters[model_id]
 
-    def _convert_result(self, result: TranscriptionResult) -> TranscriptionResponse:
+    def _convert_result(self, result: TranscriptionResult, *, task: Literal["transcribe", "translate"] = "transcribe") -> TranscriptionResponse:
         """Convert core TranscriptionResult to API TranscriptionResponse"""
         segments = None
         if result.segments:
@@ -265,6 +274,7 @@ class TranscriptionService:
             ]
 
         return TranscriptionResponse(
+            task=task,
             text=result.text,
             language=result.language,
             duration=result.duration,

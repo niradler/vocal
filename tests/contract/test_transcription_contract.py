@@ -43,6 +43,15 @@ class TestTranscriptionContract:
         )
         assert raw.status_code in (400, 422, 500)
 
+    def test_translation_accepts_language_and_temperature(self, client):
+        raw = client.get_httpx_client().post(
+            "/v1/audio/translations",
+            files={"file": ("test.wav", io.BytesIO(b"fake"), "audio/wav")},
+            data={"model": "nonexistent/model", "language": "he", "temperature": "0.2"},
+        )
+        assert raw.status_code == 400
+        assert "not found" in str(raw.json()).lower()
+
 
 class TestCloneContract:
     def test_clone_no_model_downloaded_returns_error(self, client):

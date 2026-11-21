@@ -74,6 +74,7 @@ def sync_detailed(
     - **model**: TTS model (e.g., 'hexgrad/Kokoro-82M', 'pyttsx3')
     - **input**: Text to convert to speech
     - **voice**: Optional voice ID (use /v1/audio/voices to list available voices)
+    - **language**: Optional language code for multilingual models (ISO 639-1)
     - **speed**: Speech speed multiplier (0.25 to 4.0, default: 1.0)
     - **response_format**: Audio format (mp3, opus, aac, flac, wav, pcm)
     - **stream**: Stream audio chunks as they are generated
@@ -112,6 +113,7 @@ def sync(
     - **model**: TTS model (e.g., 'hexgrad/Kokoro-82M', 'pyttsx3')
     - **input**: Text to convert to speech
     - **voice**: Optional voice ID (use /v1/audio/voices to list available voices)
+    - **language**: Optional language code for multilingual models (ISO 639-1)
     - **speed**: Speech speed multiplier (0.25 to 4.0, default: 1.0)
     - **response_format**: Audio format (mp3, opus, aac, flac, wav, pcm)
     - **stream**: Stream audio chunks as they are generated
@@ -145,6 +147,7 @@ async def asyncio_detailed(
     - **model**: TTS model (e.g., 'hexgrad/Kokoro-82M', 'pyttsx3')
     - **input**: Text to convert to speech
     - **voice**: Optional voice ID (use /v1/audio/voices to list available voices)
+    - **language**: Optional language code for multilingual models (ISO 639-1)
     - **speed**: Speech speed multiplier (0.25 to 4.0, default: 1.0)
     - **response_format**: Audio format (mp3, opus, aac, flac, wav, pcm)
     - **stream**: Stream audio chunks as they are generated
@@ -181,6 +184,7 @@ async def asyncio(
     - **model**: TTS model (e.g., 'hexgrad/Kokoro-82M', 'pyttsx3')
     - **input**: Text to convert to speech
     - **voice**: Optional voice ID (use /v1/audio/voices to list available voices)
+    - **language**: Optional language code for multilingual models (ISO 639-1)
     - **speed**: Speech speed multiplier (0.25 to 4.0, default: 1.0)
     - **response_format**: Audio format (mp3, opus, aac, flac, wav, pcm)
     - **stream**: Stream audio chunks as they are generated

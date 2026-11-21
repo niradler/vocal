@@ -3,6 +3,9 @@
 from .body_create_transcription_v1_audio_transcriptions_post import (
     BodyCreateTranscriptionV1AudioTranscriptionsPost,
 )
+from .body_create_transcription_v1_audio_transcriptions_post_timestamp_granularities_type_0_item import (
+    BodyCreateTranscriptionV1AudioTranscriptionsPostTimestampGranularitiesType0Item,
+)
 from .body_create_translation_v1_audio_translations_post import (
     BodyCreateTranslationV1AudioTranslationsPost,
 )
@@ -29,6 +32,7 @@ from .settings_payload_loglevel_type_0 import SettingsPayloadLOGLEVELType0
 from .settings_response import SettingsResponse
 from .transcription_format import TranscriptionFormat
 from .transcription_response import TranscriptionResponse
+from .transcription_response_task import TranscriptionResponseTask
 from .transcription_segment import TranscriptionSegment
 from .transcription_word import TranscriptionWord
 from .tts_request import TTSRequest
@@ -39,6 +43,7 @@ from .voices_response import VoicesResponse
 
 __all__ = (
     "BodyCreateTranscriptionV1AudioTranscriptionsPost",
+    "BodyCreateTranscriptionV1AudioTranscriptionsPostTimestampGranularitiesType0Item",
     "BodyCreateTranslationV1AudioTranslationsPost",
     "BodyVoiceCloneV1AudioClonePost",
     "BodyVoiceCloneV1AudioClonePostResponseFormat",
@@ -63,6 +68,7 @@ __all__ = (
     "TTSRequestResponseFormat",
     "TranscriptionFormat",
     "TranscriptionResponse",
+    "TranscriptionResponseTask",
     "TranscriptionSegment",
     "TranscriptionWord",
     "ValidationError",

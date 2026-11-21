@@ -58,10 +58,11 @@ class TranscriptionWord(BaseModel):
 class TranscriptionResponse(BaseModel):
     """Response schema for transcription"""
 
+    task: Literal["transcribe", "translate"] = Field("transcribe", description="Task that produced this result")
     text: str = Field(description="Full transcribed text")
     language: str = Field(description="Detected or specified language")
     duration: float = Field(description="Audio duration in seconds")
     segments: list[TranscriptionSegment] | None = None
     words: list[TranscriptionWord] | None = None
 
-    model_config = {"json_schema_extra": {"example": {"text": "Hello, how are you today?", "language": "en", "duration": 2.5, "segments": [{"id": 0, "start": 0.0, "end": 2.5, "text": "Hello, how are you today?"}]}}}
+    model_config = {"json_schema_extra": {"example": {"task": "transcribe", "text": "Hello, how are you today?", "language": "en", "duration": 2.5, "segments": [{"id": 0, "start": 0.0, "end": 2.5, "text": "Hello, how are you today?"}]}}}
