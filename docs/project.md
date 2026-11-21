@@ -1,6 +1,6 @@
 # Vocal — Project Management
 
-**Version:** 0.3.5 | **Status:** Pre-release
+**Version:** 0.4.1 | **Status:** Pre-release
 
 ---
 

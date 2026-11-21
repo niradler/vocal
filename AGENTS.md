@@ -1,6 +1,6 @@
 # AGENTS.md — Vocal Maintainer & Contributor Reference
 
-**Version:** 0.3.5 | **Python:** 3.11+ | **License:** SSPL-1.0
+**Version:** 0.4.1 | **Python:** 3.11+ | **License:** SSPL-1.0
 
 > This file is the canonical reference for maintainers, contributors, and AI coding agents. Keep it accurate and concise. User documentation lives in [`docs/`](docs/README.md).
 
@@ -30,10 +30,10 @@ core ← api ← sdk ← cli
 
 ```bash
 make install              # Setup workspace (uv workspace, all packages editable)
-make install-dev          # Install ALL optional backends (kokoro, qwen3-tts, nemo, whisperx, chatterbox)
+make install-dev          # Install ALL optional backends (kokoro, qwen3-tts, nemo, whisperx, chatterbox, supertonic, voxcpm, phonon, qwen3-omni)
 make lint                 # Must pass before any commit
-make test                 # Full E2E suite (~76 tests, ~90s, needs server + models)
-make test-unit            # Unit tests, no server (~3s)
+make test                 # Full E2E suite (~98 tests, ~2.5min, needs server + models)
+make test-unit            # Unit tests, no server (~25s)
 make test-contract        # Contract tests, isolated server (~10s)
 make format               # Auto-fix code style
 make serve                # Start API at http://localhost:8000
@@ -42,7 +42,7 @@ make serve-dev            # Start with auto-reload (dev)
 
 **Before completing any task:** `make lint && make test-unit && make test`
 
-> **Full test coverage requires optional backends.** Run `make install-dev` once after `make install` to install all optional backends. Without this, tests for Kokoro, NeMo, WhisperX, qwen3-tts, and Chatterbox are skipped — and skips count as failures.
+> **Full test coverage requires optional backends.** Run `make install-dev` once after `make install` to install all optional backends. Without this, tests for the optional backends (Kokoro, NeMo, WhisperX, qwen3-tts, Chatterbox, Supertonic, VoxCPM, Phonon, Qwen-Omni) are skipped — and skips count as failures. Gated models (e.g. Cohere Transcribe) also need their HF licence accepted, or their E2E test skips.
 
 ---
 
@@ -150,9 +150,9 @@ Every STT/TTS backend implements a base class in `adapters/stt/base.py` or `adap
 
 | Tier     | Command              | Time | Runs in CI        |
 | -------- | -------------------- | ---- | ----------------- |
-| Unit     | `make test-unit`     | ~3s  | ✅                |
-| Contract | `make test-contract` | ~10s | ✅                |
-| E2E      | `make test`          | ~95s | ❌ (needs models) |
+| Unit     | `make test-unit`     | ~25s   | ✅                |
+| Contract | `make test-contract` | ~10s   | ✅                |
+| E2E      | `make test`          | ~2.5min | ❌ (needs models) |
 | Format   | `make format`        | ~5s  | ✅                |
 | Lint     | `make lint`          | ~5s  | ✅                |
 
@@ -161,7 +161,7 @@ Every STT/TTS backend implements a base class in `adapters/stt/base.py` or `adap
 **All 3 test suites must pass with zero skips before any task is considered complete.**
 
 Prerequisites for zero-skip E2E runs:
-1. `make install-dev` — installs all optional backends (kokoro, qwen3-tts, nemo, whisperx, chatterbox)
+1. `make install-dev` — installs all optional backends (kokoro, qwen3-tts, nemo, whisperx, chatterbox, supertonic, voxcpm, phonon, qwen3-omni)
 2. Server running with all backends loaded (fresh start after `install-dev`)
 3. GPU available (some backends require CUDA)
 
@@ -271,9 +271,9 @@ See [`docs/developer/release.md`](docs/developer/release.md) for the full checkl
 Quick version bump:
 
 ```bash
-make bump-patch    # 0.3.5 → 0.3.6
-make bump-minor    # 0.3.5 → 0.4.0
-make bump-major    # 0.3.5 → 1.0.0
+make bump-patch    # 0.4.1 → 0.4.2
+make bump-minor    # 0.4.1 → 0.5.0
+make bump-major    # 0.4.1 → 1.0.0
 ```
 
 Auto-updates: all `pyproject.toml` + `__init__.py` files.

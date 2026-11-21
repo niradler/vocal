@@ -6,9 +6,9 @@ Vocal uses semantic versioning: `MAJOR.MINOR.PATCH`
 
 | Change type | Command | Example |
 |-------------|---------|---------|
-| Bug fix | `make bump-patch` | 0.3.5 → 0.3.6 |
-| New feature | `make bump-minor` | 0.3.5 → 0.4.0 |
-| Breaking change | `make bump-major` | 0.3.5 → 1.0.0 |
+| Bug fix | `make bump-patch` | 0.4.1 → 0.4.2 |
+| New feature | `make bump-minor` | 0.4.1 → 0.5.0 |
+| Breaking change | `make bump-major` | 0.4.1 → 1.0.0 |
 
 `make bump-*` updates all `pyproject.toml` files and `__init__.py` files in one command (via `bump-my-version`).
 
@@ -20,9 +20,9 @@ Run through these in order before tagging a release.
 
 ```bash
 make lint                  # zero ruff errors
-make test-unit             # 33 unit tests green
-make test-contract         # 31 contract tests green (start fresh server first)
-make test                  # 56 E2E green (server running)
+make test-unit             # 236 unit tests green
+make test-contract         # 62 contract tests green (start fresh server first)
+make test                  # 98 E2E green (server running)
 ```
 
 ### 2. Validate on both platforms
@@ -71,7 +71,7 @@ make bump-patch   # or bump-minor / bump-major
 ```bash
 git add .
 git commit -m "Release v$(uv run python -c 'import vocal; print(vocal.__version__)')"
-git tag v0.3.6              # use the new version
+git tag v0.4.2              # use the new version
 git push && git push --tags
 ```
 
@@ -88,7 +88,7 @@ cd packages/cli  && uv run python -m build && cd ../..
 uv run python -m build   # root vocal-ai meta-package
 
 # Publish all (token from ~/.pypirc)
-UV_PUBLISH_TOKEN=pypi-... uv publish dist/*0.3.8*
+UV_PUBLISH_TOKEN=pypi-... uv publish dist/*0.4.2*
 ```
 
 ## Post-release
@@ -108,7 +108,7 @@ If a release has a critical bug:
 ## Changelog Template
 
 ```markdown
-## v0.3.6 — 2026-03-15
+## v0.4.2 — 2026-03-15
 
 ### Added
 - ...
