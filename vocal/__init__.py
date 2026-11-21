@@ -14,7 +14,7 @@ CLI:
     $ vocal run audio.mp3
 """
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 try:
     from vocal_core import FasterWhisperAdapter, ModelRegistry

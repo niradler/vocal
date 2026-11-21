@@ -1,6 +1,6 @@
 [project]
 name = "vocal-cli"
-version = "0.4.0"
+version = "0.4.1"
 description = "CLI tool for Vocal - Ollama-style Voice Model Management"
 requires-python = ">=3.11"
 license = { text = "SSPL-1.0" }
@@ -19,8 +19,8 @@ classifiers = [
     "Topic :: Utilities",
 ]
 dependencies = [
-    "vocal-core>=0.4.0",
-    "vocal-sdk>=0.4.0",
+    "vocal-core>=0.4.1",
+    "vocal-sdk>=0.4.1",
     "typer>=0.27.3,<0.28",
     "rich>=15.0.0",
     "uvicorn>=0.54.0",

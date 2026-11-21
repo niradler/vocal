@@ -78,11 +78,21 @@
         },
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "JSON, plain text or subtitles, depending on `response_format`",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TranscriptionResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "text/vtt": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -456,7 +466,7 @@
           "audio"
         ],
         "summary": "Text To Speech",
-        "description": "Generate speech from text (OpenAI-compatible endpoint).\n\n- **model**: TTS model (e.g., 'hexgrad/Kokoro-82M', 'pyttsx3')\n- **input**: Text to convert to speech\n- **voice**: Optional voice ID (use /v1/audio/voices to list available voices)\n- **speed**: Speech speed multiplier (0.25 to 4.0, default: 1.0)\n- **response_format**: Audio format (mp3, opus, aac, flac, wav, pcm)\n- **stream**: Stream audio chunks as they are generated",
+        "description": "Generate speech from text (OpenAI-compatible endpoint).\n\n- **model**: TTS model (e.g., 'hexgrad/Kokoro-82M', 'pyttsx3')\n- **input**: Text to convert to speech\n- **voice**: Optional voice ID (use /v1/audio/voices to list available voices)\n- **language**: Optional language code for multilingual models (ISO 639-1)\n- **speed**: Speech speed multiplier (0.25 to 4.0, default: 1.0)\n- **response_format**: Audio format (mp3, opus, aac, flac, wav, pcm)\n- **stream**: Stream audio chunks as they are generated",
         "operationId": "text_to_speech_v1_audio_speech_post",
         "requestBody": {
           "content": {
@@ -762,6 +772,25 @@
             "minimum": 0.0,
             "title": "Temperature",
             "default": 0.0
+          },
+          "timestamp_granularities[]": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "word",
+                    "segment"
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp Granularities[]",
+            "description": "Timestamp granularities (verbose_json only)"
           }
         },
         "type": "object",
@@ -787,6 +816,42 @@
               }
             ],
             "title": "Model"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language",
+            "description": "Source language code (ISO 639-1). Auto-detect if omitted."
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt",
+            "description": "Style prompt"
+          },
+          "response_format": {
+            "$ref": "#/components/schemas/TranscriptionFormat",
+            "description": "Output format",
+            "default": "json"
+          },
+          "temperature": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Temperature",
+            "default": 0.0
           }
         },
         "type": "object",
@@ -1877,6 +1942,18 @@
             "title": "Voice",
             "description": "Voice ID to use (model-specific, see /v1/audio/voices)"
           },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language",
+            "description": "Language code for multilingual models (ISO 639-1, e.g. 'en', 'zh'). Model default if omitted."
+          },
           "speed": {
             "type": "number",
             "maximum": 4.0,
@@ -1928,6 +2005,16 @@
       },
       "TranscriptionResponse": {
         "properties": {
+          "task": {
+            "type": "string",
+            "enum": [
+              "transcribe",
+              "translate"
+            ],
+            "title": "Task",
+            "description": "Task that produced this result",
+            "default": "transcribe"
+          },
           "text": {
             "type": "string",
             "title": "Text",
@@ -1991,6 +2078,7 @@
               "text": "Hello, how are you today?"
             }
           ],
+          "task": "transcribe",
           "text": "Hello, how are you today?"
         }
       },

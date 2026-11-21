@@ -11933,7 +11933,7 @@ wheels = [
 
 [[package]]
 name = "vocal-ai"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "." }
 dependencies = [
     { name = "vocal-api" },
@@ -12060,7 +12060,7 @@ dev = [
 
 [[package]]
 name = "vocal-api"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "packages/api" }
 dependencies = [
     { name = "aiofiles" },
@@ -12083,7 +12083,7 @@ requires-dist = [
 
 [[package]]
 name = "vocal-cli"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "packages/cli" }
 dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
@@ -12111,7 +12111,7 @@ requires-dist = [
 
 [[package]]
 name = "vocal-core"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "packages/core" }
 dependencies = [
     { name = "av" },
@@ -12205,7 +12205,7 @@ provides-extras = ["piper", "kokoro", "qwen3-tts", "transformers", "nemo", "whis
 
 [[package]]
 name = "vocal-sdk"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "packages/sdk" }
 dependencies = [
     { name = "attrs" },
